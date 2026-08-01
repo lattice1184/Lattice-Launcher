@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.App.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="640"
+        x:Class="Launcher.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="YanKa Launcher" Width="1000" Height="640" MinWidth="800" MinHeight="520">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- 左侧导航（液态玻璃） -->
+        <ExperimentalAcrylicBorder DockPanel.Dock="Left" Width="170" CornerRadius="0">
+            <ExperimentalAcrylicBorder.Material>
+                <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                             TintColor="#14181F"
+                                             TintOpacity="0.6"/>
+            </ExperimentalAcrylicBorder.Material>
+            <StackPanel Margin="14">
+                <TextBlock Text="YanKa" FontSize="20" FontWeight="Bold" Foreground="#E8EAF0" Margin="4,8,0,0"/>
+                <TextBlock Text="Launcher" FontSize="14" Foreground="#8A93A6" Margin="4,0,0,24"/>
+                <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
+                        Command="{Binding NavigateCommand}" CommandParameter="home"
+                        HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                <Button Content="版本" Classes="nav" Classes.active="{Binding IsVersionsActive}"
+                        Command="{Binding NavigateCommand}" CommandParameter="versions"
+                        HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                <Button Content="生态" Classes="nav" Classes.active="{Binding IsEcosystemActive}"
+                        Command="{Binding NavigateCommand}" CommandParameter="ecosystem"
+                        HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                <Button Content="下载" Classes="nav" Classes.active="{Binding IsDownloadsActive}"
+                        Command="{Binding NavigateCommand}" CommandParameter="download"
+                        HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
+                        Command="{Binding NavigateCommand}" CommandParameter="account"
+                        HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+            </StackPanel>
+        </ExperimentalAcrylicBorder>
+
+        <!-- 右侧内容区 -->
+        <Border Background="#1D222C" Padding="20">
+            <ContentControl Content="{Binding CurrentPage}"/>
+        </Border>
+    </DockPanel>
+</Window>

@@ -1,0 +1,119 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Launcher.App.App"
+             xmlns:local="using:Launcher.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- ========== 颜色令牌与全局样式（克制深色 + 单强调色 #3B82F6） ========== -->
+
+        <!-- 窗口与文本 -->
+        <Style Selector="Window">
+            <Setter Property="Background" Value="#14181F"/>
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="#E8EAF0"/>
+        </Style>
+        <Style Selector="TextBlock.sub">
+            <Setter Property="Foreground" Value="#8A93A6"/>
+        </Style>
+        <Style Selector="TextBlock.dim">
+            <Setter Property="Foreground" Value="#5A6577"/>
+        </Style>
+
+        <!-- 按钮 -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Foreground" Value="#C9D2E3"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="Button:hover">
+            <Setter Property="Background" Value="#2C3544"/>
+        </Style>
+        <Style Selector="Button:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+
+        <!-- 主操作按钮 -->
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="#3B82F6"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.primary:hover">
+            <Setter Property="Background" Value="#4F8EF8"/>
+        </Style>
+
+        <!-- 幽灵按钮 -->
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#8A93A6"/>
+        </Style>
+        <Style Selector="Button.ghost:hover">
+            <Setter Property="Foreground" Value="#C9D2E3"/>
+            <Setter Property="Background" Value="#242A36"/>
+        </Style>
+
+        <!-- 导航按钮 -->
+        <Style Selector="Button.nav">
+            <Setter Property="Foreground" Value="#8A93A6"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="Button.nav.active">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#2A3240"/>
+        </Style>
+
+        <!-- 生态 Tab -->
+        <Style Selector="Button.tab">
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Foreground" Value="#8A93A6"/>
+            <Setter Property="CornerRadius" Value="6"/>
+        </Style>
+        <Style Selector="Button.tab.active">
+            <Setter Property="Background" Value="#3B82F6"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+
+        <!-- 输入控件 -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Foreground" Value="#E8EAF0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,6"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Foreground" Value="#E8EAF0"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- 卡片 -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- 进度条 -->
+        <Style Selector="ProgressBar">
+            <Setter Property="Foreground" Value="#3B82F6"/>
+            <Setter Property="Background" Value="#2F3745"/>
+            <Setter Property="CornerRadius" Value="3"/>
+        </Style>
+    </Application.Styles>
+</Application>

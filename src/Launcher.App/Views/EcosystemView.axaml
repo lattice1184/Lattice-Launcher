@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.EcosystemView"
+             x:DataType="vm:EcosystemViewModel">
+
+    <DockPanel>
+        <!-- 顶部：Tab + 搜索 + 实例 + 状态 -->
+        <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
+                        Command="{Binding SelectTabCommand}" CommandParameter="mod"/>
+                <Button Content="整合包" Classes="tab" Classes.active="{Binding IsModpackTabSelected}"
+                        Command="{Binding SelectTabCommand}" CommandParameter="modpack"/>
+                <Button Content="材质包" Classes="tab" Classes.active="{Binding IsResourcepackTabSelected}"
+                        Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
+                <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
+                        Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBox Text="{Binding Query}" Watermark="搜索…"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Instances}" SelectedItem="{Binding SelectedInstance}"
+                          PlaceholderText="目标实例" MinWidth="190"
+                          HorizontalContentAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:VersionInstanceVM">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+            <TextBlock Text="{Binding Status}" Foreground="#8A93A6" FontSize="12"/>
+        </StackPanel>
+
+        <!-- 内容：列表层与详情层叠放 -->
+        <Grid>
+            <!-- 列表层 -->
+            <StackPanel Spacing="10" IsVisible="{Binding !IsDetailOpen}">
+                <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
+                <StackPanel Spacing="8" IsVisible="{Binding IsError}">
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A"/>
+                    <Button Content="重试" Command="{Binding SearchCommand}" CommandParameter="True"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+                <TextBlock Text="没有找到相关内容" Foreground="#8A93A6" HorizontalAlignment="Center"
+                           Margin="0,40" IsVisible="{Binding IsEmpty}"/>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Cards}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProjectCardVM">
+                                <Button Width="215" Margin="6" Padding="0" Background="Transparent"
+                                        BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                        Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).OpenDetailCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Border Background="#242A36" CornerRadius="8" Padding="12"
+                                            BorderBrush="#2F3745" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                                <Image Source="{Binding Icon}" Width="44" Height="44"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold"
+                                                           Foreground="White" MaxLines="1" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Author}" Foreground="#7E8BA0" FontSize="12"/>
+                                            <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" FontSize="12"
+                                                       MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Foreground="#5A6577" FontSize="11">
+                                                <Run Text="{Binding DownloadsText}"/><Run Text=" 下载 · "/>
+                                                <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Button Content="加载更多" Command="{Binding LoadMoreCommand}" HorizontalAlignment="Center"
+                        IsVisible="{Binding HasMore}"/>
+            </StackPanel>
+
+            <!-- 详情层 -->
+            <ContentControl Content="{Binding Detail}" IsVisible="{Binding IsDetailOpen}"/>
+        </Grid>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.DownloadView"
+             x:DataType="vm:DownloadViewModel">
+
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="#8A93A6" Margin="4,0,0,10"/>
+
+        <ItemsControl ItemsSource="{Binding Tasks}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DownloadTaskVM">
+                    <StackPanel Margin="0,8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="{Binding Name}" Foreground="#C9D2E3"/>
+                            <TextBlock Grid.Column="1" Text="{Binding State}" Foreground="#8A93A6" FontSize="12"/>
+                        </Grid>
+                        <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6" Margin="0,5,0,0"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </DockPanel>
+</UserControl>

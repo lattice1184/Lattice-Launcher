@@ -1,0 +1,53 @@
+using Avalonia.Media.Imaging;
+using CommunityToolkit.Mvvm.ComponentModel;
+using Launcher.App.Services;
+using Launcher.Core.Model.Modrinth;
+
+namespace Launcher.App.ViewModels;
+
+/// <summary>生态卡片 VM（图标异步加载，下载量格式化）</summary>
+public partial class ProjectCardVM : ObservableObject
+{
+    public string Id { get; }
+    public string Title { get; }
+    public string Author { get; }
+    public string Description { get; }
+    public string DownloadsText { get; }
+    public string FollowsText { get; }
+    public string IconUrl { get; }
+    public ProjectType Type { get; }
+    public string Initial => Title.Length > 0 ? Title[..1] : "?";
+
+    [ObservableProperty]
+    public partial Bitmap? Icon { get; set; }
+
+    public ProjectCardVM(ModrinthSearchHit hit)
+    {
+        Id = hit.ProjectId;
+        Title = hit.Title;
+        Author = hit.Author;
+        Description = hit.Description;
+        DownloadsText = FormatCount(hit.Downloads);
+        FollowsText = FormatCount(hit.Follows);
+        IconUrl = hit.IconUrl ?? "";
+        Type = hit.ProjectType switch
+        {
+            "modpack" => ProjectType.Modpack,
+            "resourcepack" => ProjectType.Resourcepack,
+            "shader" => ProjectType.Shader,
+            _ => ProjectType.Mod,
+        };
+        _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
+    }
+
+    /// <summary>下载量格式化：1234567 → 1.2M，12345 → 12.3K</summary>
+    public static string FormatCount(long n) => n switch
+    {
+        >= 1_000_000 => $"{n / 1_000_000.0:0.#}M",
+        >= 1_000 => $"{n / 1_000.0:0.#}K",
+        _ => n.ToString(),
+    };
+}
+
+/// <summary>目标版本实例（生态安装目标）</summary>
+public sealed record VersionInstanceVM(string Name);

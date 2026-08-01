@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.VersionListView"
+             x:DataType="vm:VersionListViewModel">
+
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="#8A93A6" Margin="4,0,0,10"/>
+
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,6">
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="4,6,0,6">
+                                <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="15"
+                                           Foreground="#C9D2E3" VerticalAlignment="Center"/>
+                                <Button Content="{Binding ToggleText}" Classes="ghost" FontSize="11"
+                                        Command="{Binding ToggleCommand}" IsVisible="{Binding IsCollapsible}"
+                                        Padding="10,3" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding Items}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:VersionEntryVM">
+                                        <Border Background="#242A36" CornerRadius="6" Padding="12,9"
+                                                Margin="2,2" BorderBrush="#2F3745" BorderThickness="1">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
+                                                <TextBlock Grid.Column="0" Text="{Binding Id}" FontWeight="SemiBold" Foreground="White"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="#7E8BA0" Margin="12,0" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Foreground="#5A6577" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                                <Border Grid.Column="3" CornerRadius="4" Padding="8,3" Background="#2E7D4F" IsVisible="{Binding Installed}">
+                                                    <TextBlock Text="已安装" FontSize="11" Foreground="White"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

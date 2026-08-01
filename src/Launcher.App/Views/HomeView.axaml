@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+    <DockPanel>
+        <!-- 顶部：版本选择 + 启动控制 -->
+        <StackPanel DockPanel.Dock="Top" Spacing="12" Margin="0,0,0,14">
+            <TextBlock Text="YanKa Launcher" FontSize="26" FontWeight="Bold"/>
+            <TextBlock Text="{Binding LaunchStatus}" Classes="sub"/>
+
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                <ComboBox ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
+                          PlaceholderText="选择版本">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:VersionInstanceVM">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="1" Content="启动游戏" Classes="primary" Padding="28,9"
+                        Command="{Binding LaunchCommand}"
+                        IsVisible="{Binding !IsRunning}"/>
+                <Button Grid.Column="1" Content="停止" Padding="28,9"
+                        Command="{Binding StopGameCommand}"
+                        IsVisible="{Binding IsRunning}"/>
+                <Button Grid.Column="2" Content="{Binding LaunchState}" Classes="ghost"
+                        IsEnabled="False" MinWidth="80"/>
+            </Grid>
+
+            <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="6"
+                         IsVisible="{Binding IsLaunching}"/>
+        </StackPanel>
+
+        <!-- 游戏控制台 -->
+        <Border Classes="card" Padding="12">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="游戏控制台" Classes="sub" FontSize="12" Margin="0,0,0,8"/>
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding GameLogs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
+                                           Foreground="#B8C2D4" TextWrapping="NoWrap"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </DockPanel>
+</UserControl>

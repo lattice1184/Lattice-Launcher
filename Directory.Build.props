@@ -1,0 +1,8 @@
+<Project>
+  <!-- 统一构建配置。PCL.Core*（vendor 原样）不应用这些默认值，保持其 csproj 原样 -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'PCL.Core' And !$(MSBuildProjectName.StartsWith('PCL.Core'))">
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>14.0</LangVersion>
+  </PropertyGroup>
+</Project>

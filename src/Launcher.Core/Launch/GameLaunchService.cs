@@ -1,0 +1,103 @@
+using System.IO.Compression;
+using System.Text.Json;
+using Launcher.Core.Model.Mojang;
+
+namespace Launcher.Core.Launch;
+
+/// <summary>
+/// 游戏启动编排：读版本 JSON → 自动中文 → Java 选配 → 构建档案 → 启动进程。
+/// </summary>
+public sealed class GameLaunchService
+{
+    public async Task<LaunchProcess.LaunchResult> LaunchAsync(
+        string versionId, string gameDirectory,
+        string accountName, string accountUuid,
+        long memoryMb, string[]? extraJvmArgs,
+        Action<string>? onLog = null, CancellationToken ct = default)
+    {
+        // 1. 读版本 JSON
+        var vjPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.json");
+        if (!File.Exists(vjPath))
+            throw new FileNotFoundException($"版本 {versionId} 未安装（请先在版本页下载）");
+        var jarPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.jar");
+        if (!File.Exists(jarPath))
+            throw new FileNotFoundException($"版本 {versionId} 的客户端文件缺失（请重新下载）");
+
+        var version = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(vjPath, ct))
+            ?? throw new InvalidDataException($"版本 JSON 解析失败: {versionId}");
+
+        // 2. 自动中文（options.txt lang:zh_cn）
+        AutoChinese.Apply(gameDirectory);
+
+        // 3. Java 自动选配
+        var java = JavaSelector.Pick(version.JavaVersion?.MajorVersion);
+
+        // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
+        var builder = new JavaArgumentsBuilder();
+        var profile = builder.Build(version, gameDirectory, java,
+            accountName, accountUuid, "token", memoryMb, extraJvmArgs);
+
+        // log4j 配置兜底：version.json 指定的文件缺失时写入标准模板
+        EnsureLog4jConfig(version, gameDirectory);
+
+        // natives 解压：只提取原生库文件（.dll/.so/.dylib）平铺到 natives 根目录（忽略 jar 内目录结构）
+        foreach (var nativeJar in profile.NativeJars)
+        {
+            if (!File.Exists(nativeJar)) continue;
+            try
+            {
+                using var archive = ZipFile.OpenRead(nativeJar);
+                foreach (var entry in archive.Entries)
+                {
+                    var name = Path.GetFileName(entry.FullName);
+                    if (entry.FullName.EndsWith('/') || name.Length == 0) continue;
+                    if (!name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                        && !name.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+                        && !name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var dest = Path.Combine(profile.NativesDirectory, name);
+                    entry.ExtractToFile(dest, overwrite: true);
+                }
+            }
+            catch (Exception ex) { onLog?.Invoke($"§ natives 解压警告 {Path.GetFileName(nativeJar)}: {ex.Message}"); }
+        }
+
+        return LaunchProcess.Start(profile, onLog, ct);
+    }
+
+    /// <summary>log4j 配置文件缺失时写入 Minecraft 标准模板（防 log4j 无配置告警）</summary>
+    private static void EnsureLog4jConfig(VersionJson version, string gameDirectory)
+    {
+        if (version.Logging?.Client?.File is not { } logFile) return;
+        var dir = Path.Combine(gameDirectory, "assets", "log_configs");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, Path.GetFileName(new Uri(logFile.Url).LocalPath));
+        if (File.Exists(path)) return;
+        File.WriteAllText(path, DefaultLog4jXml);
+    }
+
+    private const string DefaultLog4jXml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Configuration status="WARN">
+          <Appenders>
+            <Console name="SysOut" target="SYSTEM_OUT">
+              <PatternLayout pattern="[%d{HH:mm:ss}] [%t/%level] [%logger]: %msg%n"/>
+            </Console>
+            <Queue name="ServerGuiConsole">
+              <PatternLayout pattern="[%d{HH:mm:ss}] [%t/%level] [%logger]: %msg%n"/>
+            </Queue>
+          </Appenders>
+          <Loggers>
+            <Root level="info">
+              <filters>
+                <MarkerFilter marker="NETWORK_PACKETS" onMatch="DENY" onMismatch="NEUTRAL"/>
+              </filters>
+              <AppenderRef ref="SysOut"/>
+              <AppenderRef ref="ServerGuiConsole"/>
+            </Root>
+            <Logger name="com.mojang.authlib" level="info"/>
+            <Logger name="net.minecraft" level="info"/>
+          </Loggers>
+        </Configuration>
+        """;
+}

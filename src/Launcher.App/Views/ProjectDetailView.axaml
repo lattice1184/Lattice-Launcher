@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.ProjectDetailView"
+             x:DataType="vm:ProjectDetailViewModel">
+
+    <ScrollViewer>
+        <StackPanel Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
+            <Button Content="← 返回" Command="{Binding CloseCommand}"
+                    HorizontalAlignment="Left" Background="Transparent" Foreground="#8A93A6" BorderThickness="0"/>
+
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
+                <Image Source="{Binding Icon}" Width="72" Height="72"/>
+                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
+                    <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
+                </StackPanel>
+            </Grid>
+
+            <Border Background="#242A36" CornerRadius="8" Padding="12" BorderBrush="#2F3745" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
+
+                    <!-- 安装按钮 -->
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Button Grid.Column="0" Content="{Binding InstallButtonText}"
+                                Command="{Binding InstallCommand}" Padding="24,8"
+                                IsVisible="{Binding !IsInstalling}"/>
+                        <Button Grid.Column="0" Content="取消安装" Command="{Binding InstallCancelCommand}"
+                                Padding="24,8" IsVisible="{Binding IsInstalling}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding ProgressState}" Foreground="#8A93A6"
+                                   VerticalAlignment="Center" IsVisible="{Binding IsInstalling}"/>
+                    </Grid>
+
+                    <!-- 进度 -->
+                    <ProgressBar Value="{Binding Progress}" Maximum="100" Height="6" IsVisible="{Binding IsInstalling}"/>
+                    <TextBlock Text="{Binding Progress, StringFormat='{}{0:0}%'}" Foreground="#8A93A6"
+                               FontSize="12" IsVisible="{Binding IsInstalling}"/>
+
+                    <!-- 完成 / 错误 -->
+                    <TextBlock Text="{Binding InstalledPath}" Foreground="#5AD07C" FontSize="12"
+                               TextWrapping="Wrap" IsVisible="{Binding InstallDone}"/>
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A" TextWrapping="Wrap"
+                               IsVisible="{Binding ErrorMessage.Length}"/>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" TextWrapping="Wrap"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
