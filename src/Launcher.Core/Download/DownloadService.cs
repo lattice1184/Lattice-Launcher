@@ -283,13 +283,23 @@ public sealed class DownloadService
         catch (Exception) { return false; }
     }
 
-    // ---------- 版本编排（旧展平路径；组任务路径见 VersionDownloadPipeline，D3 阶段接入） ----------
+    // ---------- 版本编排 ----------
 
     /// <summary>
-    /// 编排完整版本下载：client jar → libraries（含 natives classifier）→ assets index → assets 差量 → logging。
-    /// 进度报告：阶段文字 + 当前文件 + 文件级字节 + 整体百分比（按预估总字节加权，跨文件累计）。
+    /// 编排完整版本下载。传 ctx（组任务）走阶段全并行管线（VersionDownloadPipeline，文件级子任务）；
+    /// 否则走旧展平路径（阶段串行 + 加权整体百分比，兼容旧调用与测试）。
     /// </summary>
-    public async Task DownloadVersionAsync(
+    public Task DownloadVersionAsync(
+        VersionJson version, DownloadGroupContext? ctx = null,
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
+    {
+        if (ctx is not null)
+            return new VersionDownloadPipeline(this, _options, _gameDirectory).RunAsync(version, ctx, ct);
+        return RunLegacyAsync(version, progress, ct);
+    }
+
+    /// <summary>旧展平路径：client → libraries → index → assets → logging（阶段串行）</summary>
+    public async Task RunLegacyAsync(
         VersionJson version, DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
         // 加载器版本：解析 inheritsFrom 链（父版本必须已安装；client jar 沿链继承后落子版本目录）
@@ -403,30 +413,33 @@ public sealed class DownloadService
             {
                 var index = JsonSerializer.Deserialize<AssetsIndex>(
                     await File.ReadAllTextAsync(indexPath, ct));
+                if (index is not null)
+                {
                 var objectsDir = Path.Combine(assetsDir, "objects");
                 using var assetSemaphore = new SemaphoreSlim(_options.AssetConcurrency);
                 var assetTasks = new List<Task>();
                 var totalAssets = index.Objects.Count;
                 var doneAssets = 0;
-                foreach (var (hash, obj) in index.Objects)
+                foreach (var (_, obj) in index.Objects)   // key 是文件路径，hash 在 value
                 {
-                    var objPath = Path.Combine(objectsDir, hash[..2], hash);
+                    var h = obj.Hash;
+                    var objPath = Path.Combine(objectsDir, h[..2], h);
                     if (File.Exists(objPath) && new FileInfo(objPath).Length == obj.Size)
                     {
                         Interlocked.Increment(ref doneAssets);
                         continue;
                     }
-                    var url = $"https://resources.download.minecraft.net/{hash[..2]}/{hash}";
+                    var url = $"https://resources.download.minecraft.net/{h[..2]}/{h}";
                     assetTasks.Add(Task.Run(async () =>
                     {
                         await assetSemaphore.WaitAsync(ct);
                         try
                         {
-                            await DownloadFileAsync(url, objPath, hash, obj.Size,
-                                Wrap($"下载资源 {Volatile.Read(ref doneAssets)}/{totalAssets}", hash), ct);
+                            await DownloadFileAsync(url, objPath, h, obj.Size,
+                                Wrap($"下载资源 {Volatile.Read(ref doneAssets)}/{totalAssets}", h), ct);
                             var n = Interlocked.Increment(ref doneAssets);
                             if (progress is not null)
-                                progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", hash, n, totalAssets,
+                                progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", h, n, totalAssets,
                                     estimated > 0
                                         ? (accumulated + (long)((double)n / totalAssets * assetsBytes)) * 100.0 / estimated
                                         : 0));
@@ -436,6 +449,7 @@ public sealed class DownloadService
                 }
                 await Task.WhenAll(assetTasks);
                 accumulated += assetsBytes;
+                }
             }
         }
 

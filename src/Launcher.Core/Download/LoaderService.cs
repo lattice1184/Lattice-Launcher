@@ -141,46 +141,97 @@ public sealed class LoaderService
 
     // ---------- 安装 ----------
 
-    public async Task InstallAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress, CancellationToken ct)
+    /// <summary>安装（旧展平路径，兼容测试与旧调用）</summary>
+    public Task InstallAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress, CancellationToken ct)
+        => InstallCoreAsync(plan, progress, null, ct);
+
+    /// <summary>安装（组任务路径：加载器配置/安装器为子任务，版本下载并入同一组）</summary>
+    public Task InstallAsync(LoaderInstallPlan plan, DownloadGroupContext ctx, CancellationToken ct)
+        => InstallCoreAsync(plan, null, ctx, ct);
+
+    private async Task InstallCoreAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress,
+        DownloadGroupContext? ctx, CancellationToken ct)
     {
         switch (plan.Kind)
         {
             case LoaderKind.Fabric:
             case LoaderKind.Quilt:
-                await InstallMetaAsync(plan, progress, ct);
+                await InstallMetaAsync(plan, progress, ctx, ct);
                 break;
             default:
-                await InstallInstallerAsync(plan, progress, ct);
+                await InstallInstallerAsync(plan, progress, ctx, ct);
                 break;
         }
     }
 
     /// <summary>Fabric/Quilt：拉 profile json（inheritsFrom 原版）→ 写版本目录 → 全量下载（链解析下载 client jar 与库）</summary>
-    private async Task InstallMetaAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress, CancellationToken ct)
+    private async Task InstallMetaAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress,
+        DownloadGroupContext? ctx, CancellationToken ct)
     {
         RequireVanilla(plan.McVersion);
+
+        // 组路径：配置为子任务（weight=0 不定进度），版本下载并入同一组
+        if (ctx is not null)
+        {
+            VersionJson? version = null;
+            await ctx.AddChild($"加载器配置 {plan.Kind}", 0, async (p, c) =>
+            {
+                p(new DownloadProgress("查询加载器版本", null, 0, 0, 0));
+                var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, c);
+                version = JsonSerializer.Deserialize<VersionJson>(json)
+                    ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
+                var id = VersionInstaller.SafeId(version.Id);
+                var versionDir = Path.Combine(_gameDirectory, "versions", id);
+                Directory.CreateDirectory(versionDir);
+                await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, c);
+                p(new DownloadProgress("加载器配置完成", null, 0, 0, 100));
+            }).Completion;
+
+            await _downloads.DownloadVersionAsync(version!, ctx, null, ct);
+            return;
+        }
+
         progress?.Invoke(new DownloadProgress("查询加载器版本", null, 0, 0, 0));
 
         var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, ct);
-        var version = JsonSerializer.Deserialize<VersionJson>(json)
+        var legacyVersion = JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
-        var id = VersionInstaller.SafeId(version.Id);
+        var id = VersionInstaller.SafeId(legacyVersion.Id);
         var versionDir = Path.Combine(_gameDirectory, "versions", id);
         Directory.CreateDirectory(versionDir);
         await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, ct);
 
         progress?.Invoke(new DownloadProgress($"下载 {plan.Kind} 加载器与库文件", null, 0, 0, 0));
-        await _downloads.DownloadVersionAsync(version, progress, ct);
+        await _downloads.DownloadVersionAsync(legacyVersion, null, progress, ct);
     }
 
     /// <summary>Forge/NeoForge：下载官方安装器 → 安装器进程 --installClient 写入版本目录</summary>
-    private async Task InstallInstallerAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress, CancellationToken ct)
+    private async Task InstallInstallerAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress,
+        DownloadGroupContext? ctx, CancellationToken ct)
     {
         RequireVanilla(plan.McVersion);
 
         var installerDir = Path.Combine(_gameDirectory, "installers");
         Directory.CreateDirectory(installerDir);
         var installerPath = Path.Combine(installerDir, Path.GetFileName(new Uri(plan.InstallerUrl!).LocalPath));
+
+        // 组路径：安装器下载 + 运行各为一个子任务（运行阶段输出行实时进 Stage）
+        if (ctx is not null)
+        {
+            await ctx.AddChild($"安装器 {Path.GetFileName(installerPath)}", plan.InstallerSize ?? 0, (p, c) =>
+                _downloads.DownloadFileAsync(plan.InstallerUrl!, installerPath, plan.InstallerSha1, plan.InstallerSize, p, c)).Completion;
+
+            await ctx.AddChild($"运行 {plan.Kind} 安装器", 0, async (p, c) =>
+            {
+                var java = JavaSelector.Pick(null);
+                var exitCode = await InstallerProcess.RunAsync(java,
+                    ["-jar", installerPath, "--installClient", _gameDirectory],
+                    line => p(new DownloadProgress(line, null, 0, 0, 0)), c);
+                if (exitCode != 0)
+                    throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
+            }).Completion;
+            return;
+        }
 
         progress?.Invoke(new DownloadProgress("下载安装器", Path.GetFileName(installerPath), 0, 0, 0));
         await _downloads.DownloadFileAsync(plan.InstallerUrl!, installerPath, plan.InstallerSha1, plan.InstallerSize, progress, ct);

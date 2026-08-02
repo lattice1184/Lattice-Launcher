@@ -140,7 +140,7 @@ public class LoaderServiceTests
             var svc = CreateService(routes, gameDir);
 
             var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None);
-            await svc.InstallAsync(plan, null, CancellationToken.None);
+            await svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None);
 
             // profile json 落盘（含继承关系）
             var id = "fabric-loader-0.16.13-1.21.1";
@@ -168,7 +168,7 @@ public class LoaderServiceTests
             var svc = CreateService(routes, gameDir);
 
             var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None);
-            var ex = await Assert.ThrowsAsync<FileNotFoundException>(() => svc.InstallAsync(plan, null, CancellationToken.None));
+            var ex = await Assert.ThrowsAsync<FileNotFoundException>(() => svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None));
 
             Assert.Contains("1.21.1", ex.Message);
         }
