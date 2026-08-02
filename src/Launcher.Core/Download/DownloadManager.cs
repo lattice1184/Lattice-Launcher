@@ -27,11 +27,24 @@ public sealed class DownloadManager
     public DownloadTask Enqueue(string name, Func<DownloadProgressHandler, CancellationToken, Task> work)
     {
         var task = new DownloadTask(name, work, _ui);
+        AddAndTrack(task);
+        return task;
+    }
+
+    /// <summary>组任务：子任务不进 Tasks、不计 ActiveCount（组算 1）</summary>
+    public DownloadTask EnqueueGroup(string name, Func<DownloadGroupContext, CancellationToken, Task> groupWork)
+    {
+        var task = new DownloadTask(name, groupWork, _ui);
+        AddAndTrack(task);
+        return task;
+    }
+
+    private void AddAndTrack(DownloadTask task)
+    {
         Tasks.Add(task);
         SetActive(Tasks.Count(t => t.IsActive));
         task.Completion.ContinueWith(_ => UiPost(() => SetActive(Tasks.Count(t => t.IsActive))),
             TaskScheduler.Default);
-        return task;
     }
 
     public void Cancel(DownloadTask task) => task.Cancel();
