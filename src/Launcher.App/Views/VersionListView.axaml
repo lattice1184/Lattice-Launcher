@@ -24,26 +24,58 @@
                                     <DataTemplate x:DataType="vm:VersionEntryVM">
                                         <Border Background="#242A36" CornerRadius="4" Padding="12,8"
                                                 Margin="2,2" BorderBrush="#2F3745" BorderThickness="1">
-                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12" VerticalAlignment="Center">
-                                                <TextBlock Grid.Column="0" Text="{Binding Id}" FontWeight="SemiBold" Foreground="White"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="#7E8BA0" VerticalAlignment="Center"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Foreground="#5A6577" VerticalAlignment="Center"/>
-                                                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border CornerRadius="4" Padding="8,3" Background="#2E7D4F" IsVisible="{Binding Installed}">
-                                                        <TextBlock Text="已安装" FontSize="11" Foreground="White"/>
-                                                    </Border>
-                                                    <Button Content="下载" Classes="ghost" FontSize="12" Padding="12,4"
-                                                            Command="{Binding DownloadCommand}" IsVisible="{Binding ShowDownloadButton}"/>
-                                                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowProgress}">
-                                                        <ProgressBar Value="{Binding DownloadProgressPercent}" Maximum="100"
-                                                                     Width="72" Height="5" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding DownloadProgressText}" FontSize="11"
-                                                                   Foreground="#8A93A6" VerticalAlignment="Center"/>
+                                            <StackPanel>
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12" VerticalAlignment="Center">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Id}" FontWeight="SemiBold" Foreground="White"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="#7E8BA0" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Foreground="#5A6577" VerticalAlignment="Center"/>
+                                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                        <Border CornerRadius="4" Padding="8,3" Background="#2E7D4F" IsVisible="{Binding Installed}">
+                                                            <TextBlock Text="已安装" FontSize="11" Foreground="White"/>
+                                                        </Border>
+                                                        <Button Content="下载" Classes="ghost" FontSize="12" Padding="12,4"
+                                                                Command="{Binding DownloadCommand}" IsVisible="{Binding ShowDownloadButton}"/>
+                                                        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowProgress}">
+                                                            <ProgressBar Value="{Binding DownloadProgressPercent}" Maximum="100"
+                                                                         Width="72" Height="5" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding DownloadProgressText}" FontSize="11"
+                                                                       Foreground="#8A93A6" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="#E05A5A"
+                                                                   VerticalAlignment="Center" IsVisible="{Binding HasError}"/>
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="#E05A5A"
-                                                               VerticalAlignment="Center" IsVisible="{Binding HasError}"/>
-                                                </StackPanel>
-                                            </Grid>
+                                                </Grid>
+
+                                                <!-- 安装加载器（Fabric/Quilt/Forge/NeoForge） -->
+                                                <Expander Header="安装加载器" Margin="0,6,0,0" IsVisible="{Binding HasLoader}">
+                                                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                                            <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
+                                                                    Command="{Binding Loader.SelectCommand}" CommandParameter="Fabric"/>
+                                                            <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
+                                                                    Command="{Binding Loader.SelectCommand}" CommandParameter="Quilt"/>
+                                                            <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
+                                                                    Command="{Binding Loader.SelectCommand}" CommandParameter="Forge"/>
+                                                            <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
+                                                                    Command="{Binding Loader.SelectCommand}" CommandParameter="NeoForge"/>
+                                                        </StackPanel>
+                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                                            <ComboBox Grid.Column="0" Width="190"
+                                                                      ItemsSource="{Binding Loader.Versions}"
+                                                                      SelectedItem="{Binding Loader.SelectedVersion}"
+                                                                      IsEnabled="{Binding !Loader.IsLoadingVersions}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Loader.StatusText}"
+                                                                       Foreground="#8A93A6" FontSize="12" VerticalAlignment="Center"/>
+                                                            <Button Grid.Column="2" Content="安装" FontSize="12" Padding="16,5"
+                                                                    Classes="primary"
+                                                                    Command="{Binding Loader.InstallCommand}"
+                                                                    IsEnabled="{Binding Loader.SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                                        </Grid>
+                                                        <ProgressBar Value="{Binding Loader.ProgressPercent}" Maximum="100" Height="5"
+                                                                     IsVisible="{Binding Loader.IsInstalling}"/>
+                                                    </StackPanel>
+                                                </Expander>
+                                            </StackPanel>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

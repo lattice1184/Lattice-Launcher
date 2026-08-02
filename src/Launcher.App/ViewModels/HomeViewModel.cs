@@ -73,6 +73,18 @@ public partial class HomeViewModel : ViewModelBase
             InstalledVersions.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 InstalledVersions.Add(new VersionInstanceVM(e.Id));
+            // 目录扫描：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
+            var versionsDir = Path.Combine(GameDirectory.Detect(), "versions");
+            if (Directory.Exists(versionsDir))
+            {
+                foreach (var dir in Directory.EnumerateDirectories(versionsDir))
+                {
+                    var id = Path.GetFileName(dir);
+                    if (InstalledVersions.Any(v => v.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (File.Exists(Path.Combine(dir, $"{id}.json")))
+                        InstalledVersions.Add(new VersionInstanceVM(id));
+                }
+            }
             if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];
         }
         catch { }

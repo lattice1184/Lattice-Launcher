@@ -61,8 +61,13 @@ public partial class VersionListViewModel : ViewModelBase
             || id.Contains("combat") || id.Contains("21w14") || id.Contains("25w14");
     }
 
-    private VersionEntryVM ToVm(VersionManifestService.GameVersionEntry e) =>
-        new(e.Id, e.Type, e.Installed, e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl, _installer, OnInstalled);
+    private VersionEntryVM ToVm(VersionManifestService.GameVersionEntry e)
+    {
+        var entry = new VersionEntryVM(e.Id, e.Type, e.Installed, e.ReleaseTime.ToString("yyyy-MM-dd"),
+            e.ManifestUrl, _installer, OnInstalled);
+        entry.Loader = new LoaderPickerViewModel(e.Id, () => OnInstalled(entry));
+        return entry;
+    }
 
     /// <summary>安装完成：重扫磁盘并点亮所有已装行（含其他分组）</summary>
     private void OnInstalled(VersionEntryVM entry)
@@ -122,6 +127,10 @@ public partial class VersionEntryVM : ObservableObject
     public string Type { get; }
     public string ReleaseDate { get; }
     public string? ManifestUrl { get; }
+
+    /// <summary>加载器安装面板（展开器内容），构建后由 VersionListViewModel 注入</summary>
+    public LoaderPickerViewModel? Loader { get; set; }
+    public bool HasLoader => Loader is not null;
 
     [ObservableProperty]
     public partial bool Installed { get; set; }
