@@ -46,6 +46,7 @@ public partial class MainViewModel : ViewModelBase
         IsDownloadsActive = page == "download";
         IsAccountActive = page == "account";
         if (page == "download") Downloads.ActivateDefault();
+        if (page == "home") _ = Home.RefreshVersionsAsync(); // 切回主页刷新已装版本（下载完成后可见）
         CurrentPage = page switch
         {
             "download" => Downloads,

@@ -81,13 +81,21 @@ public partial class HomeViewModel : ViewModelBase
     {
         _accounts.Load();
         RefreshPlayer();
+        await RefreshVersionsAsync();
+    }
+
+    /// <summary>
+    /// 刷新已安装版本列表（下载/安装完成后切回主页时调用——列表不能停留在启动时的快照）。
+    /// 来源标签：当前游戏目录来自 PCL2 / 本启动器 / 官方 / 自配。
+    /// </summary>
+    public async Task RefreshVersionsAsync()
+    {
         try
         {
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            InstalledVersions.Clear();
-            // 来源标识：当前游戏目录来自 PCL2 / 本启动器 / 官方 / 自配
             var sourceLabel = GameDirectory.SourceLabel(GameDirectory.DetectSource());
+            InstalledVersions.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 InstalledVersions.Add(new VersionInstanceVM(e.Id, sourceLabel));
             // 目录扫描：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
@@ -102,7 +110,8 @@ public partial class HomeViewModel : ViewModelBase
                         InstalledVersions.Add(new VersionInstanceVM(id, sourceLabel));
                 }
             }
-            if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];
+            if (InstalledVersions.Count > 0 && SelectedVersion is null)
+                SelectedVersion = InstalledVersions[0];
         }
         catch { }
     }
