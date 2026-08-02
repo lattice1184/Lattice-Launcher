@@ -7,20 +7,18 @@ using Launcher.Core.Model.Modrinth;
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 下载板块：下载记录（全局队列）+ 资源下载（MOD/整合包/材质包/光影包，各一个 EcosystemViewModel 实例）。
+/// 下载板块：下载游戏 / 下载记录（全局队列）/ MOD / 整合包 / 材质包 / 光影包。
+/// tab 懒实例化：首次激活才创建对应 VM 并触发加载（启动零网络请求，切页秒开）。
 /// </summary>
 public partial class DownloadViewModel : ViewModelBase
 {
+    private VersionBrowseViewModel? _versionBrowse;
+    private EcosystemViewModel? _mods;
+    private EcosystemViewModel? _modpacks;
+    private EcosystemViewModel? _resourcepacks;
+    private EcosystemViewModel? _shaders;
+
     public ObservableCollection<DownloadTask> Tasks => DownloadManager.Instance.Tasks;
-
-    /// <summary>下载游戏（版本浏览分栏，PCL2 下载页第一项）</summary>
-    public VersionBrowseViewModel VersionBrowse { get; }
-
-    // 资源下载面板（每种类型一个实例，tab 切换显示）
-    public EcosystemViewModel Mods { get; }
-    public EcosystemViewModel Modpacks { get; }
-    public EcosystemViewModel Resourcepacks { get; }
-    public EcosystemViewModel Shaders { get; }
 
     [ObservableProperty]
     public partial string Status { get; set; } = "暂无下载任务";
@@ -32,7 +30,11 @@ public partial class DownloadViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool HasActive { get; set; }
 
-    // Tab 状态（与 MainViewModel 导航同款模式；默认"下载游戏"，PCL2 顺序）
+    /// <summary>当前 tab 内容（ContentControl 绑定；queue 用常驻面板不走这里）</summary>
+    [ObservableProperty]
+    public partial ViewModelBase? ActiveTab { get; set; }
+
+    // Tab 高亮状态（默认"下载游戏"）
     [ObservableProperty]
     public partial bool IsGameTabSelected { get; set; } = true;
 
@@ -51,21 +53,21 @@ public partial class DownloadViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsShaderTabSelected { get; set; }
 
+    /// <summary>内容区 ContentControl 显示条件（queue 用常驻面板，其余走懒 ContentControl）</summary>
+    public bool IsNotQueueTabSelected => !IsQueueTabSelected;
+
+    partial void OnIsQueueTabSelectedChanged(bool value) => OnPropertyChanged(nameof(IsNotQueueTabSelected));
+
     public DownloadViewModel()
     {
-        VersionBrowse = new VersionBrowseViewModel();
-        _ = VersionBrowse.LoadAsync();
-        Mods = new EcosystemViewModel(ProjectType.Mod);
-        Modpacks = new EcosystemViewModel(ProjectType.Modpack);
-        Resourcepacks = new EcosystemViewModel(ProjectType.Resourcepack);
-        Shaders = new EcosystemViewModel(ProjectType.Shader);
-        _ = Mods.InitializeAsync();
-        _ = Modpacks.InitializeAsync();
-        _ = Resourcepacks.InitializeAsync();
-        _ = Shaders.InitializeAsync();
-
         DownloadManager.Instance.ActiveCountChanged += OnActiveChanged;
         OnActiveChanged(DownloadManager.Instance.ActiveCount);
+    }
+
+    /// <summary>切页进入时激活默认 tab（MainViewModel.Navigate 调用；首次进入下载页才触发加载）</summary>
+    public void ActivateDefault()
+    {
+        if (ActiveTab is null) SelectTab("game");
     }
 
     [RelayCommand]
@@ -77,6 +79,24 @@ public partial class DownloadViewModel : ViewModelBase
         IsModpackTabSelected = tab == "modpack";
         IsResourcepackTabSelected = tab == "resourcepack";
         IsShaderTabSelected = tab == "shader";
+        if (tab != "queue") ActiveTab = GetOrCreateTab(tab);
+    }
+
+    /// <summary>懒创建 tab VM：首次激活才 new 并触发加载（异步，列表区转圈）</summary>
+    private ViewModelBase GetOrCreateTab(string tab) => tab switch
+    {
+        "game" => _versionBrowse ??= CreateAndLoad(new VersionBrowseViewModel(), v => v.LoadAsync()),
+        "mod" => _mods ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Mod), e => e.InitializeAsync()),
+        "modpack" => _modpacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Modpack), e => e.InitializeAsync()),
+        "resourcepack" => _resourcepacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Resourcepack), e => e.InitializeAsync()),
+        "shader" => _shaders ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Shader), e => e.InitializeAsync()),
+        _ => throw new ArgumentOutOfRangeException(nameof(tab)),
+    };
+
+    private static T CreateAndLoad<T>(T vm, Func<T, Task> load)
+    {
+        _ = load(vm);
+        return vm;
     }
 
     private void OnActiveChanged(int active)

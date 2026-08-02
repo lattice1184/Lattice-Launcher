@@ -34,6 +34,7 @@ public partial class MainViewModel : ViewModelBase
         IsHomeActive = page == "home";
         IsDownloadsActive = page == "download";
         IsAccountActive = page == "account";
+        if (page == "download") Downloads.ActivateDefault();
         CurrentPage = page switch
         {
             "download" => Downloads,

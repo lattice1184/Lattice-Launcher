@@ -112,21 +112,12 @@
         </StackPanel>
 
         <Grid>
-            <!-- 下载游戏（版本浏览分栏） -->
-            <views:VersionBrowseView DataContext="{Binding VersionBrowse}"
-                                     IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsGameTabSelected}"/>
-            <!-- 下载记录（队列） -->
+            <!-- 下载记录（队列常驻，轻量无网络） -->
             <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
                             IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsQueueTabSelected}"/>
-            <!-- 资源下载（IsVisible 经 $parent[Grid] 取父 VM 的 tab 状态，避免 x:DataType 编译检查） -->
-            <views:EcosystemView DataContext="{Binding Mods}"
-                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsModTabSelected}"/>
-            <views:EcosystemView DataContext="{Binding Modpacks}"
-                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsModpackTabSelected}"/>
-            <views:EcosystemView DataContext="{Binding Resourcepacks}"
-                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsResourcepackTabSelected}"/>
-            <views:EcosystemView DataContext="{Binding Shaders}"
-                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsShaderTabSelected}"/>
+            <!-- 其余 tab：懒实例化（ActiveTab 首次激活才创建 → ViewLocator 解析视图，秒切） -->
+            <ContentControl Content="{Binding ActiveTab}"
+                            IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsNotQueueTabSelected}"/>
         </Grid>
     </DockPanel>
 </UserControl>

@@ -33,8 +33,8 @@ public static class ImageLoader
         }
         catch
         {
-            // 失败任务不永久缓存：移除后下次重新下载（网络恢复后可自愈）
-            Cache.TryRemove(url, out _);
+            // 失败也缓存 null：切 tab 反复重建视图时不再重复请求坏图（秒切换的关键）
+            Cache[url] = Task.FromResult<Bitmap?>(null);
             onLoaded(null);
         }
     }

@@ -34,6 +34,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- ListBox 默认虚拟化（Avalonia 12 内建），904 条只实例化可见项 -->
                 <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
                          Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
