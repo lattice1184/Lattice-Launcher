@@ -7,14 +7,30 @@ using Launcher.Core.Services;
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 生态列表页：类型 Tab + 防抖搜索 + 实例过滤 + 卡片流 + 四态 + 分页。
+/// 资源下载面板（下载板块的一个 tab）：防抖搜索 + 实例过滤 + 卡片流 + 四态 + 分页。
+/// 类型在构造时固定（下载页为每种类型建一个实例）；tab 切换由外层 DownloadViewModel 控制。
 /// </summary>
 public partial class EcosystemViewModel : ViewModelBase
 {
     private readonly EcosystemService _eco = new();
+    private readonly ProjectType _type;
     private CancellationTokenSource? _searchCts;
     private int _requestSeq;
     private int _offset;
+
+    public EcosystemViewModel(ProjectType type = ProjectType.Mod)
+    {
+        _type = type;
+    }
+
+    /// <summary>tab 显示名（MOD/整合包/材质包/光影包）</summary>
+    public string TabName => _type switch
+    {
+        ProjectType.Modpack => "整合包",
+        ProjectType.Resourcepack => "材质包",
+        ProjectType.Shader => "光影包",
+        _ => "MOD",
+    };
 
     public ObservableCollection<ProjectCardVM> Cards { get; } = [];
     public ObservableCollection<VersionInstanceVM> Instances { get; } = [];
@@ -50,24 +66,6 @@ public partial class EcosystemViewModel : ViewModelBase
     public partial bool IsDetailOpen { get; set; }
 
     partial void OnDetailChanged(ProjectDetailViewModel? value) => IsDetailOpen = value is not null;
-
-    // Tab 状态
-    [ObservableProperty]
-    public partial bool IsModTabSelected { get; set; } = true;
-
-    [ObservableProperty]
-    public partial bool IsModpackTabSelected { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsResourcepackTabSelected { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsShaderTabSelected { get; set; }
-
-    private ProjectType CurrentType => IsModpackTabSelected ? ProjectType.Modpack
-        : IsResourcepackTabSelected ? ProjectType.Resourcepack
-        : IsShaderTabSelected ? ProjectType.Shader
-        : ProjectType.Mod;
 
     /// <summary>初始化：扫描已装实例并触发首搜</summary>
     public async Task InitializeAsync()
@@ -123,7 +121,7 @@ public partial class EcosystemViewModel : ViewModelBase
                 loader = EcosystemService.GuessLoader(instance.Name);
             }
 
-            var resp = await _eco.SearchAsync(CurrentType, Query, gameVersion, loader,
+            var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader,
                 limit: 20, offset: _offset, ct);
             if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
 
@@ -145,16 +143,6 @@ public partial class EcosystemViewModel : ViewModelBase
         {
             if (seq == _requestSeq) IsLoading = false;
         }
-    }
-
-    [RelayCommand]
-    private void SelectTab(string tab)
-    {
-        IsModTabSelected = tab == "mod";
-        IsModpackTabSelected = tab == "modpack";
-        IsResourcepackTabSelected = tab == "resourcepack";
-        IsShaderTabSelected = tab == "shader";
-        DebouncedSearch();
     }
 
     [RelayCommand]

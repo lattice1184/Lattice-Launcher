@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
-             x:Class="Launcher.App.Views.VersionListView"
+             x:Class="Launcher.App.Views.VersionBrowseView"
              x:DataType="vm:VersionBrowseViewModel">
 
     <DockPanel>

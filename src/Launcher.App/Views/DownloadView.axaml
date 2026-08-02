@@ -3,6 +3,7 @@
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:core="using:Launcher.Core.Download"
              xmlns:app="using:Launcher.App.Converters"
+             xmlns:views="using:Launcher.App.Views"
              x:Class="Launcher.App.Views.DownloadView"
              x:DataType="vm:DownloadViewModel">
 
@@ -23,70 +24,104 @@
                         Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}"/>
             </Grid>
         </DataTemplate>
+
+        <!-- 下载队列（tab 内容） -->
+        <DataTemplate x:Key="QueuePanel" x:DataType="vm:DownloadViewModel">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="清除已完成" Classes="ghost" Padding="10,4"
+                            Command="{Binding ClearFinishedCommand}"/>
+                </Grid>
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Tasks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="core:DownloadTask">
+                                <Border Classes="row" Padding="12,8" Margin="0,0,0,1">
+                                    <Grid>
+                                        <!-- 组任务：展开显示文件级子任务 -->
+                                        <Expander IsVisible="{Binding HasChildren}" HorizontalAlignment="Stretch" Padding="0">
+                                            <Expander.Header>
+                                                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                                                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                                        <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Expander.Header>
+                                            <ItemsControl ItemsSource="{Binding Children}" Margin="2,6,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="core:DownloadTask">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{StaticResource TextSecondary}"/>
+                                                            <ProgressBar Grid.Column="1" Value="{Binding ProgressPercent}" Maximum="100"
+                                                                         Width="64" Height="4" VerticalAlignment="Center"
+                                                                         IsIndeterminate="{Binding !HasProgress}"/>
+                                                            <TextBlock Grid.Column="2" Text="{Binding ChildProgressText}" FontSize="11"
+                                                                       Foreground="{StaticResource TextDim}" Width="34" TextAlignment="Right"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+
+                                        <!-- 叶子任务：整行直出 -->
+                                        <StackPanel IsVisible="{Binding !HasChildren}" Spacing="4">
+                                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
+                                            <TextBlock Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="5"
+                                                         IsIndeterminate="{Binding !HasProgress}"/>
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                                <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
     <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
-            <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
-            <Button Grid.Column="1" Content="清除已完成" Classes="ghost" Padding="10,4"
-                    Command="{Binding ClearFinishedCommand}"/>
+        <!-- 板块 tab 栏：下载记录 / MOD / 整合包 / 材质包 / 光影包 -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+            <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
+            <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="mod"/>
+            <Button Content="整合包" Classes="tab" Classes.active="{Binding IsModpackTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="modpack"/>
+            <Button Content="材质包" Classes="tab" Classes.active="{Binding IsResourcepackTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
+            <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+        </StackPanel>
+
+        <Grid>
+            <!-- 下载记录（队列） -->
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
+                            IsVisible="{Binding IsQueueTabSelected}"/>
+            <!-- 资源下载（IsVisible 经 $parent[Grid] 取父 VM 的 tab 状态，避免 x:DataType 编译检查） -->
+            <views:EcosystemView DataContext="{Binding Mods}"
+                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsModTabSelected}"/>
+            <views:EcosystemView DataContext="{Binding Modpacks}"
+                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsModpackTabSelected}"/>
+            <views:EcosystemView DataContext="{Binding Resourcepacks}"
+                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsResourcepackTabSelected}"/>
+            <views:EcosystemView DataContext="{Binding Shaders}"
+                                 IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsShaderTabSelected}"/>
         </Grid>
-
-        <ScrollViewer>
-            <ItemsControl ItemsSource="{Binding Tasks}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="core:DownloadTask">
-                        <Border Classes="row" Padding="12,8" Margin="0,0,0,1">
-                            <Grid>
-                            <!-- 组任务：展开显示文件级子任务 -->
-                            <Expander IsVisible="{Binding HasChildren}" HorizontalAlignment="Stretch" Padding="0">
-                                <Expander.Header>
-                                    <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
-                                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
-                                        <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                        <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
-                                            <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                        </Grid>
-                                    </Grid>
-                                </Expander.Header>
-                                <ItemsControl ItemsSource="{Binding Children}" Margin="2,6,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="core:DownloadTask">
-                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
-                                                <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                           Foreground="{StaticResource TextSecondary}"/>
-                                                <ProgressBar Grid.Column="1" Value="{Binding ProgressPercent}" Maximum="100"
-                                                             Width="64" Height="4" VerticalAlignment="Center"
-                                                             IsIndeterminate="{Binding !HasProgress}"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding ChildProgressText}" FontSize="11"
-                                                           Foreground="{StaticResource TextDim}" Width="34" TextAlignment="Right"/>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </Expander>
-
-                            <!-- 叶子任务：整行直出 -->
-                            <StackPanel IsVisible="{Binding !HasChildren}" Spacing="4">
-                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
-                                <TextBlock Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
-                                           TextTrimming="CharacterEllipsis"/>
-                                <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="5"
-                                             IsIndeterminate="{Binding !HasProgress}"/>
-                                <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
-                                    <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                </Grid>
-                            </StackPanel>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
     </DockPanel>
 </UserControl>
