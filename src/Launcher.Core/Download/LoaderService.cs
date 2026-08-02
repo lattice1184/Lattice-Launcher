@@ -149,9 +149,12 @@ public sealed class LoaderService
     public Task InstallAsync(LoaderInstallPlan plan, DownloadGroupContext ctx, CancellationToken ct)
         => InstallCoreAsync(plan, null, ctx, ct);
 
+    private string? _lastInstalledVersionId;
+
     private async Task InstallCoreAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress,
         DownloadGroupContext? ctx, CancellationToken ct)
     {
+        _lastInstalledVersionId = null;
         switch (plan.Kind)
         {
             case LoaderKind.Fabric:
@@ -162,6 +165,9 @@ public sealed class LoaderService
                 await InstallInstallerAsync(plan, progress, ctx, ct);
                 break;
         }
+        // 本启动器安装标记（来源标签区分 PCL2 扫描版本）
+        if (_lastInstalledVersionId is { } id)
+            InstallMarker.Mark(_gameDirectory, id);
     }
 
     /// <summary>Fabric/Quilt：拉 profile json（inheritsFrom 原版）→ 写版本目录 → 全量下载（链解析下载 client jar 与库）</summary>
@@ -181,6 +187,7 @@ public sealed class LoaderService
                 version = JsonSerializer.Deserialize<VersionJson>(json)
                     ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
                 var id = VersionInstaller.SafeId(version.Id);
+                _lastInstalledVersionId = id;
                 var versionDir = Path.Combine(_gameDirectory, "versions", id);
                 Directory.CreateDirectory(versionDir);
                 await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, c);
@@ -197,6 +204,7 @@ public sealed class LoaderService
         var legacyVersion = JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
         var id = VersionInstaller.SafeId(legacyVersion.Id);
+        _lastInstalledVersionId = id;
         var versionDir = Path.Combine(_gameDirectory, "versions", id);
         Directory.CreateDirectory(versionDir);
         await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, ct);
@@ -230,6 +238,9 @@ public sealed class LoaderService
                 if (exitCode != 0)
                     throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
             }).Completion;
+
+            // 安装器写出的版本目录名不确定 → 取安装后最新修改的版本目录
+            _lastInstalledVersionId = FindNewestVersionDir();
             return;
         }
 
@@ -243,6 +254,18 @@ public sealed class LoaderService
             line => progress?.Invoke(new DownloadProgress(line, null, 0, 0, 0)), ct);
         if (exitCode != 0)
             throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
+    }
+
+    /// <summary>安装器写出的版本目录名不确定 → 取最近修改的版本目录（带 {id}.json 且无安装标记者优先）</summary>
+    private string? FindNewestVersionDir()
+    {
+        var versionsDir = Path.Combine(_gameDirectory, "versions");
+        if (!Directory.Exists(versionsDir)) return null;
+        return Directory.EnumerateDirectories(versionsDir)
+            .Where(d => File.Exists(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
+            .OrderByDescending(Directory.GetLastWriteTime)
+            .Select(Path.GetFileName)
+            .FirstOrDefault();
     }
 
     /// <summary>加载器版本 JSON 通过 inheritsFrom 继承原版，父版本必须已安装</summary>

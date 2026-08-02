@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.Core.Download;
 using Launcher.Core.Services;
+using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
 
@@ -273,6 +274,10 @@ public partial class VersionDetailViewModel : ViewModelBase
     [ObservableProperty]
     public partial LoaderPickerViewModel? Loader { get; set; }
 
+    /// <summary>版本管理（已安装时创建：删除/备份/导出/MOD/存档）</summary>
+    [ObservableProperty]
+    public partial VersionManageViewModel? Manage { get; set; }
+
     public string? ManifestUrl { get; private set; }
     public bool ShowDownloadButton => !Installed && !IsDownloading;
     public bool ShowProgress => IsDownloading;
@@ -302,6 +307,9 @@ public partial class VersionDetailViewModel : ViewModelBase
         SizeText = "预估体积：计算中…";
         HasSelection = true;
         Loader = new LoaderPickerViewModel(item.Id, () => _onInstalled(item.Id));
+        Manage = item.Installed
+            ? new VersionManageViewModel(GameDirectory.Detect(), item.Id, OnVersionDeleted)
+            : null;
         _ = LoadSizeAsync(item);
     }
 
@@ -335,6 +343,15 @@ public partial class VersionDetailViewModel : ViewModelBase
     public void RefreshInstalled(HashSet<string> installedSet)
     {
         if (HasSelection && installedSet.Contains(Id)) Installed = true;
+    }
+
+    /// <summary>版本删除成功：重扫 + 关闭详情</summary>
+    private void OnVersionDeleted()
+    {
+        _onInstalled(Id);
+        HasSelection = false;
+        Manage = null;
+        Loader = null;
     }
 
     [RelayCommand]

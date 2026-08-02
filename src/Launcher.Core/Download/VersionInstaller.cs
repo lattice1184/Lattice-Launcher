@@ -49,12 +49,18 @@ public sealed class VersionInstaller
     }
 
     /// <summary>全量安装（client jar / libraries / assets / logging），进度经 DownloadProgressHandler 上报（旧展平路径）</summary>
-    public Task InstallAsync(VersionJson version, DownloadProgressHandler? progress, CancellationToken ct)
-        => _downloads.DownloadVersionAsync(version, null, progress, ct);
+    public async Task InstallAsync(VersionJson version, DownloadProgressHandler? progress, CancellationToken ct)
+    {
+        await _downloads.DownloadVersionAsync(version, null, progress, ct);
+        InstallMarker.Mark(_gameDirectory, version.Id); // 本启动器安装标记（来源标签）
+    }
 
     /// <summary>全量安装（组任务路径：阶段全并行 + 文件级子任务）</summary>
-    public Task InstallAsync(VersionJson version, DownloadGroupContext ctx, CancellationToken ct)
-        => _downloads.DownloadVersionAsync(version, ctx, null, ct);
+    public async Task InstallAsync(VersionJson version, DownloadGroupContext ctx, CancellationToken ct)
+    {
+        await _downloads.DownloadVersionAsync(version, ctx, null, ct);
+        InstallMarker.Mark(_gameDirectory, version.Id);
+    }
 
     /// <summary>路径安全化：拒绝 .. 与分隔符（与启动管道一致）</summary>
     public static string SafeId(string id) => id.Replace("..", "").Replace('/', '_').Replace('\\', '_');

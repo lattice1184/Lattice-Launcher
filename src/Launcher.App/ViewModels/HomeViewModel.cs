@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Account;
+using Launcher.Core.Download;
 using Launcher.Core.Launch;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
@@ -86,7 +87,8 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>
     /// 刷新已安装版本列表（下载/安装完成后切回主页时调用——列表不能停留在启动时的快照）。
-    /// 来源标签：当前游戏目录来自 PCL2 / 本启动器 / 官方 / 自配。
+    /// 来源标签按版本判定：本启动器安装的标"本启动器"（.yanla-installed 标记）；
+    /// 否则标目录来源（PCL2 扫描 / 官方 / 自配）。
     /// </summary>
     public async Task RefreshVersionsAsync()
     {
@@ -94,12 +96,13 @@ public partial class HomeViewModel : ViewModelBase
         {
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            var sourceLabel = GameDirectory.SourceLabel(GameDirectory.DetectSource());
+            var gameDir = GameDirectory.Detect();
+            var dirLabel = GameDirectory.SourceLabel(GameDirectory.DetectSource());
             InstalledVersions.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                InstalledVersions.Add(new VersionInstanceVM(e.Id, sourceLabel));
+                InstalledVersions.Add(new VersionInstanceVM(e.Id, LabelFor(e.Id, gameDir, dirLabel)));
             // 目录扫描：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
-            var versionsDir = Path.Combine(GameDirectory.Detect(), "versions");
+            var versionsDir = Path.Combine(gameDir, "versions");
             if (Directory.Exists(versionsDir))
             {
                 foreach (var dir in Directory.EnumerateDirectories(versionsDir))
@@ -107,7 +110,7 @@ public partial class HomeViewModel : ViewModelBase
                     var id = Path.GetFileName(dir);
                     if (InstalledVersions.Any(v => v.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(dir, $"{id}.json")))
-                        InstalledVersions.Add(new VersionInstanceVM(id, sourceLabel));
+                        InstalledVersions.Add(new VersionInstanceVM(id, LabelFor(id, gameDir, dirLabel)));
                 }
             }
             if (InstalledVersions.Count > 0 && SelectedVersion is null)
@@ -115,6 +118,10 @@ public partial class HomeViewModel : ViewModelBase
         }
         catch { }
     }
+
+    /// <summary>版本标签：本启动器安装 → "本启动器"；否则目录来源（PCL2 扫描/官方/自配）</summary>
+    private static string LabelFor(string id, string gameDir, string dirLabel)
+        => InstallMarker.IsMarked(gameDir, id) ? "本启动器" : dirLabel;
 
     private void RefreshPlayer()
     {

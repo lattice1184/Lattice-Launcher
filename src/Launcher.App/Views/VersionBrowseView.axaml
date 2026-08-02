@@ -132,6 +132,79 @@
                                          IsVisible="{Binding Detail.Loader.IsInstalling}"/>
                         </StackPanel>
                     </Expander>
+
+                    <!-- 版本管理（PCL2 式：删除/备份/导出/打开/MOD/存档） -->
+                    <Expander Header="版本管理"
+                              IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="删除" Classes="ghost" FontSize="12" Padding="12,5"
+                                        Command="{Binding Detail.Manage.DeleteCommand}"/>
+                                <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5"
+                                        Command="{Binding Detail.Manage.BackupCommand}"
+                                        IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
+                                <Button Content="导出整合包" Classes="ghost" FontSize="12" Padding="12,5"
+                                        Command="{Binding Detail.Manage.ExportModpackCommand}"
+                                        IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
+                                <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"
+                                        Command="{Binding Detail.Manage.OpenFolderCommand}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Detail.Manage.StatusText}" Classes="sub" FontSize="12"
+                                       TextWrapping="Wrap"/>
+
+                            <!-- MOD 列表 -->
+                            <Expander Header="{Binding Detail.Manage.ModsCountText}">
+                                <StackPanel Spacing="4" Margin="0,6,0,0">
+                                    <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                            HorizontalAlignment="Left"
+                                            Command="{Binding Detail.Manage.OpenModsFolderCommand}"/>
+                                    <ItemsControl ItemsSource="{Binding Detail.Manage.Mods}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ModItemVM">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.ToggleModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Grid.Column="3" Content="删除" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.DeleteModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- 存档列表（世界名来自 level.dat，PCL.Core SaveManager 解析） -->
+                            <Expander Header="{Binding Detail.Manage.SavesCountText}">
+                                <StackPanel Spacing="4" Margin="0,6,0,0">
+                                    <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                            HorizontalAlignment="Left"
+                                            Command="{Binding Detail.Manage.OpenSavesFolderCommand}"/>
+                                    <ItemsControl ItemsSource="{Binding Detail.Manage.Saves}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SaveItemVM">
+                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                    <StackPanel Spacing="1">
+                                                        <TextBlock Text="{Binding LevelName}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding LastPlayedText}" Classes="dim" FontSize="10"/>
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="打开" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.OpenSaveFolderCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Expander>
                 </StackPanel>
                 </Grid>
             </Border>
