@@ -25,7 +25,7 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsAccountActive { get; set; }
 
     public HomeViewModel Home { get; } = new();
-    public VersionListViewModel Versions { get; } = new();
+    public VersionBrowseViewModel Versions { get; } = new();
     public DownloadViewModel Downloads { get; } = new();
     public EcosystemViewModel Ecosystem { get; } = new();
     public AccountViewModel Account { get; } = new();
