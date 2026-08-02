@@ -9,22 +9,29 @@ using Launcher.Core.Utils;
 namespace Launcher.Core.Download;
 
 /// <summary>
-/// 下载服务：大文件多连接 Range 分片并发（默认 8 段）+ 小文件单连接断点续传。
-/// SHA1 校验 + 幂等 + 416 防御 + 分片失败回退单连接。
+/// 下载服务：大文件多连接 Range 分片并发 + 小文件单连接断点续传。
+/// 外层换源回退：官方失败 → 镜像（BMCLAPI）→ 指数退避重试整轮；SHA1 校验 + 幂等 + 416 防御。
 /// </summary>
 public sealed class DownloadService
 {
-    private const int ChunkCount = 8;
     private const long ChunkThreshold = 2 * 1024 * 1024; // 2MB 以上走分片
 
     private readonly HttpClient _http;
-    private readonly IDlSourceMapper _sourceMapper;
+    private readonly IDlSourceResolver _resolver;
+    private readonly DownloadOptions _options;
     private readonly string _gameDirectory;
 
     public DownloadService(HttpClient? http = null, IDlSourceMapper? sourceMapper = null, string? gameDirectory = null)
+        : this(http, sourceMapper is null ? ResolvingDlSourceMapper.Default : new ResolvingDlSourceMapper(sourceMapper),
+            null, gameDirectory)
+    {
+    }
+
+    public DownloadService(HttpClient? http, IDlSourceResolver? resolver, DownloadOptions? options, string? gameDirectory)
     {
         _http = http ?? CreateClient();
-        _sourceMapper = sourceMapper ?? new DefaultDlSourceMapper();
+        _resolver = resolver ?? ResolvingDlSourceMapper.Default;
+        _options = options ?? DownloadOptions.Default;
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
     }
 
@@ -35,6 +42,10 @@ public sealed class DownloadService
         return client;
     }
 
+    /// <summary>
+    /// 下载文件。外层循环：每轮遍历候选源（官方→镜像），全失败后指数退避进入下一轮。
+    /// 校验失败（InvalidDataException）与网络错误（HttpRequestException）都触发换源。
+    /// </summary>
     public async Task DownloadFileAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress = null, CancellationToken ct = default)
@@ -51,6 +62,42 @@ public sealed class DownloadService
                 return;
         }
 
+        var sources = _resolver.Resolve(url);
+        var backoff = _options.BackoffProvider ?? RetryPolicy.Backoff;
+        Exception? last = null;
+
+        for (var attempt = 0; attempt < _options.MaxSourceAttempts; attempt++)
+        {
+            foreach (var src in sources)
+            {
+                try
+                {
+                    await DownloadFromSourceAsync(src, destPath, expectedSha1, expectedSize, progress, ct);
+                    return;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or InvalidDataException)
+                {
+                    last = ex;
+                }
+            }
+            if (attempt < _options.MaxSourceAttempts - 1)
+            {
+                var delay = backoff(attempt);
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
+            }
+        }
+        throw last ?? new InvalidOperationException($"下载失败: {url}");
+    }
+
+    /// <summary>单个候选源：定长走分片，否则单连接</summary>
+    private async Task DownloadFromSourceAsync(
+        string url, string destPath, string? expectedSha1, long? expectedSize,
+        DownloadProgressHandler? progress, CancellationToken ct)
+    {
         var totalSize = expectedSize ?? await GetContentLengthAsync(url, ct);
 
         if (totalSize >= ChunkThreshold)
@@ -59,10 +106,10 @@ public sealed class DownloadService
             await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
     }
 
-    /// <summary>单连接下载（断点续传 + 416 防御 + 校验失败限次重下）</summary>
+    /// <summary>单连接下载（断点续传 + 416 防御 + 校验失败抛 InvalidDataException 由外层换源）</summary>
     private async Task DownloadSingleAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, CancellationToken ct, int attemptsLeft = 1)
+        DownloadProgressHandler? progress, CancellationToken ct)
     {
         var from = File.Exists(destPath) ? new FileInfo(destPath).Length : 0;
 
@@ -73,7 +120,7 @@ public sealed class DownloadService
             from = 0;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, _sourceMapper.Map(url));
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (from > 0) request.Headers.Range = new RangeHeaderValue(from, null);
 
         using var response = await SendWith416RetryAsync(request, destPath, ct);
@@ -103,10 +150,7 @@ public sealed class DownloadService
         if (!ok)
         {
             File.Delete(destPath);
-            if (attemptsLeft > 0)
-                await DownloadSingleAsync(url, destPath, expectedSha1, expectedSize, progress, ct, attemptsLeft - 1);
-            else
-                throw new InvalidDataException($"下载校验失败（SHA1/大小不匹配）: {url}");
+            throw new InvalidDataException($"下载校验失败（SHA1/大小不匹配）: {url}");
         }
     }
 
@@ -135,14 +179,15 @@ public sealed class DownloadService
             var partDir = destPath + ".parts";
             Directory.CreateDirectory(partDir);
 
-            var chunkSize = totalSize / ChunkCount;
+            var chunkCount = Math.Max(1, _options.ChunkCount);
+            var chunkSize = totalSize / chunkCount;
             var downloadedBytes = 0L;
 
             var tasks = new List<Task>();
-            for (var i = 0; i < ChunkCount; i++)
+            for (var i = 0; i < chunkCount; i++)
             {
                 var start = i * chunkSize;
-                var end = i == ChunkCount - 1 ? totalSize - 1 : start + chunkSize - 1;
+                var end = i == chunkCount - 1 ? totalSize - 1 : start + chunkSize - 1;
                 var partPath = Path.Combine(partDir, $"{i}.part");
                 var expectedLen = end - start + 1;
 
@@ -166,7 +211,7 @@ public sealed class DownloadService
             // 合并
             await using (var dst = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                for (var i = 0; i < ChunkCount; i++)
+                for (var i = 0; i < chunkCount; i++)
                 {
                     var partPath = Path.Combine(partDir, $"{i}.part");
                     await using var part = File.OpenRead(partPath);
@@ -175,11 +220,11 @@ public sealed class DownloadService
             }
             Directory.Delete(partDir, true);
 
-            // SHA1 终校验，失败回退单连接重下
+            // SHA1 终校验失败 → 抛异常，外层换源重试
             if (expectedSha1 is not null && !await Sha1MatchesAsync(destPath, expectedSha1, ct))
             {
                 File.Delete(destPath);
-                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
+                throw new InvalidDataException($"分片下载校验失败: {url}");
             }
         }
         catch
@@ -195,7 +240,7 @@ public sealed class DownloadService
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, _sourceMapper.Map(url));
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Range = new RangeHeaderValue(start, end);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
@@ -210,12 +255,21 @@ public sealed class DownloadService
         }
     }
 
+    /// <summary>HEAD 取长度：试全部候选源，全失败返回 0（走单连接按响应长度下载）</summary>
     private async Task<long> GetContentLengthAsync(string url, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Head, _sourceMapper.Map(url));
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
-        return response.Content.Headers.ContentLength ?? 0;
+        foreach (var src in _resolver.Resolve(url))
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Head, src);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                response.EnsureSuccessStatusCode();
+                return response.Content.Headers.ContentLength ?? 0;
+            }
+            catch (Exception) { /* 试下一候选源 */ }
+        }
+        return 0;
     }
 
     private static async Task<bool> Sha1MatchesAsync(string path, string expected, CancellationToken ct)
@@ -229,7 +283,7 @@ public sealed class DownloadService
         catch (Exception) { return false; }
     }
 
-    // ---------- 版本编排 ----------
+    // ---------- 版本编排（旧展平路径；组任务路径见 VersionDownloadPipeline，D3 阶段接入） ----------
 
     /// <summary>
     /// 编排完整版本下载：client jar → libraries（含 natives classifier）→ assets index → assets 差量 → logging。
@@ -286,8 +340,8 @@ public sealed class DownloadService
             accumulated += client.Size ?? 0;
         }
 
-        // 2. libraries（文件级并行 4，逐文件报告）
-        using var semaphore = new SemaphoreSlim(4);
+        // 2. libraries（文件级并行，逐文件报告）
+        using var semaphore = new SemaphoreSlim(_options.LibraryConcurrency);
         var libraryTasks = new List<Task>();
         var libTotal = 0;
         foreach (var lib in version.Libraries ?? [])
@@ -344,13 +398,13 @@ public sealed class DownloadService
                 Wrap("下载资源索引", $"{assetIndex.Id}.json"), ct);
             accumulated += assetIndex.Size ?? 0;
 
-            // 4. assets 差量（文件级并行 8，按完成数报进度）
+            // 4. assets 差量（文件级并行，按完成数报进度）
             if (File.Exists(indexPath))
             {
                 var index = JsonSerializer.Deserialize<AssetsIndex>(
                     await File.ReadAllTextAsync(indexPath, ct));
                 var objectsDir = Path.Combine(assetsDir, "objects");
-                using var assetSemaphore = new SemaphoreSlim(8);
+                using var assetSemaphore = new SemaphoreSlim(_options.AssetConcurrency);
                 var assetTasks = new List<Task>();
                 var totalAssets = index.Objects.Count;
                 var doneAssets = 0;

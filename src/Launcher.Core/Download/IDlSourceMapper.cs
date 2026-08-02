@@ -8,6 +8,41 @@ public interface IDlSourceMapper
     string Map(string url);
 }
 
+/// <summary>官方 URL → 候选源列表（按优先级，去重）；失败时依次尝试</summary>
+public interface IDlSourceResolver
+{
+    IReadOnlyList<string> Resolve(string officialUrl);
+}
+
+/// <summary>
+/// 候选源解析：官方优先，回退镜像（BMCLAPI）。不可映射的 URL 只有单一候选。
+/// </summary>
+public sealed class ResolvingDlSourceMapper : IDlSourceResolver
+{
+    private readonly IDlSourceMapper _primary;
+    private readonly IDlSourceMapper? _fallback;
+
+    public ResolvingDlSourceMapper(IDlSourceMapper primary, IDlSourceMapper? fallback = null)
+    {
+        _primary = primary;
+        _fallback = fallback;
+    }
+
+    public static ResolvingDlSourceMapper Default { get; } =
+        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
+
+    public IReadOnlyList<string> Resolve(string url)
+    {
+        var list = new List<string> { _primary.Map(url) };
+        if (_fallback is not null)
+        {
+            var alt = _fallback.Map(url);
+            if (!list.Contains(alt)) list.Add(alt);
+        }
+        return list;
+    }
+}
+
 /// <summary>官方源直连</summary>
 public sealed class DefaultDlSourceMapper : IDlSourceMapper
 {
