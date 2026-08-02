@@ -17,7 +17,8 @@ public sealed record VersionJson(
     [property: JsonPropertyName("libraries")] List<LibraryJson>? Libraries,
     [property: JsonPropertyName("downloads")] DownloadsInfo? Downloads,
     [property: JsonPropertyName("javaVersion")] JavaVersionInfo? JavaVersion,
-    [property: JsonPropertyName("logging")] LoggingInfo? Logging);
+    [property: JsonPropertyName("logging")] LoggingInfo? Logging,
+    [property: JsonPropertyName("inheritsFrom")] string? InheritsFrom);
 
 public sealed record AssetIndexInfo(
     [property: JsonPropertyName("id")] string Id,

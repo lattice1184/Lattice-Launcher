@@ -1,29 +1,38 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.Core.Download;
 using Launcher.Core.Services;
 
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 版本列表：全部 / 正式版（前 10 折叠展开）/ 快照 / 愚人节 / 远古 分组。
+/// 版本列表：全部 / 正式版（前 10 折叠展开）/ 快照 / 愚人节 / 远古 分组，行内下载 + 进度。
 /// </summary>
 public partial class VersionListViewModel : ViewModelBase
 {
+    private readonly VersionManifestService _svc;
+    private readonly VersionInstaller _installer;
+
     public ObservableCollection<VersionGroupVM> Groups { get; } = [];
 
     [ObservableProperty]
     public partial string Status { get; set; } = "加载中…";
 
+    public VersionListViewModel()
+    {
+        _svc = new VersionManifestService();
+        _installer = new VersionInstaller();
+    }
+
     public async Task LoadAsync()
     {
         try
         {
-            var svc = new VersionManifestService();
-            await svc.RefreshAsync();
+            await _svc.RefreshAsync();
             Groups.Clear();
 
-            var all = svc.Entries.ToList();
+            var all = _svc.Entries.ToList();
             var release = all.Where(e => e.Type == "release" && !IsAprilFools(e)).ToList();
             var snapshot = all.Where(e => e.Type == "snapshot" && !IsAprilFools(e)).ToList();
             var april = all.Where(IsAprilFools).ToList();
@@ -35,7 +44,7 @@ public partial class VersionListViewModel : ViewModelBase
             Groups.Add(new VersionGroupVM($"愚人节 ({april.Count})", april.Select(ToVm)));
             Groups.Add(new VersionGroupVM($"远古 ({ancient.Count})", ancient.Select(ToVm)));
 
-            Status = $"共 {all.Count} 个版本 · 游戏目录已自动识别";
+            Status = $"共 {all.Count} 个版本 · 点击下载安装到本地";
         }
         catch (Exception ex)
         {
@@ -52,8 +61,19 @@ public partial class VersionListViewModel : ViewModelBase
             || id.Contains("combat") || id.Contains("21w14") || id.Contains("25w14");
     }
 
-    private static VersionEntryVM ToVm(VersionManifestService.GameVersionEntry e) =>
-        new(e.Id, e.Type, e.Installed, e.ReleaseTime.ToString("yyyy-MM-dd"));
+    private VersionEntryVM ToVm(VersionManifestService.GameVersionEntry e) =>
+        new(e.Id, e.Type, e.Installed, e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl, _installer, OnInstalled);
+
+    /// <summary>安装完成：重扫磁盘并点亮所有已装行（含其他分组）</summary>
+    private void OnInstalled(VersionEntryVM entry)
+    {
+        _svc.RescanInstalled();
+        var installedSet = new HashSet<string>(
+            _svc.Entries.Where(e => e.Installed).Select(e => e.Id), StringComparer.OrdinalIgnoreCase);
+        foreach (var g in Groups)
+            foreach (var item in g.All)
+                if (installedSet.Contains(item.Id)) item.Installed = true;
+    }
 }
 
 /// <summary>版本分组（正式版组支持前 10 折叠展开）</summary>
@@ -65,6 +85,7 @@ public partial class VersionGroupVM : ObservableObject
     public string Title { get; }
     public int Total { get; }
     public bool IsCollapsible { get; }
+    public IReadOnlyList<VersionEntryVM> All => _all;
 
     [ObservableProperty]
     public partial bool IsExpanded { get; set; }
@@ -91,4 +112,88 @@ public partial class VersionGroupVM : ObservableObject
     }
 }
 
-public sealed record VersionEntryVM(string Id, string Type, bool Installed, string ReleaseDate);
+/// <summary>版本行：下载按钮 / 已安装徽章 / 下载中迷你进度</summary>
+public partial class VersionEntryVM : ObservableObject
+{
+    private readonly VersionInstaller? _installer;
+    private readonly Action<VersionEntryVM>? _onInstalled;
+
+    public string Id { get; }
+    public string Type { get; }
+    public string ReleaseDate { get; }
+    public string? ManifestUrl { get; }
+
+    [ObservableProperty]
+    public partial bool Installed { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsDownloading { get; set; }
+
+    [ObservableProperty]
+    public partial double DownloadProgressPercent { get; set; }
+
+    [ObservableProperty]
+    public partial string ErrorText { get; set; } = "";
+
+    public bool ShowDownloadButton => !Installed && !IsDownloading;
+    public bool ShowProgress => IsDownloading;
+    public bool HasError => ErrorText.Length > 0;
+    public string DownloadProgressText => $"{DownloadProgressPercent:0}%";
+
+    public VersionEntryVM(string id, string type, bool installed, string releaseDate, string? manifestUrl,
+        VersionInstaller? installer = null, Action<VersionEntryVM>? onInstalled = null)
+    {
+        Id = id;
+        Type = type;
+        Installed = installed;
+        ReleaseDate = releaseDate;
+        ManifestUrl = manifestUrl;
+        _installer = installer;
+        _onInstalled = onInstalled;
+    }
+
+    [RelayCommand]
+    private async Task Download()
+    {
+        if (IsDownloading || Installed || _installer is null) return;
+        IsDownloading = true;
+        ErrorText = "";
+        try
+        {
+            var version = await _installer.GetOrFetchVersionJsonAsync(Id, ManifestUrl, CancellationToken.None);
+
+            var task = DownloadManager.Instance.Enqueue($"下载 {Id}", (p, ct) => _installer.InstallAsync(version, p, ct));
+            void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName == nameof(DownloadTask.ProgressPercent))
+                    DownloadProgressPercent = task.ProgressPercent;
+                if (e.PropertyName == nameof(DownloadTask.Error) && task.Error is { } err)
+                    ErrorText = err;
+            }
+            task.PropertyChanged += Sync;
+            try { await task.Completion; }
+            finally { task.PropertyChanged -= Sync; }
+
+            if (task.State == DownloadTaskState.Completed)
+            {
+                Installed = true;
+                _onInstalled?.Invoke(this);
+            }
+            else if (task.Error is { } failed)
+            {
+                ErrorText = failed;
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorText = ex.Message;
+        }
+        finally
+        {
+            IsDownloading = false;
+            OnPropertyChanged(nameof(ShowDownloadButton));
+            OnPropertyChanged(nameof(ShowProgress));
+            OnPropertyChanged(nameof(HasError));
+        }
+    }
+}

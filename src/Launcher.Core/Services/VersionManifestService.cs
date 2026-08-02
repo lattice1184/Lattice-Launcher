@@ -62,6 +62,13 @@ public sealed class VersionManifestService
         return JsonSerializer.Deserialize<VersionManifest>(json)!;
     }
 
+    /// <summary>磁盘重扫，就地更新 Installed 标记（版本/加载器安装完成后调用）</summary>
+    public void RescanInstalled()
+    {
+        var installed = ScanInstalledVersions();
+        _entries = _entries.Select(e => e with { Installed = installed.Contains(e.Id) }).ToList();
+    }
+
     private HashSet<string> ScanInstalledVersions()
     {
         var versionsDir = Path.Combine(_gameDirectory, "versions");

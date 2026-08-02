@@ -3,6 +3,7 @@ using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
+using Launcher.Core.Download;
 using Launcher.Core.Ecosystem;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
@@ -181,6 +182,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         CanInstall = false;
         InstallButtonText = "取消";
         Progress = 0;
+        ProgressState = "准备中…";
 
         try
         {
@@ -190,24 +192,39 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var version = _matchedVersion
                 ?? throw new InvalidOperationException("没有匹配的可用版本");
 
-            var report = await Task.Run(async () =>
+            var gameVersion = EcosystemService.TryParseGameVersion(_instance?.Name ?? "", out var gv)
+                ? gv
+                : version.GameVersions?.FirstOrDefault() ?? "";
+            var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
+            var instanceName = _instance?.Name ?? "modpack";
+
+            // 经全局下载中心执行（后台线程 + 队列 UI + 内联进度双显示，一处真相）
+            DependencyInstallReport? report = null;
+            var task = DownloadManager.Instance.Enqueue($"安装 {_card.Title}", async (p, t) =>
             {
-                var progress = new Progress<double>(p => Progress = p);
-                var gameVersion = EcosystemService.TryParseGameVersion(_instance?.Name ?? "", out var gv)
-                    ? gv
-                    : version.GameVersions?.FirstOrDefault() ?? "";
-                var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
-                ProgressState = "正在下载并解析依赖…";
-                return await _eco.InstallWithDependenciesAsync(
-                    _card.Id, version, _instance?.Name ?? "modpack", _card.Type,
-                    gameVersion, loader, progress, ct);
-            }, ct);
+                report = await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
+                    gameVersion, loader,
+                    dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+            });
+            if (ct.CanBeCanceled) ct.Register(() => task.Cancel());
+
+            // 内联进度区订阅同一任务属性
+            void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
+            {
+                if (e.PropertyName == nameof(DownloadTask.ProgressPercent)) Progress = task.ProgressPercent;
+                else if (e.PropertyName == nameof(DownloadTask.Stage)) ProgressState = task.Stage;
+                else if (e.PropertyName == nameof(DownloadTask.State)) { ProgressState = task.StateText; IsInstalling = task.IsActive; }
+                else if (e.PropertyName == nameof(DownloadTask.Error) && task.Error is { } err) ErrorMessage = err;
+            }
+            task.PropertyChanged += Sync;
+            try { await task.Completion; }
+            finally { task.PropertyChanged -= Sync; }
 
             if (ct.IsCancellationRequested)
             {
                 ProgressState = "已取消";
             }
-            else if (report.AllSucceeded)
+            else if (task.State == DownloadTaskState.Completed && report is { AllSucceeded: true })
             {
                 InstalledPath = report.Installed.Count > 0 ? report.Installed[0].Path : "";
                 var depCount = report.Installed.Count - 1;
@@ -221,11 +238,22 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 Progress = 100;
                 InstallButtonText = "已安装";
             }
-            else
+            else if (task.State == DownloadTaskState.Completed)
             {
-                var failed = string.Join("; ", report.Failed.Select(f => $"{f.ProjectId}: {f.Reason}"));
+                var failed = report is null ? "" : string.Join("; ", report.Failed.Select(f => $"{f.ProjectId}: {f.Reason}"));
                 ErrorMessage = $"部分安装失败: {failed}";
                 ProgressState = "部分失败";
+                InstallButtonText = "安装";
+            }
+            else if (task.State == DownloadTaskState.Failed)
+            {
+                ErrorMessage = task.Error ?? "未知错误";
+                ProgressState = "安装失败";
+                InstallButtonText = "安装";
+            }
+            else
+            {
+                ProgressState = task.StateText;
                 InstallButtonText = "安装";
             }
         }

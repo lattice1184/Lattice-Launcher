@@ -72,7 +72,7 @@ public sealed class EcosystemService
     /// </summary>
     public async Task<string> InstallAsync(
         string projectId, ModrinthVersion version, string instanceId, ProjectType type,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
         var file = PickPrimaryFile(version.Files)
             ?? throw new InvalidOperationException("该版本没有可下载文件");
@@ -94,7 +94,7 @@ public sealed class EcosystemService
     public async Task<DependencyInstallReport> InstallWithDependenciesAsync(
         string projectId, ModrinthVersion version, string instanceId, ProjectType type,
         string? gameVersion, string? loader,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
         var report = new DependencyInstallReport();
 

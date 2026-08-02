@@ -20,4 +20,8 @@
     <ProjectReference Include="..\..\PCL.Core\PCL.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
 </Project>

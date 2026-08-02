@@ -8,19 +8,19 @@
         x:DataType="vm:MainViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="YanKa Launcher" Width="860" Height="560" MinWidth="760" MinHeight="500"
-        TransparencyLevelHint="AcrylicBlur"
+        TransparencyLevelHint="AcrylicBlur,Blur,None"
         Background="Transparent"
-        TransparencyBackgroundFallback="#F01A1C20">
+        TransparencyBackgroundFallback="#FF1A1C20">
 
     <Design.DataContext>
         <vm:MainViewModel />
     </Design.DataContext>
 
     <!-- 亚克力半透明背景层 -->
-    <Border Background="#E61A1C20" CornerRadius="8" BorderBrush="#332F3745" BorderThickness="1">
+    <Border x:Name="RootSurface" Background="#E61A1C20" CornerRadius="8" BorderBrush="#332F3745" BorderThickness="1">
         <DockPanel>
             <!-- 左侧导航（液态玻璃） -->
-            <ExperimentalAcrylicBorder DockPanel.Dock="Left" Width="170" CornerRadius="0">
+            <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="170" CornerRadius="0">
                 <ExperimentalAcrylicBorder.Material>
                     <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                                  TintColor="#14181F"
@@ -38,9 +38,17 @@
                     <Button Content="生态" Classes="nav" Classes.active="{Binding IsEcosystemActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="ecosystem"
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
-                    <Button Content="下载" Classes="nav" Classes.active="{Binding IsDownloadsActive}"
+                    <Button Classes="nav" Classes.active="{Binding IsDownloadsActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="download"
-                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="下载"/>
+                            <Border Background="#2DD4BF" CornerRadius="8" Padding="6,1"
+                                    VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
+                                <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="#0B1F1C" FontSize="11"/>
+                            </Border>
+                        </StackPanel>
+                    </Button>
                     <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="account"
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>

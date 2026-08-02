@@ -25,19 +25,27 @@ public partial class App : Application
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
             LogService.FatalErrorReporter = message => System.Console.Error.WriteLine($"[FATAL] {message}");
 
-            // 启动 PCL.Core 生命周期（Avalonia 驱动消息循环，不运行 WPF 容器）
-            Lifecycle.OnInitialize();
+            // 启动 PCL.Core 生命周期（Avalonia 驱动消息循环，不运行 WPF 容器）。
+            // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
+            Guard("Lifecycle.OnInitialize", () => Lifecycle.OnInitialize());
 
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainViewModel(),
             };
 
-            Lifecycle.OnLoading();
-            Lifecycle.OnWindowCreated();
-            desktop.Exit += (_, _) => Lifecycle.Shutdown();
+            Guard("Lifecycle.OnLoading", () => Lifecycle.OnLoading());
+            Guard("Lifecycle.OnWindowCreated", () => Lifecycle.OnWindowCreated());
+            desktop.Exit += (_, _) => Guard("Lifecycle.Shutdown", () => Lifecycle.Shutdown());
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>生命周期调用兜底：异常只记录，不阻止窗口创建</summary>
+    private static void Guard(string what, Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { System.Console.Error.WriteLine($"[FATAL] {what}: {ex}"); }
     }
 }

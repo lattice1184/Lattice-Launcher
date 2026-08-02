@@ -5,7 +5,8 @@ namespace Launcher.Core.Launch;
 
 /// <summary>
 /// JVM 与游戏参数组装：从版本 JSON 展开 libraries（rules + natives）→ classpath，
-/// 按 新版 arguments / 旧版 minecraftArguments 组装完整启动参数。
+/// 解析 inheritsFrom 链（加载器版本继承原版），发射 arguments.jvm / arguments.game，
+/// classpath 统一在 JVM 参数末尾追加（加载器 json 中的 ${classpath} 由本构建器计算并过滤）。
 /// </summary>
 public sealed class JavaArgumentsBuilder
 {
@@ -35,15 +36,24 @@ public sealed class JavaArgumentsBuilder
     /// <param name="accountUuid">UUID（离线为 OfflinePlayer 哈希）</param>
     /// <param name="accessToken">访问令牌（离线固定值）</param>
     /// <param name="memoryMb">内存上限 MB</param>
-    /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等）</param>
-    /// <param name="language">游戏语言（默认 zh_cn 自动中文）</param>
+    /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等，用户覆盖优先）</param>
     public LaunchProfile Build(
         VersionJson version, string gameDir, string javaPath,
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs = null)
     {
+        // 0. inheritsFrom 链解析（Forge/NeoForge/Fabric 生成的 version.json 继承原版）
+        var v = version;
+        if (v.InheritsFrom is { } parentId)
+        {
+            v = VersionJsonMerger.ResolveChain(v, id => LoadParent(gameDir, id));
+            if (v.InheritsFrom is { } unresolved)
+                throw new FileNotFoundException(
+                    $"加载器版本依赖的父版本 {unresolved} 未安装（请先在版本页安装原版 {unresolved}）");
+        }
+
         // 防御：版本 id 拼入文件路径前净化（拒绝 .. 与分隔符）
-        var safeId = version.Id.Replace("..", "").Replace('/', '_').Replace('\\', '_');
+        var safeId = v.Id.Replace("..", "").Replace('/', '_').Replace('\\', '_');
         var versionDir = Path.Combine(gameDir, "versions", safeId);
         var librariesDir = Path.Combine(gameDir, "libraries");
         var assetsDir = Path.Combine(gameDir, "assets");
@@ -54,7 +64,7 @@ public sealed class JavaArgumentsBuilder
             Path.Combine(versionDir, $"{safeId}.jar"),
         };
         var nativesJars = new List<string>();
-        foreach (var lib in version.Libraries ?? [])
+        foreach (var lib in v.Libraries ?? [])
         {
             if (!_rules.IsAllowed(lib.Rules)) continue;
             // natives 判定：旧版 natives 字段映射 或 新版独立条目（classifier 以 natives- 开头且含 OS 名）
@@ -81,7 +91,10 @@ public sealed class JavaArgumentsBuilder
         var nativesDir = Path.Combine(versionDir, $"{safeId}-natives");
         Directory.CreateDirectory(nativesDir);
 
-        // 3. 参数模板
+        // 3. 共享 token（game/jvm 参数替换）
+        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken);
+
+        // 4. 基础 JVM 参数
         var jvmArgs = new List<string>
         {
             $"-Xmx{memoryMb}m",
@@ -89,26 +102,64 @@ public sealed class JavaArgumentsBuilder
             $"-Djava.library.path={nativesDir}",
             "-Dminecraft.launcher.brand=YanKaLauncher",
             "-Dminecraft.launcher.version=0.1.0",
-            "-Dlog4j.configurationFile=" + (version.Logging?.Client?.File?.Url is { } logUrl
+            "-Dlog4j.configurationFile=" + (v.Logging?.Client?.File?.Url is { } logUrl
                 ? "file:///" + Path.Combine(assetsDir, "log_configs", Path.GetFileName(new Uri(logUrl).LocalPath)).Replace('\\', '/')
                 : ""),
         };
+
+        // 5. 版本 JSON 的 arguments.jvm（加载器专用：-p bootstraplauncher / --add-modules 等）
+        AppendJsonArgs(jvmArgs, v.Arguments?.Jvm, tokens);
+
+        // 6. 额外参数（用户覆盖优先）
         if (extraJvmArgs is not null) jvmArgs.AddRange(extraJvmArgs);
 
-        // 4. 游戏参数
-        var gameArgs = BuildGameArgs(version, gameDir, assetsDir, accountName, accountUuid, accessToken);
+        // 7. classpath 统一末尾追加（跳过 json 中的 ${classpath}/-cp，避免重复）
+        jvmArgs.Add("-cp");
+        jvmArgs.Add(classPath);
+
+        // 8. 游戏参数
+        var gameArgs = BuildGameArgs(v, tokens);
 
         return new LaunchProfile(javaPath, [.. jvmArgs], gameArgs, gameDir, classPath,
-            version.MainClass ?? "net.minecraft.client.main.Main", "", nativesDir, [.. nativesJars]);
+            v.MainClass ?? "net.minecraft.client.main.Main", "", nativesDir, [.. nativesJars]);
     }
 
-    private string[] BuildGameArgs(
-        VersionJson version, string gameDir, string assetsDir,
+    /// <summary>追加 arguments.jvm：字符串或 {rules, value}；跳过 ${classpath}/-cp；与现有参数去重</summary>
+    private void AppendJsonArgs(List<string> jvmArgs, List<JsonElement>? jsonArgs, Dictionary<string, string> tokens)
+    {
+        if (jsonArgs is null) return;
+        foreach (var el in jsonArgs)
+        {
+            if (el.ValueKind == JsonValueKind.String)
+                AddJvmArg(jvmArgs, ReplaceTokens(el.GetString()!, tokens));
+            else if (el.ValueKind == JsonValueKind.Object)
+            {
+                var rules = el.GetProperty("rules").Deserialize<List<RuleJson>>();
+                if (!_rules.IsAllowed(rules)) continue;
+                var value = el.GetProperty("value");
+                if (value.ValueKind == JsonValueKind.String)
+                    AddJvmArg(jvmArgs, ReplaceTokens(value.GetString()!, tokens));
+                else if (value.ValueKind == JsonValueKind.Array)
+                    foreach (var val in value.EnumerateArray())
+                        AddJvmArg(jvmArgs, ReplaceTokens(val.GetString()!, tokens));
+            }
+        }
+    }
+
+    private static void AddJvmArg(List<string> jvmArgs, string arg)
+    {
+        if (string.IsNullOrEmpty(arg)) return;
+        if (arg.Contains("${classpath}", StringComparison.OrdinalIgnoreCase) || arg == "-cp") return;
+        if (!jvmArgs.Contains(arg)) jvmArgs.Add(arg);
+    }
+
+    private static Dictionary<string, string> BuildTokens(
+        VersionJson version, string gameDir, string assetsDir, string nativesDir,
         string accountName, string accountUuid, string accessToken)
     {
         var gameDirArg = gameDir.Replace('\\', '/');
         var assetsIndexId = version.AssetIndex?.Id ?? version.Assets ?? "legacy";
-        var tokens = new Dictionary<string, string>
+        return new Dictionary<string, string>
         {
             ["auth_player_name"] = accountName,
             ["auth_uuid"] = accountUuid,
@@ -124,27 +175,33 @@ public sealed class JavaArgumentsBuilder
             ["version_type"] = version.Type ?? "release",
             ["resolution_width"] = "854",
             ["resolution_height"] = "480",
+            ["natives_directory"] = nativesDir,
+            ["launcher_name"] = "YanKaLauncher",
+            ["launcher_version"] = "0.1.0",
         };
+    }
 
+    private string[] BuildGameArgs(VersionJson version, Dictionary<string, string> tokens)
+    {
         // 新版：arguments.game（混合字符串与规则对象）
         if (version.Arguments?.Game is { } gameList)
         {
             var args = new List<string>();
             foreach (var el in gameList)
             {
-                if (el.ValueKind == System.Text.Json.JsonValueKind.String)
+                if (el.ValueKind == JsonValueKind.String)
                     args.Add(ReplaceTokens(el.GetString()!, tokens));
-                else if (el.ValueKind == System.Text.Json.JsonValueKind.Object)
+                else if (el.ValueKind == JsonValueKind.Object)
                 {
                     var rules = el.GetProperty("rules").Deserialize<List<RuleJson>>();
                     if (_rules.IsAllowed(rules))
                     {
                         var value = el.GetProperty("value");
-                        if (value.ValueKind == System.Text.Json.JsonValueKind.String)
+                        if (value.ValueKind == JsonValueKind.String)
                             args.Add(ReplaceTokens(value.GetString()!, tokens));
-                        else if (value.ValueKind == System.Text.Json.JsonValueKind.Array)
-                            foreach (var v in value.EnumerateArray())
-                                args.Add(ReplaceTokens(v.GetString()!, tokens));
+                        else if (value.ValueKind == JsonValueKind.Array)
+                            foreach (var val in value.EnumerateArray())
+                                args.Add(ReplaceTokens(val.GetString()!, tokens));
                     }
                 }
             }
@@ -174,6 +231,15 @@ public sealed class JavaArgumentsBuilder
             && parts[3].Contains(_rules.OsName, StringComparison.OrdinalIgnoreCase))
             return (true, lib.Name, false);
         return (false, null, false);
+    }
+
+    /// <summary>读磁盘上的父版本 JSON（版本页已下载的原版）</summary>
+    private static VersionJson? LoadParent(string gameDir, string id)
+    {
+        var path = Path.Combine(gameDir, "versions", id, $"{id}.json");
+        if (!File.Exists(path)) return null;
+        try { return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(path)); }
+        catch (Exception) { return null; }
     }
 
     private static string ReplaceTokens(string arg, Dictionary<string, string> tokens)

@@ -37,7 +37,7 @@ public sealed class DownloadService
 
     public async Task DownloadFileAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        IProgress<double>? progress = null, CancellationToken ct = default)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
 
@@ -62,7 +62,7 @@ public sealed class DownloadService
     /// <summary>单连接下载（断点续传 + 416 防御 + 校验失败限次重下）</summary>
     private async Task DownloadSingleAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        IProgress<double>? progress, CancellationToken ct, int attemptsLeft = 1)
+        DownloadProgressHandler? progress, CancellationToken ct, int attemptsLeft = 1)
     {
         var from = File.Exists(destPath) ? new FileInfo(destPath).Length : 0;
 
@@ -90,7 +90,8 @@ public sealed class DownloadService
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
                 read += n;
-                progress?.Report(total > 0 ? read * 100.0 / total : 0);
+                progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
+                    total > 0 ? read * 100.0 / total : 0));
             }
             await dst.FlushAsync(ct);
         }
@@ -127,7 +128,7 @@ public sealed class DownloadService
     /// <summary>多连接 Range 分片下载：分片并行（单片重试 1 次）→ 合并 → SHA1 校验；整体失败回退单连接</summary>
     private async Task DownloadChunkedAsync(
         string url, string destPath, long totalSize, string? expectedSha1,
-        IProgress<double>? progress, CancellationToken ct)
+        DownloadProgressHandler? progress, CancellationToken ct)
     {
         try
         {
@@ -156,7 +157,8 @@ public sealed class DownloadService
                 {
                     await DownloadChunkAsync(url, partPath, start, end, ct);
                     Interlocked.Add(ref downloadedBytes, expectedLen);
-                    progress?.Report(totalSize > 0 ? downloadedBytes * 100.0 / totalSize : 0);
+                    progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), downloadedBytes, totalSize,
+                        totalSize > 0 ? downloadedBytes * 100.0 / totalSize : 0));
                 }, ct));
             }
             await Task.WhenAll(tasks);
@@ -229,24 +231,71 @@ public sealed class DownloadService
 
     // ---------- 版本编排 ----------
 
-    /// <summary>编排完整版本下载：client jar → libraries（含 natives classifier）→ assets index → assets 差量 → logging</summary>
+    /// <summary>
+    /// 编排完整版本下载：client jar → libraries（含 natives classifier）→ assets index → assets 差量 → logging。
+    /// 进度报告：阶段文字 + 当前文件 + 文件级字节 + 整体百分比（按预估总字节加权，跨文件累计）。
+    /// </summary>
     public async Task DownloadVersionAsync(
-        VersionJson version, IProgress<double>? progress = null, CancellationToken ct = default)
+        VersionJson version, DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
+        // 加载器版本：解析 inheritsFrom 链（父版本必须已安装；client jar 沿链继承后落子版本目录）
+        if (version.InheritsFrom is not null)
+        {
+            version = VersionJsonMerger.ResolveChain(version, LoadParentJson);
+            if (version.InheritsFrom is { } unresolved)
+                throw new FileNotFoundException(
+                    $"依赖的父版本 {unresolved} 未安装（请先在版本页安装原版 {unresolved}）");
+        }
+
         var versionDir = Path.Combine(_gameDirectory, "versions", version.Id);
         var librariesDir = Path.Combine(_gameDirectory, "libraries");
         var assetsDir = Path.Combine(_gameDirectory, "assets");
+
+        // 预估总字节（整体百分比分母）
+        var librariesBytes = 0L;
+        foreach (var lib in version.Libraries ?? [])
+        {
+            librariesBytes += lib.Downloads?.Artifact?.Size ?? 0;
+            if (lib.Downloads?.Classifiers is { } classifiers)
+                librariesBytes += classifiers.Values.Sum(c => c.Size ?? 0);
+        }
+        var assetsBytes = version.AssetIndex?.TotalSize ?? 0;
+        var estimated = (version.Downloads?.Client?.Size ?? 0) + librariesBytes
+                        + (version.AssetIndex?.Size ?? 0) + assetsBytes
+                        + (version.Logging?.Client?.File?.Size ?? 0);
+
+        // 文件级进度包装：阶段 + 文件名 + 整体百分比（跨文件累计；并发报告为近似值，可接受）
+        var accumulated = 0L;
+        DownloadProgressHandler? Wrap(string stage, string? fileName)
+        {
+            if (progress is null) return null;
+            long fileDone = 0;
+            return p =>
+            {
+                if (p.FileBytesDone > fileDone) fileDone = p.FileBytesDone;
+                var overall = estimated > 0 ? (accumulated + fileDone) * 100.0 / estimated : p.OverallPercent;
+                progress(new DownloadProgress(stage, fileName, p.FileBytesDone, p.FileTotalBytes, overall));
+            };
+        }
 
         // 1. client jar
         if (version.Downloads?.Client is { } client)
         {
             await DownloadFileAsync(client.Url, Path.Combine(versionDir, $"{version.Id}.jar"),
-                client.Sha1, client.Size, progress, ct);
+                client.Sha1, client.Size, Wrap("下载客户端", $"{version.Id}.jar"), ct);
+            accumulated += client.Size ?? 0;
         }
 
-        // 2. libraries（文件级并行 4）
+        // 2. libraries（文件级并行 4，逐文件报告）
         using var semaphore = new SemaphoreSlim(4);
         var libraryTasks = new List<Task>();
+        var libTotal = 0;
+        foreach (var lib in version.Libraries ?? [])
+        {
+            if (lib.Downloads?.Artifact is not null) libTotal++;
+            if (lib.Natives is not null) libTotal++;
+        }
+        var libIndex = 0;
         foreach (var lib in version.Libraries ?? [])
         {
             var artifact = lib.Downloads?.Artifact;
@@ -256,7 +305,12 @@ public sealed class DownloadService
                 libraryTasks.Add(Task.Run(async () =>
                 {
                     await semaphore.WaitAsync(ct);
-                    try { await DownloadFileAsync(artifact.Url, path, artifact.Sha1, artifact.Size, null, ct); }
+                    try
+                    {
+                        var n = Interlocked.Increment(ref libIndex);
+                        await DownloadFileAsync(artifact.Url, path, artifact.Sha1, artifact.Size,
+                            Wrap($"下载库文件 {n}/{libTotal}", MavenPath.FileName(lib.Name)), ct);
+                    }
                     finally { semaphore.Release(); }
                 }, ct));
             }
@@ -269,20 +323,28 @@ public sealed class DownloadService
                 libraryTasks.Add(Task.Run(async () =>
                 {
                     await semaphore.WaitAsync(ct);
-                    try { await DownloadFileAsync(nativeFile.Url, nativePath, nativeFile.Sha1, nativeFile.Size, null, ct); }
+                    try
+                    {
+                        var n = Interlocked.Increment(ref libIndex);
+                        await DownloadFileAsync(nativeFile.Url, nativePath, nativeFile.Sha1, nativeFile.Size,
+                            Wrap($"下载库文件 {n}/{libTotal}", nativeName), ct);
+                    }
                     finally { semaphore.Release(); }
                 }, ct));
             }
         }
         await Task.WhenAll(libraryTasks);
+        accumulated += librariesBytes;
 
         // 3. assets index
         if (version.AssetIndex is { } assetIndex)
         {
             var indexPath = Path.Combine(assetsDir, "indexes", $"{assetIndex.Id}.json");
-            await DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size, progress, ct);
+            await DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size,
+                Wrap("下载资源索引", $"{assetIndex.Id}.json"), ct);
+            accumulated += assetIndex.Size ?? 0;
 
-            // 4. assets 差量（文件级并行 8）
+            // 4. assets 差量（文件级并行 8，按完成数报进度）
             if (File.Exists(indexPath))
             {
                 var index = JsonSerializer.Deserialize<AssetsIndex>(
@@ -290,19 +352,36 @@ public sealed class DownloadService
                 var objectsDir = Path.Combine(assetsDir, "objects");
                 using var assetSemaphore = new SemaphoreSlim(8);
                 var assetTasks = new List<Task>();
+                var totalAssets = index.Objects.Count;
+                var doneAssets = 0;
                 foreach (var (hash, obj) in index.Objects)
                 {
                     var objPath = Path.Combine(objectsDir, hash[..2], hash);
-                    if (File.Exists(objPath) && new FileInfo(objPath).Length == obj.Size) continue;
+                    if (File.Exists(objPath) && new FileInfo(objPath).Length == obj.Size)
+                    {
+                        Interlocked.Increment(ref doneAssets);
+                        continue;
+                    }
                     var url = $"https://resources.download.minecraft.net/{hash[..2]}/{hash}";
                     assetTasks.Add(Task.Run(async () =>
                     {
                         await assetSemaphore.WaitAsync(ct);
-                        try { await DownloadFileAsync(url, objPath, hash, obj.Size, null, ct); }
+                        try
+                        {
+                            await DownloadFileAsync(url, objPath, hash, obj.Size,
+                                Wrap($"下载资源 {Volatile.Read(ref doneAssets)}/{totalAssets}", hash), ct);
+                            var n = Interlocked.Increment(ref doneAssets);
+                            if (progress is not null)
+                                progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", hash, n, totalAssets,
+                                    estimated > 0
+                                        ? (accumulated + (long)((double)n / totalAssets * assetsBytes)) * 100.0 / estimated
+                                        : 0));
+                        }
                         finally { assetSemaphore.Release(); }
                     }, ct));
                 }
                 await Task.WhenAll(assetTasks);
+                accumulated += assetsBytes;
             }
         }
 
@@ -311,8 +390,19 @@ public sealed class DownloadService
         {
             var fileName = Path.GetFileName(new Uri(logFile.Url).LocalPath);
             var logPath = Path.Combine(assetsDir, "log_configs", fileName);
-            await DownloadFileAsync(logFile.Url, logPath, logFile.Sha1, logFile.Size, progress, ct);
+            await DownloadFileAsync(logFile.Url, logPath, logFile.Sha1, logFile.Size,
+                Wrap("日志配置", fileName), ct);
+            accumulated += logFile.Size ?? 0;
         }
+    }
+
+    /// <summary>读磁盘上的父版本 JSON（inheritsFrom 链用）</summary>
+    private VersionJson? LoadParentJson(string id)
+    {
+        var path = Path.Combine(_gameDirectory, "versions", id, $"{id}.json");
+        if (!File.Exists(path)) return null;
+        try { return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(path)); }
+        catch (Exception) { return null; }
     }
 
     private sealed record AssetsIndex(

@@ -25,9 +25,8 @@ public sealed class LaunchProcess
             StandardOutputEncoding = System.Text.Encoding.UTF8,
             StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
+        // JvmArgs 已含 -cp + classpath（JavaArgumentsBuilder 统一末尾追加）；这里补主类与游戏参数
         foreach (var arg in profile.JvmArgs) psi.ArgumentList.Add(arg);
-        psi.ArgumentList.Add("-cp");
-        psi.ArgumentList.Add(profile.ClassPath);
         psi.ArgumentList.Add(profile.MainClass);
         foreach (var arg in profile.GameArgs) psi.ArgumentList.Add(arg);
 
