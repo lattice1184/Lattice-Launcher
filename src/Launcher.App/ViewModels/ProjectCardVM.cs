@@ -14,6 +14,7 @@ public partial class ProjectCardVM : ObservableObject
     public string Description { get; }
     public string DownloadsText { get; }
     public string FollowsText { get; }
+    public string UpdatedText { get; }
     public string IconUrl { get; }
     public ProjectType Type { get; }
     public string Initial => Title.Length > 0 ? Title[..1] : "?";
@@ -29,6 +30,7 @@ public partial class ProjectCardVM : ObservableObject
         Description = hit.Description;
         DownloadsText = FormatCount(hit.Downloads);
         FollowsText = FormatCount(hit.Follows);
+        UpdatedText = FormatDate(hit.DateModified);
         IconUrl = hit.IconUrl ?? "";
         Type = hit.ProjectType switch
         {
@@ -47,6 +49,10 @@ public partial class ProjectCardVM : ObservableObject
         >= 1_000 => $"{n / 1_000.0:0.#}K",
         _ => n.ToString(),
     };
+
+    /// <summary>最后更新时间："更新于 2026-07-20"（异常/默认值容错）</summary>
+    private static string FormatDate(DateTime d)
+        => d.Year > 2000 ? $"更新于 {d:yyyy-MM-dd}" : "";
 }
 
 /// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）</summary>

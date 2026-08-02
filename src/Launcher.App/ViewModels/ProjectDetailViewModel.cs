@@ -301,7 +301,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
     }
 }
 
-/// <summary>版本选项（手动选择用）</summary>
+/// <summary>版本选项（手动选择用）；推荐（Featured）标记 + 发布时间</summary>
 public sealed record VersionOptionVM(ModrinthVersion Source)
 {
     public string Display
@@ -313,4 +313,8 @@ public sealed record VersionOptionVM(ModrinthVersion Source)
             return $"{Source.VersionNumber} · {games} · {loaders}";
         }
     }
+
+    public bool IsRecommended => Source.Featured == true;
+
+    public string PublishedText => Source.DatePublished.Year > 2000 ? Source.DatePublished.ToString("yyyy-MM-dd") : "";
 }

@@ -43,6 +43,14 @@ public class EcosystemServiceTests
         Assert.Equal("[[\"project_type:mod\"],[\"categories:utility\"]]", facets);
     }
 
+    [Fact]
+    public void BuildFacets_LoaderAndCategoryForceLowercase()
+    {
+        // UI 传 "Fabric"/"NeoForge" 大写 → facets 必须小写（Modrinth API 要求，否则 0 结果）
+        var facets = EcosystemService.BuildFacets(ProjectType.Mod, null, "Fabric", "OPTIMIZATION");
+        Assert.Equal("[[\"project_type:mod\"],[\"categories:fabric\"],[\"categories:optimization\"]]", facets);
+    }
+
     // ---------- TryParseGameVersion ----------
 
     [Theory]

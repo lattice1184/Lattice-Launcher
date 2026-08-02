@@ -184,13 +184,13 @@ public sealed class EcosystemService
     // ---------- 静态工具（离线可单测） ----------
 
     /// <summary>构建 facets JSON，如 [["project_type:mod"],["versions:1.21.1"],["categories:fabric"],["categories:optimization"]]。
-    /// 加载器与功能分类同用 categories 键（Modrinth 同键多值取 OR）。</summary>
+    /// 加载器与功能分类同用 categories 键（Modrinth 同键多值取 OR）；facets 值强制小写（API 要求）。</summary>
     public static string BuildFacets(ProjectType type, string? gameVersion, string? loader, string? category = null)
     {
         var outer = new List<string[]> { new[] { $"project_type:{FacetName(type)}" } };
         if (gameVersion is not null) outer.Add(new[] { $"versions:{gameVersion}" });
-        if (loader is not null) outer.Add(new[] { $"categories:{loader}" });
-        if (category is not null) outer.Add(new[] { $"categories:{category}" });
+        if (loader is not null) outer.Add(new[] { $"categories:{loader.ToLowerInvariant()}" });
+        if (category is not null) outer.Add(new[] { $"categories:{category.ToLowerInvariant()}" });
         return JsonSerializer.Serialize(outer);
     }
 

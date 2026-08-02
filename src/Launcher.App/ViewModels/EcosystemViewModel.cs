@@ -16,7 +16,8 @@ public partial class EcosystemViewModel : ViewModelBase
     private readonly ProjectType _type;
     private CancellationTokenSource? _searchCts;
     private int _requestSeq;
-    private int _offset;
+
+    private const int PageSize = 20;
 
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
@@ -97,8 +98,21 @@ public partial class EcosystemViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsEmpty { get; set; }
 
+    // 分页状态（◀ 页码 ▶）
     [ObservableProperty]
-    public partial bool HasMore { get; set; }
+    public partial int CurrentPage { get; set; }
+
+    [ObservableProperty]
+    public partial int TotalPages { get; set; } = 1;
+
+    [ObservableProperty]
+    public partial bool HasPrev { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasNext { get; set; }
+
+    [ObservableProperty]
+    public partial string PageText { get; set; } = "1/1";
 
     [ObservableProperty]
     public partial string Status { get; set; } = "";
@@ -115,9 +129,10 @@ public partial class EcosystemViewModel : ViewModelBase
     partial void OnSelectedGameVersionChanged(string? value) => DebouncedSearch();
     partial void OnSelectedCategoryChanged(CategoryOption? value) => DebouncedSearch();
 
-    /// <summary>加载器 chips 选择（"全部"=null；仅 MOD 类型显示）</summary>
+    /// <summary>加载器 chips 选择（"全部"=null；值转小写——Modrinth facets 要求 fabric/forge/neoforge/quilt）</summary>
     [RelayCommand]
-    private void SelectLoader(string loader) => SelectedLoader = loader == "全部" ? null : loader;
+    private void SelectLoader(string loader)
+        => SelectedLoader = loader == "全部" ? null : loader.ToLowerInvariant();
 
     /// <summary>初始化：扫描已装实例并触发首搜</summary>
     public async Task InitializeAsync()
@@ -154,11 +169,7 @@ public partial class EcosystemViewModel : ViewModelBase
     private async Task RunSearchAsync(bool reset, CancellationToken ct = default)
     {
         var seq = ++_requestSeq;
-        if (reset)
-        {
-            Cards.Clear();
-            _offset = 0;
-        }
+        if (reset) CurrentPage = 0; // 搜索/筛选变化回第 1 页
         IsLoading = true;
         IsError = false;
         IsEmpty = false;
@@ -173,15 +184,22 @@ public partial class EcosystemViewModel : ViewModelBase
             var category = SelectedCategory?.Key;
 
             var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
-                limit: 20, offset: _offset, ct);
+                limit: PageSize, offset: CurrentPage * PageSize, ct);
             if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
 
+            Cards.Clear(); // 服务器分页：每次重建当前页
             var hits = resp?.Hits ?? [];
             foreach (var h in hits) Cards.Add(new ProjectCardVM(h));
-            _offset += hits.Count;
-            HasMore = _offset < (resp?.TotalHits ?? 0);
+            var total = resp?.TotalHits ?? 0;
+            TotalPages = Math.Max(1, (total + PageSize - 1) / PageSize);
+            HasPrev = CurrentPage > 0;
+            HasNext = CurrentPage < TotalPages - 1;
+            PageText = $"{CurrentPage + 1}/{TotalPages}";
             IsEmpty = Cards.Count == 0;
-            Status = resp is null ? "无响应" : $"共 {resp.TotalHits} 个结果";
+            // 状态提示：筛选版本时列表天然只含适配项（Modrinth facets 语义）
+            Status = resp is null ? "无响应"
+                : gameVersion is not null ? $"共 {total} 个结果 · 已按 {gameVersion} 过滤"
+                : $"共 {total} 个结果";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -201,7 +219,20 @@ public partial class EcosystemViewModel : ViewModelBase
     private Task Search() => RunSearchAsync(reset: true);
 
     [RelayCommand]
-    private Task LoadMore() => RunSearchAsync(reset: false);
+    private void PrevPage()
+    {
+        if (CurrentPage <= 0) return;
+        CurrentPage--;
+        _ = RunSearchAsync(reset: false);
+    }
+
+    [RelayCommand]
+    private void NextPage()
+    {
+        if (CurrentPage >= TotalPages - 1) return;
+        CurrentPage++;
+        _ = RunSearchAsync(reset: false);
+    }
 
     [RelayCommand]
     private void OpenDetail(ProjectCardVM card) =>

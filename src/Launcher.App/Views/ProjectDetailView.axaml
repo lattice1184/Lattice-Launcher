@@ -34,7 +34,21 @@
                     <Expander Header="手动选择版本" IsExpanded="False">
                         <StackPanel Spacing="8">
                             <ComboBox ItemsSource="{Binding AllVersions}" SelectedItem="{Binding SelectedVersion}"
-                                      PlaceholderText="选择版本" HorizontalAlignment="Stretch"/>
+                                      PlaceholderText="选择版本" HorizontalAlignment="Stretch">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:VersionOptionVM">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding Display}"/>
+                                            <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                    VerticalAlignment="Center" IsVisible="{Binding IsRecommended}">
+                                                <TextBlock Text="推荐" FontSize="10" Foreground="#B5F4E9"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding PublishedText}" Classes="dim" FontSize="11"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                             <Button Content="加载版本列表" Classes="ghost" Command="{Binding LoadVersionsCommand}"
                                     HorizontalAlignment="Left" Padding="10,4"
                                     IsVisible="{Binding AllVersions.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>

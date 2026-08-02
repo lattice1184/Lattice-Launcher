@@ -58,16 +58,27 @@
 
         <!-- 内容：列表层与详情层叠放 -->
         <Grid>
-            <!-- 列表层 -->
-            <StackPanel Spacing="10" IsVisible="{Binding !IsDetailOpen}">
-                <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
-                <StackPanel Spacing="8" IsVisible="{Binding IsError}">
+            <!-- 列表层（DockPanel：ScrollViewer 受约束才能滚动） -->
+            <DockPanel IsVisible="{Binding !IsDetailOpen}">
+                <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
+                <StackPanel DockPanel.Dock="Top" Spacing="8" IsVisible="{Binding IsError}">
                     <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A"/>
                     <Button Content="重试" Command="{Binding SearchCommand}"
                             HorizontalAlignment="Left"/>
                 </StackPanel>
-                <TextBlock Text="没有找到相关内容" Foreground="#8A93A6" HorizontalAlignment="Center"
+                <TextBlock DockPanel.Dock="Top" Text="没有找到相关内容" Foreground="#8A93A6" HorizontalAlignment="Center"
                            Margin="0,40" IsVisible="{Binding IsEmpty}"/>
+
+                <!-- 分页栏（◀ 页码 ▶） -->
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10"
+                            HorizontalAlignment="Center" Margin="0,8,0,0">
+                    <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding PrevPageCommand}" IsEnabled="{Binding HasPrev}"/>
+                    <TextBlock Text="{Binding PageText}" Classes="sub" FontSize="12"
+                               VerticalAlignment="Center" MinWidth="36" TextAlignment="Center"/>
+                    <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNext}"/>
+                </StackPanel>
 
                 <ScrollViewer>
                     <ItemsControl ItemsSource="{Binding Cards}">
@@ -112,6 +123,8 @@
                                                 <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
                                                     <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
                                                 </TextBlock>
+                                                <TextBlock Text="{Binding UpdatedText}" Foreground="{StaticResource TextDim}"
+                                                           FontSize="10" TextAlignment="Right"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
@@ -120,10 +133,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
-
-                <Button Content="加载更多" Command="{Binding LoadMoreCommand}" HorizontalAlignment="Center"
-                        IsVisible="{Binding HasMore}"/>
-            </StackPanel>
+            </DockPanel>
 
             <!-- 详情层 -->
             <ContentControl Content="{Binding Detail}" IsVisible="{Binding IsDetailOpen}"/>
