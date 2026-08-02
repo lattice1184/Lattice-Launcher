@@ -128,6 +128,60 @@ public class DownloadGroupTests
         Assert.Empty(manager.Tasks);
     }
 
+    /// <summary>
+    /// 高并发回归：管线在线程池快速 Add 40 个子任务，子任务立即完成触发聚合。
+    /// 用"异步 Post"上下文制造真实并发窗口——修复前会抛 Collection was modified（线程池未捕获 → 进程崩），
+    /// 修复后（Children 访问全部封送同一线程）稳定通过。
+    /// </summary>
+    [Fact]
+    public async Task Group_ManyChildrenRapidAdd_NoCollectionModifiedCrash()
+    {
+        SynchronizationContext.SetSynchronizationContext(new AsyncPostContext());
+        var manager = new DownloadManager();
+        try
+        {
+            for (var round = 0; round < 20; round++)
+            {
+                var task = manager.EnqueueGroup("下载", async (ctx, ct) =>
+                {
+                    for (var i = 0; i < 40; i++)
+                    {
+                        ctx.AddChild($"lib{i}.jar", 10, (p, c) => Task.CompletedTask);
+                    }
+                });
+                await task.Completion;
+                // 异步 Post 上下文：State/Children 更新在排队回调里，轮询等待
+                for (var i = 0; i < 100 && (task.State != DownloadTaskState.Completed || task.Children.Count != 40); i++)
+                    await Task.Delay(10);
+                Assert.Equal(DownloadTaskState.Completed, task.State);
+                Assert.Equal(40, task.Children.Count);
+            }
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(null);
+        }
+    }
+
+    /// <summary>
+    /// Post 异步但串行执行（模拟 Dispatcher 的 FIFO 语义：回调在另一线程排队串行跑，
+    /// 与 AddChild 的调用线程形成真实并发窗口，但回调之间不并发——与 Avalonia Dispatcher 一致）。
+    /// </summary>
+    private sealed class AsyncPostContext : SynchronizationContext
+    {
+        private readonly SemaphoreSlim _gate = new(1, 1);
+
+        public override void Post(SendOrPostCallback d, object? state)
+            => _ = Task.Run(async () =>
+            {
+                await _gate.WaitAsync();
+                try { d(state); }
+                finally { _gate.Release(); }
+            });
+
+        public override void Send(SendOrPostCallback d, object? state) => d(state);
+    }
+
     [Fact]
     public async Task Group_ZeroWeightChild_Indeterminate()
     {

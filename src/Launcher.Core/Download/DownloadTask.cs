@@ -192,14 +192,22 @@ public partial class DownloadTask : ObservableObject
         }
     }
 
-    /// <summary>挂载子任务并订阅聚合（由 DownloadGroupContext 调用；子属性更新已封送 UI 线程）</summary>
+    /// <summary>
+    /// 挂载子任务并订阅聚合（由 DownloadGroupContext 在线程池调用）。
+    /// 整个挂载过程封送 UI 线程：Children（ObservableCollection）的全部读写
+    /// （Add / OnChildPropertyChanged / RecomputeAggregate / Cancel 遍历）收敛到同一线程，
+    /// 消除"线程池 Add 与 UI 线程枚举"的 Collection was modified 竞态（曾导致闪退）。
+    /// </summary>
     internal void AttachChild(DownloadTask child)
     {
-        Children.Add(child);
-        child.PropertyChanged += OnChildPropertyChanged;
-        // 父取消级联：覆盖"父先取消、子后创建"的时序（Children 级联只覆盖已存在的子任务）
-        child._externalCancellations.Add(_cts.Token.Register(child.Cancel));
-        RecomputeAggregate();
+        Post(() =>
+        {
+            Children.Add(child);
+            child.PropertyChanged += OnChildPropertyChanged;
+            // 父取消级联：覆盖"父先取消、子后创建"的时序（Children 级联只覆盖已存在的子任务）
+            child._externalCancellations.Add(_cts.Token.Register(child.Cancel));
+            RecomputeAggregate();
+        });
     }
 
     private void OnChildPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

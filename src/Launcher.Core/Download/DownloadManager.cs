@@ -45,6 +45,10 @@ public sealed class DownloadManager
         SetActive(Tasks.Count(t => t.IsActive));
         task.Completion.ContinueWith(_ => UiPost(() => SetActive(Tasks.Count(t => t.IsActive))),
             TaskScheduler.Default);
+        // 防未观察异常：完成回调本身出错时记录（不崩溃进程）
+        task.Completion.ContinueWith(t =>
+            System.Diagnostics.Debug.WriteLine($"[DownloadManager] 计数回调异常: {t.Exception?.GetBaseException().Message}"),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     public void Cancel(DownloadTask task) => task.Cancel();
