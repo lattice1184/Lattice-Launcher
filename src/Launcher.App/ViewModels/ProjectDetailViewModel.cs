@@ -84,6 +84,14 @@ public partial class ProjectDetailViewModel : ViewModelBase
     [ObservableProperty]
     public partial string DependenciesText { get; set; } = "";
 
+    /// <summary>前置提示（"将安装 2 个前置：A、B"）；安装按钮文字随之更新</summary>
+    [ObservableProperty]
+    public partial string DependencyHint { get; set; } = "";
+
+    /// <summary>下载中"查看下载进度"跳转</summary>
+    [RelayCommand]
+    private void GoToDownloadQueue() => MainViewModel.Current?.NavigateToDownloadQueue();
+
     public ProjectDetailViewModel(EcosystemService eco, ProjectCardVM card, VersionInstanceVM? instance, Action closeCallback)
     {
         _eco = eco;
@@ -123,6 +131,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 : $"匹配版本: {version.Name} ({version.VersionNumber})";
             CanInstall = version is not null;
             if (version is not null) Changelog = version.Changelog ?? "";
+            if (version is not null) _ = ResolveDependencyHintAsync(version, gameVersion, loader);
 
             // 项目详情（截图/许可证）
             try
@@ -141,6 +150,24 @@ public partial class ProjectDetailViewModel : ViewModelBase
         {
             VersionHint = $"匹配失败: {ex.Message}";
         }
+    }
+
+    /// <summary>后台解析依赖：前置提示 + 安装按钮文字（"安装（含 N 个前置）"）</summary>
+    private async Task ResolveDependencyHintAsync(ModrinthVersion version, string? gameVersion, string? loader)
+    {
+        try
+        {
+            var names = await Task.Run(() => _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None));
+            if (names.Count == 0)
+            {
+                DependencyHint = "无需前置依赖";
+                return;
+            }
+            DependencyHint = $"将安装 {names.Count} 个前置：{string.Join("、", names)}";
+            if (!IsInstalling && InstallButtonText == "安装")
+                InstallButtonText = $"安装（含 {names.Count} 个前置）";
+        }
+        catch { /* 解析失败不阻塞安装 */ }
     }
 
     /// <summary>懒加载全部版本供手动选择</summary>

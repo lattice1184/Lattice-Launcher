@@ -83,6 +83,36 @@ public sealed class EcosystemService
         return destPath;
     }
 
+    /// <summary>
+    /// 解析依赖树并返回前置项目显示名（安装前提示用："将安装 N 个前置：A、B"）。
+    /// 最多查 5 个标题（防滥用）；查询失败回退 ProjectId。
+    /// </summary>
+    public async Task<List<string>> ResolveDependencyNamesAsync(
+        ModrinthVersion version, string? gameVersion, string? loader, CancellationToken ct = default)
+    {
+        var resolver = new ModDependencyResolver();
+        var request = new ModDependencyRequest
+        {
+            TargetMinecraftVersion = gameVersion ?? "",
+            TargetLoaders = loader is null ? [] : [loader],
+            RequiredDependencies = EcosystemDependencyAdapter.ToDependencyReferences(version),
+            ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion, loader),
+        };
+        var result = resolver.Resolve(request);
+
+        var names = new List<string>();
+        foreach (var dep in result.ToInstall.Take(5))
+        {
+            try
+            {
+                var detail = await GetProjectAsync(dep.ProjectId, ct);
+                names.Add(detail?.Title ?? dep.ProjectId);
+            }
+            catch { names.Add(dep.ProjectId); }
+        }
+        return names;
+    }
+
     private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct)
     {
         var json = await _http.GetStringAsync(url, ct);

@@ -5,6 +5,9 @@ namespace Launcher.App.ViewModels;
 
 public partial class MainViewModel : ViewModelBase
 {
+    /// <summary>当前实例（其他页面跳转下载记录用）</summary>
+    public static MainViewModel? Current { get; private set; }
+
     [ObservableProperty]
     public partial ViewModelBase? CurrentPage { get; set; }
 
@@ -24,8 +27,16 @@ public partial class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
+        Current = this;
         CurrentPage = Home;
         _ = Home.InitializeAsync();
+    }
+
+    /// <summary>跳到下载板块的"下载记录"tab（下载中"查看下载进度"链接用）</summary>
+    public void NavigateToDownloadQueue()
+    {
+        Navigate("download");
+        Downloads.NavigateToQueue();
     }
 
     [RelayCommand]

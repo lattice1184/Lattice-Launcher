@@ -79,12 +79,15 @@
                     <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}" FontSize="12"
                                TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
                         <ProgressBar Grid.Column="0" Value="{Binding Detail.DownloadProgressPercent}" Maximum="100"
                                      Height="6" VerticalAlignment="Center" IsVisible="{Binding Detail.ShowProgress}"/>
                         <TextBlock Grid.Column="1" Text="{Binding Detail.DownloadProgressText}" Classes="sub"
                                    FontSize="12" VerticalAlignment="Center" IsVisible="{Binding Detail.ShowProgress}"/>
-                        <Button Grid.Column="2" Content="下载安装" Classes="primary" Padding="28,10" FontSize="14"
+                        <Button Grid.Column="2" Content="查看下载进度 →" Classes="ghost" FontSize="12"
+                                Command="{Binding Detail.GoToDownloadQueueCommand}"
+                                IsVisible="{Binding Detail.ShowProgress}"/>
+                        <Button Grid.Column="3" Content="下载安装" Classes="primary" Padding="28,10" FontSize="14"
                                 Command="{Binding Detail.DownloadCommand}"
                                 IsVisible="{Binding Detail.ShowDownloadButton}"/>
                     </Grid>

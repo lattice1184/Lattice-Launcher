@@ -68,6 +68,24 @@ public partial class DownloadViewModel : ViewModelBase
     public void ActivateDefault()
     {
         if (ActiveTab is null) SelectTab("game");
+        PreloadTabs();
+    }
+
+    /// <summary>跳到"下载记录"tab（下载中"查看下载进度"链接用）</summary>
+    public void NavigateToQueue() => SelectTab("queue");
+
+    private int _preloadStarted;
+
+    /// <summary>进入下载页后错峰预热 4 个资源 tab 数据（建 VM + 加载数据，不建视图）——切 tab 秒开无撕裂</summary>
+    private async void PreloadTabs()
+    {
+        if (Interlocked.Exchange(ref _preloadStarted, 1) == 1) return;
+        var tabs = new[] { "mod", "modpack", "resourcepack", "shader" };
+        for (var i = 0; i < tabs.Length; i++)
+        {
+            await Task.Delay(300 * (i + 1));
+            GetOrCreateTab(tabs[i]);
+        }
     }
 
     [RelayCommand]

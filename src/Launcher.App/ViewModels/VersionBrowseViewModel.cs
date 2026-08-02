@@ -215,6 +215,10 @@ public partial class VersionDetailViewModel : ViewModelBase
     public bool HasError => ErrorText.Length > 0;
     public string DownloadProgressText => $"{DownloadProgressPercent:0}%";
 
+    /// <summary>下载中"查看下载进度"跳转（切到下载记录 tab）</summary>
+    [RelayCommand]
+    private void GoToDownloadQueue() => MainViewModel.Current?.NavigateToDownloadQueue();
+
     public VersionDetailViewModel(VersionInstaller installer, Action<string> onInstalled)
     {
         _installer = installer;

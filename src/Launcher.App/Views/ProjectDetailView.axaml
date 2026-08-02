@@ -50,14 +50,20 @@
                     <TextBlock Text="{Binding License}" Classes="dim" FontSize="11"
                                IsVisible="{Binding License.Length}"/>
 
+                    <!-- 前置提示（依赖解析后显示） -->
+                    <TextBlock Text="{Binding DependencyHint}" Foreground="#7E8BA0" FontSize="12"
+                               TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
+
                     <!-- 安装按钮 -->
-                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="10">
                         <Button Grid.Column="0" Content="{Binding InstallButtonText}" Classes="primary"
                                 Command="{Binding InstallCommand}" Padding="24,8"
                                 IsVisible="{Binding !IsInstalling}"/>
                         <Button Grid.Column="0" Content="取消安装" Command="{Binding InstallCancelCommand}"
                                 Padding="24,8" IsVisible="{Binding IsInstalling}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding ProgressState}" Foreground="#8A93A6"
+                        <Button Grid.Column="1" Content="查看下载进度 →" Classes="ghost" FontSize="12"
+                                Command="{Binding GoToDownloadQueueCommand}" IsVisible="{Binding IsInstalling}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding ProgressState}" Foreground="#8A93A6"
                                    VerticalAlignment="Center" IsVisible="{Binding IsInstalling}"/>
                     </Grid>
 
