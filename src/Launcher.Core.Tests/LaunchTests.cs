@@ -17,8 +17,9 @@ public class LaunchTests
     private static JavaArgumentsBuilder.LaunchProfile Build(string id, long memoryMb = 4096)
     {
         var builder = new JavaArgumentsBuilder();
+        // 显式非隔离：老断言基于根目录语义；隔离参数另有专测
         return builder.Build(Load(id), @"C:\mc", @"C:\java\bin\java.exe",
-            "YanKa", "00000000-0000-0000-0000-000000000000", "token", memoryMb);
+            "YanKa", "00000000-0000-0000-0000-000000000000", "token", memoryMb, versionIsolation: false);
     }
 
     [Fact]

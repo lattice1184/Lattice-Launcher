@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using Launcher.Core.Model.Mojang;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Launch;
 
@@ -27,8 +28,16 @@ public sealed class GameLaunchService
         var version = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(vjPath, ct))
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {versionId}");
 
-        // 2. 自动中文（options.txt lang:zh_cn）
-        AutoChinese.Apply(gameDirectory);
+        // 2. 版本隔离：game_directory 指向 versions/{id}，启动前建 saves/mods 等子目录（Minecraft 不会自建）；
+        //    自动中文写隔离后的目录（options.txt 各版本独立，不串门）
+        var isolated = LauncherSettings.Current.VersionIsolation;
+        var applyDir = isolated ? Path.Combine(gameDirectory, "versions", versionId) : gameDirectory;
+        if (isolated)
+        {
+            foreach (var sub in new[] { "saves", "mods", "resourcepacks", "shaderpacks" })
+                Directory.CreateDirectory(Path.Combine(applyDir, sub));
+        }
+        AutoChinese.Apply(applyDir);
 
         // 3. Java 自动选配
         onStage?.Invoke("检测 Java");

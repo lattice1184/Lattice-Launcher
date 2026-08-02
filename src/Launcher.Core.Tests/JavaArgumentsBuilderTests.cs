@@ -14,9 +14,9 @@ public class JavaArgumentsBuilderTests
         return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(path))!;
     }
 
-    private static JavaArgumentsBuilder.LaunchProfile Build(VersionJson version, string gameDir = @"C:\mc")
+    private static JavaArgumentsBuilder.LaunchProfile Build(VersionJson version, string gameDir = @"C:\mc", bool? versionIsolation = null)
         => new JavaArgumentsBuilder().Build(version, gameDir, @"C:\java\bin\java.exe",
-            "YanKa", "00000000-0000-0000-0000-000000000000", "token", 4096);
+            "YanKa", "00000000-0000-0000-0000-000000000000", "token", 4096, versionIsolation: versionIsolation);
 
     [Fact]
     public void Modern_1_21_1_JvmArgsEmittedAndDeduped()
@@ -91,6 +91,27 @@ public class JavaArgumentsBuilderTests
             Assert.Equal(p.ClassPath, p.JvmArgs[^1]);
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void VersionIsolation_GameDirectoryPointsToVersionDir()
+    {
+        var p = Build(Load("1.21.1"), @"C:\mc", versionIsolation: true);
+
+        Assert.Contains("--gameDir", p.GameArgs);
+        Assert.Contains("C:/mc/versions/1.21.1", p.GameArgs);   // 隔离：game_directory → versions/{id}
+        // assets 保持绝对指向共享目录
+        Assert.Contains("--assetsDir", p.GameArgs);
+        Assert.Contains("C:/mc/assets", p.GameArgs);
+    }
+
+    [Fact]
+    public void NoIsolation_GameDirectoryIsRoot()
+    {
+        var p = Build(Load("1.21.1"), @"C:\mc", versionIsolation: false);
+
+        Assert.Contains("C:/mc", p.GameArgs);
+        Assert.DoesNotContain(p.GameArgs, a => a.Contains("versions/1.21.1"));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Launcher.Core.Model.Mojang;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Launch;
 
@@ -37,10 +38,11 @@ public sealed class JavaArgumentsBuilder
     /// <param name="accessToken">访问令牌（离线固定值）</param>
     /// <param name="memoryMb">内存上限 MB</param>
     /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等，用户覆盖优先）</param>
+    /// <param name="versionIsolation">版本隔离（game_directory 指向 versions/{id}，saves/mods 不串门）；null = 读设置</param>
     public LaunchProfile Build(
         VersionJson version, string gameDir, string javaPath,
         string accountName, string accountUuid, string accessToken,
-        long memoryMb, string[]? extraJvmArgs = null)
+        long memoryMb, string[]? extraJvmArgs = null, bool? versionIsolation = null)
     {
         // 0. inheritsFrom 链解析（Forge/NeoForge/Fabric 生成的 version.json 继承原版）
         var v = version;
@@ -92,7 +94,8 @@ public sealed class JavaArgumentsBuilder
         Directory.CreateDirectory(nativesDir);
 
         // 3. 共享 token（game/jvm 参数替换）
-        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken);
+        var isolated = versionIsolation ?? LauncherSettings.Current.VersionIsolation;
+        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken, isolated);
 
         // 4. 基础 JVM 参数
         var jvmArgs = new List<string>
@@ -155,9 +158,13 @@ public sealed class JavaArgumentsBuilder
 
     private static Dictionary<string, string> BuildTokens(
         VersionJson version, string gameDir, string assetsDir, string nativesDir,
-        string accountName, string accountUuid, string accessToken)
+        string accountName, string accountUuid, string accessToken, bool isolated)
     {
-        var gameDirArg = gameDir.Replace('\\', '/');
+        // 版本隔离：game_directory 指向 versions/{id}（saves/mods/options 各自独立）；
+        // assets_root/game_assets 保持绝对指向共享 assets 目录
+        var gameDirArg = isolated
+            ? Path.Combine(gameDir, "versions", version.Id).Replace('\\', '/')
+            : gameDir.Replace('\\', '/');
         var assetsIndexId = version.AssetIndex?.Id ?? version.Assets ?? "legacy";
         return new Dictionary<string, string>
         {
