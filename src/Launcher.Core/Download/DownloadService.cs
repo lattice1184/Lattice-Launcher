@@ -20,6 +20,8 @@ public sealed class DownloadService
     private readonly IDlSourceResolver _resolver;
     private readonly DownloadOptions _options;
     private readonly string _gameDirectory;
+    private readonly SourceStats _sourceStats = new();
+    private readonly Func<IReadOnlyList<string>, CancellationToken, Task<bool>> _networkChecker;
 
     public DownloadService(HttpClient? http = null, IDlSourceMapper? sourceMapper = null, string? gameDirectory = null)
         : this(http, sourceMapper is null ? ResolvingDlSourceMapper.Default : new ResolvingDlSourceMapper(sourceMapper),
@@ -27,12 +29,15 @@ public sealed class DownloadService
     {
     }
 
-    public DownloadService(HttpClient? http, IDlSourceResolver? resolver, DownloadOptions? options, string? gameDirectory)
+    public DownloadService(HttpClient? http, IDlSourceResolver? resolver, DownloadOptions? options, string? gameDirectory,
+        Func<IReadOnlyList<string>, CancellationToken, Task<bool>>? networkChecker = null)
     {
         _http = http ?? CreateClient();
         _resolver = resolver ?? ResolvingDlSourceMapper.Default;
         _options = options ?? DownloadOptions.Default;
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+        _networkChecker = networkChecker
+            ?? ((hosts, ct) => NetworkChecker.CheckAsync(hosts, TimeSpan.FromSeconds(3), ct));
     }
 
     private static HttpClient CreateClient()
@@ -62,13 +67,16 @@ public sealed class DownloadService
                 return;
         }
 
-        var sources = _resolver.Resolve(url);
+        // 候选源：镜像开关生效 + 按历史速度排序（最快优先，失败降权）
+        var candidates = _options.MirrorFallbackEnabled
+            ? _sourceStats.Rank(_resolver.Resolve(url))
+            : [_resolver.Resolve(url)[0]];
         var backoff = _options.BackoffProvider ?? RetryPolicy.Backoff;
         Exception? last = null;
 
         for (var attempt = 0; attempt < _options.MaxSourceAttempts; attempt++)
         {
-            foreach (var src in sources)
+            foreach (var src in candidates)
             {
                 try
                 {
@@ -90,20 +98,37 @@ public sealed class DownloadService
                 if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
             }
         }
+
+        // 重试耗尽：检查网络并报告（用户要求"重试 3 次后检查网络并报告"）
+        var hosts = candidates.Select(c => new Uri(c).Host).Distinct().ToList();
+        var reachable = await _networkChecker(hosts, ct);
+        if (!reachable)
+            throw new InvalidOperationException(
+                $"网络不可达：{string.Join("、", hosts)} 均无法连接，请检查网络/代理/防火墙（已重试 {_options.MaxSourceAttempts} 轮）");
         throw last ?? new InvalidOperationException($"下载失败: {url}");
     }
 
-    /// <summary>单个候选源：定长走分片，否则单连接</summary>
+    /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计</summary>
     private async Task DownloadFromSourceAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress, CancellationToken ct)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var totalSize = expectedSize ?? await GetContentLengthAsync(url, ct);
-
-        if (totalSize >= ChunkThreshold)
-            await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, ct);
-        else
-            await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
+        try
+        {
+            if (totalSize >= ChunkThreshold)
+                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, ct);
+            else
+                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
+            sw.Stop();
+            _sourceStats.RecordSuccess(url, totalSize, sw.ElapsedMilliseconds);
+        }
+        catch
+        {
+            _sourceStats.RecordFailure(url);
+            throw;
+        }
     }
 
     /// <summary>单连接下载（断点续传 + 416 防御 + 校验失败抛 InvalidDataException 由外层换源）</summary>

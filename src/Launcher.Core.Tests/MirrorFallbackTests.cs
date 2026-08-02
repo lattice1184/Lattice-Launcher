@@ -118,4 +118,56 @@ public class MirrorFallbackTests
         }
         finally { if (File.Exists(dest)) File.Delete(dest); }
     }
+
+    [Fact]
+    public async Task NetworkUnreachable_AfterRetries_ReportsClearly()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("resources.download.minecraft.net/ab/abcdef", 500, []);
+        handler.RouteBytes("bmclapi2.bangbang93.com/ab/abcdef", 500, []);
+        var http = new HttpClient(handler);
+        var resolver = new ResolvingDlSourceMapper(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
+        // 注入网络检查：报告不可达
+        var svc = new DownloadService(http, resolver, new DownloadOptions
+        {
+            MaxSourceAttempts = 2,
+            BackoffProvider = _ => TimeSpan.Zero,
+        }, Path.GetTempPath(), (hosts, ct) => Task.FromResult(false));
+        var dest = Path.Combine(Path.GetTempPath(), $"mirror-{Guid.NewGuid():N}.jar");
+        try
+        {
+            var url = "https://resources.download.minecraft.net/ab/abcdef";
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None));
+
+            Assert.Contains("网络不可达", ex.Message);
+            Assert.Contains("resources.download.minecraft.net", ex.Message);
+        }
+        finally { if (File.Exists(dest)) File.Delete(dest); }
+    }
+
+    [Fact]
+    public async Task MirrorFallbackDisabled_OnlyOfficialCandidate()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("resources.download.minecraft.net/ab/abcdef", 200, "12345"u8.ToArray());
+        var http = new HttpClient(handler);
+        var resolver = new ResolvingDlSourceMapper(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
+        var svc = new DownloadService(http, resolver, new DownloadOptions
+        {
+            MirrorFallbackEnabled = false,
+            MaxSourceAttempts = 2,
+            BackoffProvider = _ => TimeSpan.Zero,
+        }, Path.GetTempPath());
+        var dest = Path.Combine(Path.GetTempPath(), $"mirror-{Guid.NewGuid():N}.jar");
+        try
+        {
+            var url = "https://resources.download.minecraft.net/ab/abcdef";
+            await svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None);
+
+            // 镜像禁用 → 只请求官方
+            Assert.All(handler.Requests, r => Assert.DoesNotContain("bmclapi2", r));
+        }
+        finally { if (File.Exists(dest)) File.Delete(dest); }
+    }
 }
