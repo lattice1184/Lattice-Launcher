@@ -13,9 +13,10 @@ public sealed class GameLaunchService
         string versionId, string gameDirectory,
         string accountName, string accountUuid,
         long memoryMb, string[]? extraJvmArgs,
-        Action<string>? onLog = null, CancellationToken ct = default)
+        Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default)
     {
         // 1. 读版本 JSON
+        onStage?.Invoke("解析版本");
         var vjPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.json");
         if (!File.Exists(vjPath))
             throw new FileNotFoundException($"版本 {versionId} 未安装（请先在版本页下载）");
@@ -30,9 +31,11 @@ public sealed class GameLaunchService
         AutoChinese.Apply(gameDirectory);
 
         // 3. Java 自动选配
+        onStage?.Invoke("检测 Java");
         var java = JavaSelector.Pick(version.JavaVersion?.MajorVersion);
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
+        onStage?.Invoke("解压 natives");
         var builder = new JavaArgumentsBuilder();
         var profile = builder.Build(version, gameDirectory, java,
             accountName, accountUuid, "token", memoryMb, extraJvmArgs);
@@ -62,6 +65,7 @@ public sealed class GameLaunchService
             catch (Exception ex) { onLog?.Invoke($"§ natives 解压警告 {Path.GetFileName(nativeJar)}: {ex.Message}"); }
         }
 
+        onStage?.Invoke("启动 JVM");
         return LaunchProcess.Start(profile, onLog, ct);
     }
 

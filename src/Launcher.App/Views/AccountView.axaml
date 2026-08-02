@@ -8,11 +8,14 @@
         <TextBlock Text="账号" FontSize="22" FontWeight="Bold"/>
 
         <Border Classes="card" Padding="16">
-            <StackPanel Spacing="8">
-                <TextBlock Text="{Binding CurrentName}" FontSize="18" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding AccountType}" Classes="sub" FontSize="12" IsVisible="{Binding IsLoggedIn}"/>
-                <TextBlock Text="{Binding CurrentUuid}" Classes="dim" FontSize="11" IsVisible="{Binding IsLoggedIn}"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                <Image Source="{Binding Avatar}" Width="64" Height="64" Stretch="Uniform"/>
+                <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CurrentName}" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AccountType}" Classes="sub" FontSize="12" IsVisible="{Binding IsLoggedIn}"/>
+                    <TextBlock Text="{Binding CurrentUuid}" Classes="dim" FontSize="11" IsVisible="{Binding IsLoggedIn}"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
         <Border Classes="card" Padding="16">

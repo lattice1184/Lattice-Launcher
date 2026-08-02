@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,7 +10,7 @@ using Launcher.Core.Services;
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 项目详情页：显示项目信息 + 自动匹配版本 + 一键安装（含依赖解析，后台线程防死锁）。
+/// 项目详情页：项目信息 + 截图画廊 + 版本匹配/手动选择 + 更新日志 + 一键安装（含依赖解析）。
 /// </summary>
 public partial class ProjectDetailViewModel : ViewModelBase
 {
@@ -38,7 +39,21 @@ public partial class ProjectDetailViewModel : ViewModelBase
     public partial string VersionHint { get; set; } = "匹配版本中…";
 
     [ObservableProperty]
+    public partial string License { get; set; } = "";
+
+    [ObservableProperty]
     public partial Bitmap? Icon { get; set; }
+
+    [ObservableProperty]
+    public partial Bitmap? Screenshot { get; set; }
+
+    [ObservableProperty]
+    public partial string Changelog { get; set; } = "";
+
+    public ObservableCollection<VersionOptionVM> AllVersions { get; } = [];
+
+    [ObservableProperty]
+    public partial VersionOptionVM? SelectedVersion { get; set; }
 
     // 安装状态
     [ObservableProperty]
@@ -79,7 +94,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         Description = card.Description;
         Stats = $"{card.DownloadsText} 下载 · {card.FollowsText} 关注";
         IconUrl = card.IconUrl;
-        CanInstall = false; // 版本匹配完成前不可安装
+        CanInstall = false;
         _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
         _ = LoadAsync();
     }
@@ -103,14 +118,58 @@ public partial class ProjectDetailViewModel : ViewModelBase
             VersionHint = version is null
                 ? (_instance is null
                     ? "未指定实例，可安装整合包或选择实例后安装"
-                    : $"未匹配到 {_instance.Name} 的版本，请选择其他实例")
+                    : $"未匹配到 {_instance.Name} 的版本，请选择其他实例或手动选版本")
                 : $"匹配版本: {version.Name} ({version.VersionNumber})";
             CanInstall = version is not null;
+            if (version is not null) Changelog = version.Changelog ?? "";
+
+            // 项目详情（截图/许可证）
+            try
+            {
+                var detail = await _eco.GetProjectAsync(_card.Id);
+                if (detail is not null)
+                {
+                    License = detail.License?.Name is { } ln ? $"许可: {ln}" : "";
+                    if (detail.Gallery is { Count: > 0 })
+                        _ = ImageLoader.LoadAsync(detail.Gallery[0], bmp => Screenshot = bmp, 640);
+                }
+            }
+            catch { /* 详情拉取失败不阻塞 */ }
         }
         catch (Exception ex)
         {
             VersionHint = $"匹配失败: {ex.Message}";
         }
+    }
+
+    /// <summary>懒加载全部版本供手动选择</summary>
+    [RelayCommand]
+    private async Task LoadVersions()
+    {
+        if (AllVersions.Count > 0) return;
+        try
+        {
+            string? gameVersion = null;
+            string? loader = null;
+            if (_instance is not null)
+            {
+                if (EcosystemService.TryParseGameVersion(_instance.Name, out var gv)) gameVersion = gv;
+                loader = EcosystemService.GuessLoader(_instance.Name);
+            }
+            var versions = await _eco.GetVersionsAsync(_card.Id, gameVersion, loader);
+            foreach (var v in versions.OrderByDescending(v => v.DatePublished))
+                AllVersions.Add(new VersionOptionVM(v));
+        }
+        catch { }
+    }
+
+    partial void OnSelectedVersionChanged(VersionOptionVM? value)
+    {
+        if (value is null) return;
+        _matchedVersion = value.Source;
+        Changelog = value.Source.Changelog ?? "";
+        VersionHint = $"已选择: {value.Source.Name} ({value.Source.VersionNumber})";
+        CanInstall = true;
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
@@ -131,7 +190,6 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var version = _matchedVersion
                 ?? throw new InvalidOperationException("没有匹配的可用版本");
 
-            // 整体在后台线程执行：下载 + 依赖解析（适配器同步等待无 SynchronizationContext 死锁）
             var report = await Task.Run(async () =>
             {
                 var progress = new Progress<double>(p => Progress = p);
@@ -184,6 +242,20 @@ public partial class ProjectDetailViewModel : ViewModelBase
         {
             IsInstalling = false;
             if (!InstallDone) CanInstall = true;
+        }
+    }
+}
+
+/// <summary>版本选项（手动选择用）</summary>
+public sealed record VersionOptionVM(ModrinthVersion Source)
+{
+    public string Display
+    {
+        get
+        {
+            var games = Source.GameVersions is { Count: > 0 } ? string.Join("/", Source.GameVersions.Take(2)) : "?";
+            var loaders = Source.Loaders is { Count: > 0 } ? string.Join("/", Source.Loaders.Take(2)) : "any";
+            return $"{Source.VersionNumber} · {games} · {loaders}";
         }
     }
 }

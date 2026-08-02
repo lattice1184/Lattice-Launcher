@@ -5,9 +5,38 @@
              x:DataType="vm:HomeViewModel">
 
     <DockPanel>
-        <!-- 顶部：版本选择 + 启动控制 -->
-        <StackPanel DockPanel.Dock="Top" Spacing="12" Margin="0,0,0,14">
-            <TextBlock Text="YanKa Launcher" FontSize="26" FontWeight="Bold"/>
+        <!-- 顶部：玩家 + 版本选择 + 启动控制 -->
+        <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="#242A36">
+                        <Image Source="{Binding PlayerAvatar}" Width="40" Height="40" Stretch="Uniform"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding PlayerName}" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- 启动阶段指示条 -->
+            <ItemsControl ItemsSource="{Binding Stages}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" Spacing="16"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LaunchStageVM">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <Border Width="8" Height="8" CornerRadius="4"
+                                    Background="{Binding DotColor}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{Binding DotColor}"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
             <TextBlock Text="{Binding LaunchStatus}" Classes="sub"/>
 
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
@@ -33,11 +62,11 @@
                          IsVisible="{Binding IsLaunching}"/>
         </StackPanel>
 
-        <!-- 游戏控制台 -->
+        <!-- 游戏控制台（自动滚动） -->
         <Border Classes="card" Padding="12">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="游戏控制台" Classes="sub" FontSize="12" Margin="0,0,0,8"/>
-                <ScrollViewer>
+                <ScrollViewer x:Name="LogScroll">
                     <ItemsControl ItemsSource="{Binding GameLogs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>

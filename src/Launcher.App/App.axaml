@@ -8,10 +8,25 @@
         <local:ViewLocator />
     </Application.DataTemplates>
 
+    <Application.Resources>
+        <!-- 页面切换动画（资源） -->
+        <CrossFade x:Key="PageFade" Duration="0:0:0.15"/>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
 
         <!-- ========== 颜色令牌与全局样式（克制深色 + 单强调色 #3B82F6） ========== -->
+
+        <!-- 按钮过渡（去生硬感） -->
+        <Style Selector="Button">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
 
         <!-- 窗口与文本 -->
         <Style Selector="Window">
@@ -31,7 +46,7 @@
         <Style Selector="Button">
             <Setter Property="Background" Value="#242A36"/>
             <Setter Property="Foreground" Value="#C9D2E3"/>
-            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="CornerRadius" Value="4"/>
             <Setter Property="Padding" Value="14,7"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
@@ -42,13 +57,13 @@
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
-        <!-- 主操作按钮 -->
+        <!-- 主操作按钮（青绿强调，去 AI 蓝） -->
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="#3B82F6"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#2DD4BF"/>
+            <Setter Property="Foreground" Value="#0B1F1C"/>
         </Style>
         <Style Selector="Button.primary:hover">
-            <Setter Property="Background" Value="#4F8EF8"/>
+            <Setter Property="Background" Value="#45E3CF"/>
         </Style>
 
         <!-- 幽灵按钮 -->
@@ -80,8 +95,8 @@
             <Setter Property="CornerRadius" Value="6"/>
         </Style>
         <Style Selector="Button.tab.active">
-            <Setter Property="Background" Value="#3B82F6"/>
-            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="#2DD4BF"/>
+            <Setter Property="Foreground" Value="#0B1F1C"/>
         </Style>
 
         <!-- 输入控件 -->
@@ -101,17 +116,17 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
-        <!-- 卡片 -->
+        <!-- 卡片（圆角收敛，去 AI 味） -->
         <Style Selector="Border.card">
             <Setter Property="Background" Value="#242A36"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="CornerRadius" Value="4"/>
             <Setter Property="BorderBrush" Value="#2F3745"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
         <!-- 进度条 -->
         <Style Selector="ProgressBar">
-            <Setter Property="Foreground" Value="#3B82F6"/>
+            <Setter Property="Foreground" Value="#2DD4BF"/>
             <Setter Property="Background" Value="#2F3745"/>
             <Setter Property="CornerRadius" Value="3"/>
         </Style>

@@ -20,4 +20,11 @@ public sealed record ModrinthProjectDetail(
     [property: JsonPropertyName("client_side")] string? ClientSide,
     [property: JsonPropertyName("server_side")] string? ServerSide,
     [property: JsonPropertyName("date_created")] DateTime DateCreated,
-    [property: JsonPropertyName("date_modified")] DateTime DateModified);
+    [property: JsonPropertyName("date_modified")] DateTime DateModified,
+    [property: JsonPropertyName("license")] ModrinthLicenseInfo? License);
+
+/// <summary>许可证信息</summary>
+public sealed record ModrinthLicenseInfo(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("url")] string? Url);

@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
 using Launcher.Core.Account;
 using Launcher.Core.Launch;
 using Launcher.Core.Services;
@@ -10,16 +13,20 @@ using Launcher.Core.Utils;
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 主页：版本选择 + 启动状态机（就绪→准备中→运行中→已退出/失败）+ 游戏控制台。
+/// 主页：玩家信息 + 版本选择 + 启动状态机（阶段指示条）+ 游戏控制台。
 /// </summary>
 public partial class HomeViewModel : ViewModelBase
 {
+    private static readonly string[] StageNames =
+        ["解析版本", "检测 Java", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
+
     private readonly GameLaunchService _launcher = new();
     private readonly AccountService _accounts = new();
     private LaunchProcess.LaunchResult? _running;
     private const int MaxLogLines = 500;
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
+    public ObservableCollection<LaunchStageVM> Stages { get; } = [];
 
     [ObservableProperty]
     public partial VersionInstanceVM? SelectedVersion { get; set; }
@@ -39,11 +46,26 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial double LaunchProgress { get; set; }
 
+    [ObservableProperty]
+    public partial int CurrentStageIndex { get; set; } = -1;
+
+    [ObservableProperty]
+    public partial Bitmap? PlayerAvatar { get; set; }
+
+    [ObservableProperty]
+    public partial string PlayerName { get; set; } = "未登录";
+
     public ObservableCollection<string> GameLogs { get; } = [];
+
+    public HomeViewModel()
+    {
+        foreach (var name in StageNames) Stages.Add(new LaunchStageVM(name));
+    }
 
     public async Task InitializeAsync()
     {
         _accounts.Load();
+        RefreshPlayer();
         try
         {
             var svc = new VersionManifestService();
@@ -54,6 +76,40 @@ public partial class HomeViewModel : ViewModelBase
             if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];
         }
         catch { }
+    }
+
+    private void RefreshPlayer()
+    {
+        var acc = _accounts.Current;
+        PlayerName = acc?.Name ?? "未登录";
+        PlayerAvatar = null;
+        if (acc is not null)
+            _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
+                bmp => PlayerAvatar = bmp);
+    }
+
+    /// <summary>推进阶段指示条</summary>
+    private void SetStage(string stageName)
+    {
+        var idx = Array.IndexOf(StageNames, stageName);
+        if (idx < 0) return;
+        CurrentStageIndex = idx;
+        for (var i = 0; i < Stages.Count; i++)
+        {
+            Stages[i].IsDone = i < idx;
+            Stages[i].IsCurrent = i == idx;
+        }
+        // 阶段进度映射：前 4 个阶段占 0-80%，游戏加载 80-100%
+        LaunchProgress = idx switch
+        {
+            0 => 15,
+            1 => 35,
+            2 => 55,
+            3 => 75,
+            4 => 85,
+            _ => LaunchProgress,
+        };
+        LaunchStatus = stageName == "启动 JVM" ? "正在启动 JVM…" : $"{stageName}…";
     }
 
     [RelayCommand]
@@ -68,26 +124,29 @@ public partial class HomeViewModel : ViewModelBase
         GameLogs.Clear();
         IsLaunching = true;
         LaunchProgress = 0;
+        CurrentStageIndex = -1;
+        foreach (var s in Stages) { s.IsDone = false; s.IsCurrent = false; }
         LaunchState = "准备中";
         LaunchStatus = $"正在准备 {version.Name}…";
 
         try
         {
-            // 阶段 1：构建启动档案（20%）
+            // 启动链路（后台线程；阶段回调切回 UI 更新指示条）
             _running = await Task.Run(() => _launcher.LaunchAsync(
                 version.Name, GameDirectory.Detect(), account.Name, account.Uuid,
                 memoryMb: 4096, extraJvmArgs: null,
-                onLog: AppendLog), CancellationToken.None);
-            LaunchProgress = 30;
+                onLog: AppendLog, onStage: s => Dispatcher.UIThread.Post(() => SetStage(s)),
+                ct: CancellationToken.None));
 
-            // 阶段 2：游戏进程已启动（30%）
+            // 游戏进程已启动
             IsLaunching = false;
             IsRunning = true;
             LaunchState = "运行中";
-            LaunchStatus = $"游戏运行中（{account.Name}）· 点击停止可结束";
             LaunchProgress = 100;
+            LaunchStatus = $"游戏运行中（{account.Name}）· 点击停止可结束";
+            SetStage("运行中");
 
-            // 阶段 3：等待退出
+            // 等待退出
             await Task.Run(() => _running.Process.WaitForExit());
             var code = LaunchProcess.GetExitCode(_running);
             AppendLog($"§ 游戏进程已退出（exitStatus={code}）");
@@ -95,6 +154,7 @@ public partial class HomeViewModel : ViewModelBase
             LaunchStatus = code == 0 ? "游戏正常退出" : "游戏异常退出，请查看日志";
             IsRunning = false;
             _running = null;
+            CurrentStageIndex = -1;
         }
         catch (Exception ex)
         {
@@ -124,4 +184,26 @@ public partial class HomeViewModel : ViewModelBase
         if (GameLogs.Count >= MaxLogLines) GameLogs.RemoveAt(0);
         GameLogs.Add(line);
     }
+}
+
+/// <summary>启动阶段指示项</summary>
+public partial class LaunchStageVM : ObservableObject
+{
+    public string Name { get; }
+
+    [ObservableProperty]
+    public partial bool IsDone { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsCurrent { get; set; }
+
+    /// <summary>指示点颜色：完成=青绿、当前=蓝、未到=灰</summary>
+    public IBrush DotColor => IsDone ? new SolidColorBrush(Color.Parse("#2DD4BF"))
+        : IsCurrent ? new SolidColorBrush(Color.Parse("#3B82F6"))
+        : new SolidColorBrush(Color.Parse("#3A4250"));
+
+    public LaunchStageVM(string name) => Name = name;
+
+    partial void OnIsDoneChanged(bool value) => OnPropertyChanged(nameof(DotColor));
+    partial void OnIsCurrentChanged(bool value) => OnPropertyChanged(nameof(DotColor));
 }

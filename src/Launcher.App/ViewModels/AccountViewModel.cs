@@ -1,5 +1,7 @@
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
 using Launcher.Core.Account;
 
 namespace Launcher.App.ViewModels;
@@ -27,6 +29,9 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial string Status { get; set; } = "";
 
+    [ObservableProperty]
+    public partial Bitmap? Avatar { get; set; }
+
     public AccountViewModel()
     {
         _accounts.Load();
@@ -41,6 +46,12 @@ public partial class AccountViewModel : ViewModelBase
         CurrentUuid = acc?.Uuid ?? "";
         AccountType = acc?.Type == "microsoft" ? "正版账号" : acc?.Type == "offline" ? "离线账号" : "";
         if (acc is not null) NameInput = acc.Name;
+
+        // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）
+        Avatar = null;
+        if (acc is not null)
+            _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
+                bmp => Avatar = bmp);
     }
 
     [RelayCommand]

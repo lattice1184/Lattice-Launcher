@@ -12,7 +12,11 @@ public static class ImageLoader
     private static readonly HttpClient Http = new();
     private static readonly ConcurrentDictionary<string, Task<Bitmap?>> Cache = new();
 
-    public static async Task LoadAsync(string? url, Action<Bitmap?> onLoaded, CancellationToken ct = default)
+    public static Task LoadAsync(string? url, Action<Bitmap?> onLoaded, CancellationToken ct = default)
+        => LoadAsync(url, onLoaded, 96, ct);
+
+    /// <summary>按目标宽度解码（大图降采样节省内存）</summary>
+    public static async Task LoadAsync(string? url, Action<Bitmap?> onLoaded, int decodeWidth, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(url))
         {
@@ -21,8 +25,11 @@ public static class ImageLoader
         }
         try
         {
-            var task = Cache.GetOrAdd(url, static u => DownloadAsync(u));
-            onLoaded(await task);
+            var task = Cache.GetOrAdd(url, static u => DownloadAsync(u, 96));
+            var bitmap = decodeWidth <= 96
+                ? await task
+                : await DownloadAsync(url, decodeWidth); // 大图单独解码（不污染小图缓存）
+            onLoaded(bitmap);
         }
         catch
         {
@@ -32,11 +39,11 @@ public static class ImageLoader
         }
     }
 
-    private static async Task<Bitmap?> DownloadAsync(string url)
+    private static async Task<Bitmap?> DownloadAsync(string url, int decodeWidth)
     {
         using var resp = await Http.GetAsync(url);
         resp.EnsureSuccessStatusCode();
         await using var stream = await resp.Content.ReadAsStreamAsync();
-        return Bitmap.DecodeToWidth(stream, 96);
+        return Bitmap.DecodeToWidth(stream, decodeWidth);
     }
 }
