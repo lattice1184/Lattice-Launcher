@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Launcher.Animation;
 using Launcher.App.ViewModels;
 using Launcher.App.Views;
+using Launcher.Core.Utils;
 using PCL.Core.App.IoC;
 using PCL.Core.Logging;
 using PCL.Core.UI.Animation.Core;
@@ -21,6 +22,9 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // 启动时确保自建游戏目录结构（Downloads\YanKa Launcher\.minecraft）
+            Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
+
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
             LogService.FatalErrorReporter = message => System.Console.Error.WriteLine($"[FATAL] {message}");

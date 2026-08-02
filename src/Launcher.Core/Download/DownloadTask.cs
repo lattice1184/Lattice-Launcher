@@ -202,11 +202,14 @@ public partial class DownloadTask : ObservableObject
     {
         Post(() =>
         {
-            Children.Add(child);
-            child.PropertyChanged += OnChildPropertyChanged;
-            // 父取消级联：覆盖"父先取消、子后创建"的时序（Children 级联只覆盖已存在的子任务）
-            child._externalCancellations.Add(_cts.Token.Register(child.Cancel));
-            RecomputeAggregate();
+            lock (_lock)
+            {
+                Children.Add(child);
+                child.PropertyChanged += OnChildPropertyChanged;
+                // 父取消级联：覆盖"父先取消、子后创建"的时序（Children 级联只覆盖已存在的子任务）
+                child._externalCancellations.Add(_cts.Token.Register(child.Cancel));
+                RecomputeAggregate();
+            }
         });
     }
 
@@ -219,22 +222,26 @@ public partial class DownloadTask : ObservableObject
         }
     }
 
-    /// <summary>加权聚合：TotalBytes=ΣWeight；percent=Σ(Weight×child%)/Σ；Stage=最后活动子任务；聚合计速</summary>
+    /// <summary>加权聚合：TotalBytes=ΣWeight；percent=Σ(Weight×child%)/Σ；Stage=最后活动子任务；聚合计速。
+    /// 与 AttachChild 共用锁（Monitor 可重入）保证 Children 迭代/修改互斥，防御偶发 NRE/竞态。</summary>
     private void RecomputeAggregate()
     {
         if (!IsGroup) return;
 
-        long total = 0;
-        double weighted = 0;
-        DownloadTask? active = null;
-        foreach (var c in Children)
+        lock (_lock)
         {
-            var w = Math.Max(c.Weight, 0);
-            total += w;
-            weighted += w * c.ProgressPercent;
-            if (c.IsActive) active = c;
-        }
-        active ??= Children.LastOrDefault(c => c.State == DownloadTaskState.Downloading);
+            long total = 0;
+            double weighted = 0;
+            DownloadTask? active = null;
+            foreach (var c in Children)
+            {
+                if (c is null) continue; // 防御
+                var w = Math.Max(c.Weight, 0);
+                total += w;
+                weighted += w * c.ProgressPercent;
+                if (c.IsActive) active = c;
+            }
+            active ??= Children.LastOrDefault(c => c is not null && c.State == DownloadTaskState.Downloading);
 
         var percent = total > 0 ? weighted / total : 0;
         Stage = active?.Stage ?? (total > 0 ? "正在下载…" : "准备中…");
@@ -256,9 +263,10 @@ public partial class DownloadTask : ObservableObject
             if (dt > 0) SpeedBps = (BytesDone - _sampleStartBytes) / dt;
             _lastBytes = BytesDone;
         }
-        OnPropertyChanged(nameof(SpeedText));
-        OnPropertyChanged(nameof(EtaText));
-        OnPropertyChanged(nameof(BytesText));
+            OnPropertyChanged(nameof(SpeedText));
+            OnPropertyChanged(nameof(EtaText));
+            OnPropertyChanged(nameof(BytesText));
+            }
     }
 
     // ---------- 控制 ----------

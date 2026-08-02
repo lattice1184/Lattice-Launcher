@@ -63,7 +63,7 @@
                 <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
                 <StackPanel Spacing="8" IsVisible="{Binding IsError}">
                     <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A"/>
-                    <Button Content="重试" Command="{Binding SearchCommand}" CommandParameter="True"
+                    <Button Content="重试" Command="{Binding SearchCommand}"
                             HorizontalAlignment="Left"/>
                 </StackPanel>
                 <TextBlock Text="没有找到相关内容" Foreground="#8A93A6" HorizontalAlignment="Center"

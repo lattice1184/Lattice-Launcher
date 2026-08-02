@@ -114,6 +114,34 @@ public class JavaArgumentsBuilderTests
         Assert.DoesNotContain(p.GameArgs, a => a.Contains("versions/1.21.1"));
     }
 
+    /// <summary>26.2 形态：jvm 参数 java.library.path 带 /java 子目录后缀 + natives-windows/arm64 变体。
+    /// 修复：java.library.path 统一根目录（/java 后缀去重）、arm64 变体不误判为 natives。</summary>
+    [Fact]
+    public void Modern262_NativesJavaSubdir_DeduplicatedToRoot()
+    {
+        var json = """
+            {
+              "id":"26.2","type":"release","mainClass":"net.minecraft.client.main.Main",
+              "arguments":{"jvm":["-Djava.library.path=${natives_directory}/java"]},
+              "libraries":[
+                {"name":"org.lwjgl:lwjgl:3.4.1","downloads":{"artifact":{"url":"https://x/l.jar","size":5}}},
+                {"name":"org.lwjgl:lwjgl:3.4.1:natives-windows","downloads":{"artifact":{"url":"https://x/l-natives.jar","size":5}}},
+                {"name":"org.lwjgl:lwjgl:3.4.1:natives-windows-arm64","downloads":{"artifact":{"url":"https://x/l-arm64.jar","size":5}}}
+              ]
+            }
+            """;
+        var p = Build(JsonSerializer.Deserialize<VersionJson>(json)!, @"C:\mc", versionIsolation: false);
+
+        // java.library.path 恰好一条且指向 natives 根（JSON 的 /java 后缀被去重）
+        Assert.Single(p.JvmArgs, a => a.StartsWith("-Djava.library.path="));
+        var libPath = p.JvmArgs.First(a => a.StartsWith("-Djava.library.path="));
+        Assert.DoesNotContain("/java", libPath);
+        Assert.Contains(@"C:\mc\versions\26.2\26.2-natives", libPath);
+        // natives-windows 不进 classpath（新版只解压）；arm64 变体按普通库进 classpath（精确匹配生效）
+        Assert.DoesNotContain(p.ClassPath, "natives-windows.jar");
+        Assert.Contains("arm64", p.ClassPath);
+    }
+
     [Fact]
     public void ForgeStyle_MissingParent_Throws()
     {

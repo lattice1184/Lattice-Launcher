@@ -196,8 +196,9 @@ public partial class EcosystemViewModel : ViewModelBase
         }
     }
 
+    // 无参命令：避免 RelayCommand<bool> 与 XAML string CommandParameter 的类型不匹配崩溃
     [RelayCommand]
-    private Task Search(bool reset) => RunSearchAsync(reset);
+    private Task Search() => RunSearchAsync(reset: true);
 
     [RelayCommand]
     private Task LoadMore() => RunSearchAsync(reset: false);

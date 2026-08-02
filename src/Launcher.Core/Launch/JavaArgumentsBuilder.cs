@@ -153,6 +153,9 @@ public sealed class JavaArgumentsBuilder
     {
         if (string.IsNullOrEmpty(arg)) return;
         if (arg.Contains("${classpath}", StringComparison.OrdinalIgnoreCase) || arg == "-cp") return;
+        // java.library.path 与硬编码参数去重：版本 JSON 可能带子目录后缀（如 26.2 的 ${natives_directory}/java），
+        // 统一使用本构建器计算的 natives 根目录（dll 平铺解压即可被找到）
+        if (arg.StartsWith("-Djava.library.path=", StringComparison.OrdinalIgnoreCase)) return;
         if (!jvmArgs.Contains(arg)) jvmArgs.Add(arg);
     }
 
@@ -232,10 +235,10 @@ public sealed class JavaArgumentsBuilder
         // 旧版：natives 字段按 OS 映射（classifier 同条目，进 classpath）
         if (lib.Natives is { } natives && natives.TryGetValue(_rules.OsName, out var mappedKey))
             return (true, lib.Name + ":" + mappedKey, true);
-        // 新版：独立条目名字带 :natives-xxx classifier（如 org.lwjgl:lwjgl-stb:3.3.1:natives-windows）
+        // 新版：独立条目名字带 :natives-xxx classifier（如 org.lwjgl:lwjgl-stb:3.3.1:natives-windows）。
+        // 精确匹配 natives-{os}（防 natives-windows-arm64/x86 变体误判为当前架构的 natives）
         var parts = lib.Name.Split(':');
-        if (parts.Length == 4 && parts[3].StartsWith("natives-", StringComparison.OrdinalIgnoreCase)
-            && parts[3].Contains(_rules.OsName, StringComparison.OrdinalIgnoreCase))
+        if (parts.Length == 4 && parts[3].Equals($"natives-{_rules.OsName}", StringComparison.OrdinalIgnoreCase))
             return (true, lib.Name, false);
         return (false, null, false);
     }
