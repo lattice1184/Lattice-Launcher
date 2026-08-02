@@ -11,9 +11,9 @@
         </StackPanel>
 
         <!-- 两栏：左分类导航 + 右详情 -->
-        <Grid ColumnDefinitions="*,1,280" ColumnSpacing="10">
-            <!-- 右侧：版本列表栏（分类 + 搜索 + 列表 + 分页） -->
-            <DockPanel Grid.Column="2">
+        <Grid ColumnDefinitions="210,1,*,1,300" ColumnSpacing="10">
+            <!-- 左：分类 + 搜索（老位置） -->
+            <DockPanel Grid.Column="0">
                 <TextBox DockPanel.Dock="Top" Text="{Binding Sidebar.SearchText, Mode=TwoWay}"
                          Watermark="搜索版本…" Margin="0,0,0,8"/>
                 <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Sidebar.Categories}" Margin="0,0,0,6">
@@ -34,6 +34,13 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </DockPanel>
+
+            <!-- 分割线 -->
+            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
+
+            <!-- 中：版本列表 + 分页 -->
+            <DockPanel Grid.Column="2">
                 <!-- 版本列表（分页 10/页，竖排） -->
                 <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
                          Background="Transparent" BorderThickness="0">
@@ -62,16 +69,16 @@
                 </StackPanel>
             </DockPanel>
 
-            <!-- 分割线（可见） -->
-            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
+            <!-- 分割线 -->
+            <GridSplitter Grid.Column="3" Width="1" Background="{StaticResource BorderColor}"/>
 
-            <!-- 左栏：详情 -->
-            <Border Grid.Column="0" Padding="0,0,4,0">
+            <!-- 右栏：详情 -->
+            <Border Grid.Column="4" Padding="4,0,0,0">
                 <Grid>
                 <!-- 占位 -->
                 <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
                             VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="← 选择左侧版本" Classes="sub" FontSize="13"/>
+                    <TextBlock Text="← 选择中间版本" Classes="sub" FontSize="13"/>
                 </StackPanel>
 
                 <!-- 详情 -->
