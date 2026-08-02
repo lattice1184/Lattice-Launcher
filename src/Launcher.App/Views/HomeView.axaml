@@ -7,19 +7,17 @@
     <DockPanel>
         <!-- 顶部：玩家 + 版本选择 + 启动控制 -->
         <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="#242A36">
-                        <Image Source="{Binding PlayerAvatar}" Width="40" Height="40" Stretch="Uniform"/>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{Binding PlayerName}" FontSize="14" FontWeight="SemiBold"/>
-                        <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
-                    </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                    <Image Source="{Binding PlayerAvatar}" Width="40" Height="40" Stretch="Uniform"/>
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding PlayerName}" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
                 </StackPanel>
-            </Grid>
+            </StackPanel>
 
-            <!-- 启动阶段指示条 -->
+            <!-- 启动阶段指示条（颜色只在圆点上，文字统一灰阶） -->
             <ItemsControl ItemsSource="{Binding Stages}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -31,7 +29,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="5">
                             <Border Width="8" Height="8" CornerRadius="4"
                                     Background="{Binding DotColor}" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{Binding DotColor}"/>
+                            <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
                         </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -48,22 +46,26 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Grid.Column="1" Content="启动游戏" Classes="primary" Padding="28,9"
+                <Button Grid.Column="1" Content="启动游戏" Classes="primary" Padding="32,10" FontSize="14"
                         Command="{Binding LaunchCommand}"
                         IsVisible="{Binding !IsRunning}"/>
-                <Button Grid.Column="1" Content="停止" Padding="28,9"
+                <Button Grid.Column="1" Content="停止" Padding="32,10" FontSize="14"
                         Command="{Binding StopGameCommand}"
                         IsVisible="{Binding IsRunning}"/>
-                <Button Grid.Column="2" Content="{Binding LaunchState}" Classes="ghost"
-                        IsEnabled="False" MinWidth="80"/>
+                <!-- 状态圆点 + 文字（替代 50% 透明度的禁用按钮） -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="90">
+                    <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
+                            VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                </StackPanel>
             </Grid>
 
-            <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="6"
+            <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="5"
                          IsVisible="{Binding IsLaunching}"/>
         </StackPanel>
 
-        <!-- 游戏控制台（自动滚动） -->
-        <Border Classes="card" Padding="12">
+        <!-- 游戏控制台（自动滚动；最小高度防布局跳动） -->
+        <Border Classes="card" Padding="12" MinHeight="140">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="游戏控制台" Classes="sub" FontSize="12" Margin="0,0,0,8"/>
                 <ScrollViewer x:Name="LogScroll">

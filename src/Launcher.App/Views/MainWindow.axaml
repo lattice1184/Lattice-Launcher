@@ -10,25 +10,25 @@
         Title="YanKa Launcher" Width="860" Height="560" MinWidth="760" MinHeight="500"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
         Background="Transparent"
-        TransparencyBackgroundFallback="#FF1A1C20">
+        TransparencyBackgroundFallback="#FF14181F">
 
     <Design.DataContext>
         <vm:MainViewModel />
     </Design.DataContext>
 
     <!-- 亚克力半透明背景层 -->
-    <Border x:Name="RootSurface" Background="#E61A1C20" CornerRadius="8" BorderBrush="#332F3745" BorderThickness="1">
+    <Border x:Name="RootSurface" Background="#E614181F" CornerRadius="8" BorderBrush="#332F3745" BorderThickness="1">
         <DockPanel>
-            <!-- 左侧导航（液态玻璃） -->
-            <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="170" CornerRadius="0">
+            <!-- 左侧导航（液态玻璃；内角随窗口圆角） -->
+            <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="170" CornerRadius="8,0,0,8">
                 <ExperimentalAcrylicBorder.Material>
                     <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                                  TintColor="#14181F"
                                                  TintOpacity="0.55"/>
                 </ExperimentalAcrylicBorder.Material>
                 <StackPanel Margin="14">
-                    <TextBlock Text="YanKa" FontSize="20" FontWeight="Bold" Foreground="#E8EAF0" Margin="4,8,0,0"/>
-                    <TextBlock Text="Launcher" FontSize="14" Foreground="#8A93A6" Margin="4,0,0,24"/>
+                    <TextBlock Text="YanKa Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
+                               Margin="6,10,6,20"/>
                     <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="home"
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
@@ -43,9 +43,9 @@
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="下载"/>
-                            <Border Background="#2DD4BF" CornerRadius="8" Padding="6,1"
+                            <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                     VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
-                                <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="#0B1F1C" FontSize="11"/>
+                                <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{StaticResource Accent}" FontSize="10"/>
                             </Border>
                         </StackPanel>
                     </Button>

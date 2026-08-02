@@ -7,6 +7,7 @@
     <DockPanel>
         <!-- 顶部：Tab + 搜索 + 实例 + 状态 -->
         <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <TextBlock Text="生态" FontSize="20" FontWeight="Bold"/>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
                         Command="{Binding SelectTabCommand}" CommandParameter="mod"/>
@@ -58,19 +59,32 @@
                                         BorderThickness="0" HorizontalContentAlignment="Stretch"
                                         Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).OpenDetailCommand}"
                                         CommandParameter="{Binding}">
-                                    <Border Background="#242A36" CornerRadius="8" Padding="12"
-                                            BorderBrush="#2F3745" BorderThickness="1">
+                                    <Button.Styles>
+                                        <Style Selector="Button:hover > Border.modcard">
+                                            <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                            <Setter Property="BorderBrush" Value="#3C4757"/>
+                                        </Style>
+                                        <Style Selector="Button:pressed > Border.modcard">
+                                            <Setter Property="Background" Value="{StaticResource BgActive}"/>
+                                        </Style>
+                                    </Button.Styles>
+                                    <Border Classes="modcard" Background="{StaticResource BgRaised}"
+                                            CornerRadius="{StaticResource RadiusLarge}" Padding="12"
+                                            BorderBrush="{StaticResource BorderColor}" BorderThickness="1">
                                         <StackPanel Spacing="6">
                                             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                                                <Image Source="{Binding Icon}" Width="44" Height="44"/>
+                                                <Border Width="44" Height="44" CornerRadius="{StaticResource RadiusLarge}"
+                                                        ClipToBounds="True" Background="{StaticResource BgActive}">
+                                                    <Image Source="{Binding Icon}" Width="44" Height="44" Stretch="Uniform"/>
+                                                </Border>
                                                 <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold"
                                                            Foreground="White" MaxLines="1" TextTrimming="CharacterEllipsis"
                                                            VerticalAlignment="Center"/>
                                             </Grid>
-                                            <TextBlock Text="{Binding Author}" Foreground="#7E8BA0" FontSize="12"/>
-                                            <TextBlock Text="{Binding Description}" Foreground="#9AA3B5" FontSize="12"
+                                            <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
+                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
                                                        MaxLines="2" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Foreground="#5A6577" FontSize="11">
+                                            <TextBlock Foreground="{StaticResource TextDim}" FontSize="11">
                                                 <Run Text="{Binding DownloadsText}"/><Run Text=" 下载 · "/>
                                                 <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
                                             </TextBlock>

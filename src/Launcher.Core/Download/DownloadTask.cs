@@ -58,6 +58,7 @@ public partial class DownloadTask : ObservableObject
 
     public string StateText => StateTexts[State];
     public bool HasError => Error is not null;
+    public bool HasProgress => ProgressPercent > 0;
 
     public string SpeedText => SpeedBps >= 1024 * 1024
         ? $"{SpeedBps / 1024 / 1024:0.0} MB/s"
@@ -152,7 +153,7 @@ public partial class DownloadTask : ObservableObject
             Stage = stage;
             BytesDone = done;
             TotalBytes = total;
-            if (overall > ProgressPercent) ProgressPercent = overall;
+            if (overall > ProgressPercent) { ProgressPercent = overall; OnPropertyChanged(nameof(HasProgress)); }
             SpeedBps = speed;
             OnPropertyChanged(nameof(SpeedText));
             OnPropertyChanged(nameof(EtaText));

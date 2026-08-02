@@ -11,12 +11,39 @@
     <Application.Resources>
         <!-- 页面切换动画（资源） -->
         <CrossFade x:Key="PageFade" Duration="0:0:0.15"/>
+
+        <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
+        <!-- 表面层 -->
+        <Color x:Key="BgBase">#14181F</Color>
+        <Color x:Key="BgSurface">#1D222C</Color>
+        <Color x:Key="BgRaised">#242A36</Color>
+        <Color x:Key="BgHover">#2C3544</Color>
+        <Color x:Key="BgActive">#2A3240</Color>
+        <Color x:Key="BorderColor">#2F3745</Color>
+        <!-- 文本层 -->
+        <Color x:Key="TextPrimary">#E8EAF0</Color>
+        <Color x:Key="TextSecondary">#8A93A6</Color>
+        <Color x:Key="TextDim">#6F7B90</Color>
+        <Color x:Key="TextLog">#B8C2D4</Color>
+        <!-- 强调（青绿，唯一饱和色）与状态 -->
+        <Color x:Key="Accent">#2DD4BF</Color>
+        <Color x:Key="AccentHover">#45E3CF</Color>
+        <Color x:Key="OnAccent">#0B1F1C</Color>
+        <Color x:Key="Danger">#E05A5A</Color>
+        <Color x:Key="Success">#5AD07C</Color>
+        <!-- 圆角与间距基准 -->
+        <x:Double x:Key="RadiusSmall">3</x:Double>
+        <x:Double x:Key="RadiusMedium">4</x:Double>
+        <x:Double x:Key="RadiusLarge">6</x:Double>
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
 
-        <!-- ========== 颜色令牌与全局样式（克制深色 + 单强调色 #3B82F6） ========== -->
+        <!-- 全局字体：系统中文 UI 字体（弃 AI 默认 Inter） -->
+        <Style Selector="Window">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
+        </Style>
 
         <!-- 按钮过渡（去生硬感） -->
         <Style Selector="Button">
@@ -30,105 +57,127 @@
 
         <!-- 窗口与文本 -->
         <Style Selector="Window">
-            <Setter Property="Background" Value="#14181F"/>
+            <Setter Property="Background" Value="{StaticResource BgBase}"/>
         </Style>
         <Style Selector="TextBlock">
-            <Setter Property="Foreground" Value="#E8EAF0"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
         </Style>
         <Style Selector="TextBlock.sub">
-            <Setter Property="Foreground" Value="#8A93A6"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
         </Style>
         <Style Selector="TextBlock.dim">
-            <Setter Property="Foreground" Value="#5A6577"/>
+            <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
         </Style>
 
         <!-- 按钮 -->
         <Style Selector="Button">
-            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
             <Setter Property="Foreground" Value="#C9D2E3"/>
-            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
             <Setter Property="Padding" Value="14,7"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
         <Style Selector="Button:hover">
-            <Setter Property="Background" Value="#2C3544"/>
+            <Setter Property="Background" Value="{StaticResource BgHover}"/>
         </Style>
         <Style Selector="Button:disabled">
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
-        <!-- 主操作按钮（青绿强调，去 AI 蓝） -->
+        <!-- 主操作按钮（唯一饱和面） -->
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="#2DD4BF"/>
-            <Setter Property="Foreground" Value="#0B1F1C"/>
+            <Setter Property="Background" Value="{StaticResource Accent}"/>
+            <Setter Property="Foreground" Value="{StaticResource OnAccent}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
         <Style Selector="Button.primary:hover">
-            <Setter Property="Background" Value="#45E3CF"/>
+            <Setter Property="Background" Value="{StaticResource AccentHover}"/>
         </Style>
 
         <!-- 幽灵按钮 -->
         <Style Selector="Button.ghost">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#8A93A6"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
         </Style>
         <Style Selector="Button.ghost:hover">
-            <Setter Property="Foreground" Value="#C9D2E3"/>
-            <Setter Property="Background" Value="#242A36"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
-        <!-- 导航按钮 -->
+        <!-- 导航按钮：激活态左侧色条 + 填充 -->
         <Style Selector="Button.nav">
-            <Setter Property="Foreground" Value="#8A93A6"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
         </Style>
+        <Style Selector="Button.nav:hover">
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        </Style>
         <Style Selector="Button.nav.active">
             <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Background" Value="#2A3240"/>
+            <Setter Property="Background" Value="#12332F"/>
+        </Style>
+        <Style Selector="Button.nav.active:hover">
+            <Setter Property="Background" Value="#16403A"/>
         </Style>
 
         <!-- 生态 Tab -->
         <Style Selector="Button.tab">
             <Setter Property="Padding" Value="16,7"/>
-            <Setter Property="Background" Value="#242A36"/>
-            <Setter Property="Foreground" Value="#8A93A6"/>
-            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+        </Style>
+        <Style Selector="Button.tab:hover">
+            <Setter Property="Background" Value="{StaticResource BgHover}"/>
         </Style>
         <Style Selector="Button.tab.active">
-            <Setter Property="Background" Value="#2DD4BF"/>
-            <Setter Property="Foreground" Value="#0B1F1C"/>
+            <Setter Property="Background" Value="#12332F"/>
+            <Setter Property="Foreground" Value="#B5F4E9"/>
         </Style>
 
         <!-- 输入控件 -->
         <Style Selector="TextBox">
-            <Setter Property="Background" Value="#242A36"/>
-            <Setter Property="Foreground" Value="#E8EAF0"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,6"/>
         </Style>
         <Style Selector="ComboBox">
-            <Setter Property="Background" Value="#242A36"/>
-            <Setter Property="Foreground" Value="#E8EAF0"/>
-            <Setter Property="CornerRadius" Value="6"/>
-            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
-        <!-- 卡片（圆角收敛，去 AI 味） -->
+        <!-- 卡片（圆角收敛；用于离散信息单元，不用于列表行） -->
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="#242A36"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="BorderBrush" Value="#2F3745"/>
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- 列表行：扁平 + hover + 分隔线（替代"每行一卡片"的 AI 味） -->
+        <Style Selector="Border.row">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        </Style>
+        <Style Selector="Border.row:hover">
+            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
         <!-- 进度条 -->
         <Style Selector="ProgressBar">
-            <Setter Property="Foreground" Value="#2DD4BF"/>
-            <Setter Property="Background" Value="#2F3745"/>
-            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+            <Setter Property="Background" Value="{StaticResource BorderColor}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}"/>
         </Style>
     </Application.Styles>
 </Application>

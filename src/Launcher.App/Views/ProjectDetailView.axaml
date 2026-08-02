@@ -6,11 +6,14 @@
 
     <ScrollViewer>
         <StackPanel Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
-            <Button Content="← 返回" Command="{Binding CloseCommand}"
-                    HorizontalAlignment="Left" Background="Transparent" Foreground="#8A93A6" BorderThickness="0"/>
+            <Button Content="← 返回" Command="{Binding CloseCommand}" Classes="ghost"
+                    HorizontalAlignment="Left"/>
 
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
-                <Image Source="{Binding Icon}" Width="72" Height="72"/>
+                <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
+                        Background="{StaticResource BgRaised}">
+                    <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
+                </Border>
                 <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
@@ -49,7 +52,7 @@
 
                     <!-- 安装按钮 -->
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                        <Button Grid.Column="0" Content="{Binding InstallButtonText}"
+                        <Button Grid.Column="0" Content="{Binding InstallButtonText}" Classes="primary"
                                 Command="{Binding InstallCommand}" Padding="24,8"
                                 IsVisible="{Binding !IsInstalling}"/>
                         <Button Grid.Column="0" Content="取消安装" Command="{Binding InstallCancelCommand}"

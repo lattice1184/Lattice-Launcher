@@ -2,12 +2,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:core="using:Launcher.Core.Download"
+             xmlns:app="using:Launcher.App.Converters"
              x:Class="Launcher.App.Views.DownloadView"
              x:DataType="vm:DownloadViewModel">
 
     <DockPanel>
-        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="2,0,2,10">
-            <TextBlock Text="{Binding Status}" Foreground="#8A93A6" VerticalAlignment="Center"/>
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
             <Button Grid.Column="1" Content="清除已完成" Classes="ghost" Padding="10,4"
                     Command="{Binding ClearFinishedCommand}"/>
         </Grid>
@@ -16,23 +17,30 @@
             <ItemsControl ItemsSource="{Binding Tasks}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="core:DownloadTask">
-                        <Border Classes="card" Padding="12" Margin="0,0,0,8">
+                        <Border Classes="row" Padding="12,8" Margin="0,0,0,1">
                             <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
-                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                                    <TextBlock Text="{Binding Name}" Foreground="#E8EAF0" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding StateText}" Foreground="#8A93A6" FontSize="12" VerticalAlignment="Center"/>
-                                    <Button Grid.Column="2" Content="取消" Classes="ghost" Padding="8,3" FontSize="12"
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                    <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                                    <!-- 状态徽章：完成=绿 / 失败=红 / 取消=灰 / 进行中=青 -->
+                                    <Border Grid.Column="1" CornerRadius="{StaticResource RadiusSmall}" Padding="7,2"
+                                            Background="{Binding State, Converter={x:Static app:StateBadgeConverter.Background}}"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding StateText}" FontSize="11"
+                                                   Foreground="{Binding State, Converter={x:Static app:StateBadgeConverter.Foreground}}"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="2" Text="{Binding Error}" Foreground="{StaticResource Danger}" FontSize="11"
+                                               TextTrimming="CharacterEllipsis" IsVisible="{Binding HasError}"/>
+                                    <Button Grid.Column="3" Content="取消" Classes="ghost" Padding="8,3" FontSize="12"
                                             Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}"/>
                                 </Grid>
                                 <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
                                            TextTrimming="CharacterEllipsis"/>
-                                <ProgressBar Grid.Row="2" Value="{Binding ProgressPercent}" Maximum="100" Height="5"/>
+                                <ProgressBar Grid.Row="2" Value="{Binding ProgressPercent}" Maximum="100" Height="5"
+                                             IsIndeterminate="{Binding !HasProgress}"/>
                                 <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,Auto,*,Auto" ColumnSpacing="14">
-                                    <TextBlock Text="{Binding SpeedText}" Foreground="#5A6577" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="#5A6577" FontSize="11"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="#5A6577" FontSize="11"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding Error}" Foreground="#E05A5A" FontSize="11"
-                                               TextTrimming="CharacterEllipsis" IsVisible="{Binding HasError}"/>
+                                    <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
                                 </Grid>
                             </Grid>
                         </Border>

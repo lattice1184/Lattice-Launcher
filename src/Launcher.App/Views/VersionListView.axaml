@@ -5,7 +5,10 @@
              x:DataType="vm:VersionListViewModel">
 
     <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="#8A93A6" Margin="4,0,0,10"/>
+        <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+            <TextBlock Text="版本管理" FontSize="20" FontWeight="Bold"/>
+            <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
+        </StackPanel>
 
         <ScrollViewer>
             <ItemsControl ItemsSource="{Binding Groups}">
@@ -22,16 +25,15 @@
                             <ItemsControl ItemsSource="{Binding Items}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="vm:VersionEntryVM">
-                                        <Border Background="#242A36" CornerRadius="4" Padding="12,8"
-                                                Margin="2,2" BorderBrush="#2F3745" BorderThickness="1">
+                                        <Border Classes="row" Padding="12,8" Margin="0,1">
                                             <StackPanel>
                                                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12" VerticalAlignment="Center">
                                                     <TextBlock Grid.Column="0" Text="{Binding Id}" FontWeight="SemiBold" Foreground="White"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding Type}" Foreground="#7E8BA0" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Foreground="#5A6577" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding ReleaseDate}" Foreground="{StaticResource TextDim}" VerticalAlignment="Center"/>
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                        <Border CornerRadius="4" Padding="8,3" Background="#2E7D4F" IsVisible="{Binding Installed}">
-                                                            <TextBlock Text="已安装" FontSize="11" Foreground="White"/>
+                                                        <Border CornerRadius="{StaticResource RadiusSmall}" Padding="8,2" Background="#1E3A2E" IsVisible="{Binding Installed}">
+                                                            <TextBlock Text="已安装" FontSize="11" Foreground="#5AD07C"/>
                                                         </Border>
                                                         <Button Content="下载" Classes="ghost" FontSize="12" Padding="12,4"
                                                                 Command="{Binding DownloadCommand}" IsVisible="{Binding ShowDownloadButton}"/>
@@ -39,9 +41,9 @@
                                                             <ProgressBar Value="{Binding DownloadProgressPercent}" Maximum="100"
                                                                          Width="72" Height="5" VerticalAlignment="Center"/>
                                                             <TextBlock Text="{Binding DownloadProgressText}" FontSize="11"
-                                                                       Foreground="#8A93A6" VerticalAlignment="Center"/>
+                                                                       Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
                                                         </StackPanel>
-                                                        <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="#E05A5A"
+                                                        <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource Danger}"
                                                                    VerticalAlignment="Center" IsVisible="{Binding HasError}"/>
                                                     </StackPanel>
                                                 </Grid>

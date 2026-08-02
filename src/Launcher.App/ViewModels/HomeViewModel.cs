@@ -34,6 +34,21 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial string LaunchState { get; set; } = "就绪";
 
+    /// <summary>启动状态圆点颜色（状态语言与阶段指示条一致：灰=待机、青=进行、红=失败）</summary>
+    public IBrush StateColor
+    {
+        get
+        {
+            var s = LaunchState;
+            if (s == "失败" || s.StartsWith("异常退出")) return new SolidColorBrush(Color.Parse("#E05A5A"));
+            if (s is "运行中" or "准备中") return new SolidColorBrush(Color.Parse("#2DD4BF"));
+            if (s.StartsWith("已退出")) return new SolidColorBrush(Color.Parse("#6F7B90"));
+            return new SolidColorBrush(Color.Parse("#3A4250"));
+        }
+    }
+
+    partial void OnLaunchStateChanged(string value) => OnPropertyChanged(nameof(StateColor));
+
     [ObservableProperty]
     public partial string LaunchStatus { get; set; } = "选择版本并启动";
 
@@ -209,9 +224,9 @@ public partial class LaunchStageVM : ObservableObject
     [ObservableProperty]
     public partial bool IsCurrent { get; set; }
 
-    /// <summary>指示点颜色：完成=青绿、当前=蓝、未到=灰</summary>
-    public IBrush DotColor => IsDone ? new SolidColorBrush(Color.Parse("#2DD4BF"))
-        : IsCurrent ? new SolidColorBrush(Color.Parse("#3B82F6"))
+    /// <summary>指示点颜色：完成=暗青、当前=主强调、未到=灰（单一强调色系）</summary>
+    public IBrush DotColor => IsDone ? new SolidColorBrush(Color.Parse("#1E8F82"))
+        : IsCurrent ? new SolidColorBrush(Color.Parse("#2DD4BF"))
         : new SolidColorBrush(Color.Parse("#3A4250"));
 
     public LaunchStageVM(string name) => Name = name;
