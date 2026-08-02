@@ -71,14 +71,10 @@
 
                 <ScrollViewer>
                     <ItemsControl ItemsSource="{Binding Cards}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
+                        <!-- 竖排列表（PCL2 式：一行一个项目，全宽行） -->
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:ProjectCardVM">
-                                <Button Width="215" Margin="6" Padding="0" Background="Transparent"
+                                <Button HorizontalAlignment="Stretch" Margin="0,1" Padding="0" Background="Transparent"
                                         BorderThickness="0" HorizontalContentAlignment="Stretch"
                                         Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).OpenDetailCommand}"
                                         CommandParameter="{Binding}">
@@ -91,27 +87,33 @@
                                             <Setter Property="Background" Value="{StaticResource BgActive}"/>
                                         </Style>
                                     </Button.Styles>
-                                    <Border Classes="modcard" Background="{StaticResource BgRaised}"
-                                            CornerRadius="{StaticResource RadiusLarge}" Padding="12"
-                                            BorderBrush="{StaticResource BorderColor}" BorderThickness="1">
-                                        <StackPanel Spacing="6">
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-                                                <Border Width="44" Height="44" CornerRadius="{StaticResource RadiusLarge}"
-                                                        ClipToBounds="True" Background="{StaticResource BgActive}">
-                                                    <Image Source="{Binding Icon}" Width="44" Height="44" Stretch="Uniform"/>
-                                                </Border>
-                                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold"
-                                                           Foreground="White" MaxLines="1" TextTrimming="CharacterEllipsis"
-                                                           VerticalAlignment="Center"/>
-                                            </Grid>
-                                            <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
-                                            <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
-                                                       MaxLines="2" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Foreground="{StaticResource TextDim}" FontSize="11">
-                                                <Run Text="{Binding DownloadsText}"/><Run Text=" 下载 · "/>
-                                                <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
-                                            </TextBlock>
-                                        </StackPanel>
+                                    <Border Classes="modcard" Background="Transparent"
+                                            Padding="10,8" BorderBrush="{StaticResource BorderColor}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                            <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
+                                                    ClipToBounds="True" Background="{StaticResource BgActive}"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Icon}" Width="40" Height="40" Stretch="Uniform"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
+                                                               MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
+                                                           MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
+                                                    <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
+                                                </TextBlock>
+                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
+                                                    <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                        </Grid>
                                     </Border>
                                 </Button>
                             </DataTemplate>
