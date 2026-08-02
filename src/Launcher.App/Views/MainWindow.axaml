@@ -32,9 +32,6 @@
                     <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="home"
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
-                    <Button Content="版本" Classes="nav" Classes.active="{Binding IsVersionsActive}"
-                            Command="{Binding NavigateCommand}" CommandParameter="versions"
-                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
                     <Button Classes="nav" Classes.active="{Binding IsDownloadsActive}"
                             Command="{Binding NavigateCommand}" CommandParameter="download"
                             HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8">

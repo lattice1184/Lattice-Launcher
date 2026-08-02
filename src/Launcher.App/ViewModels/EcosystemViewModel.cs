@@ -32,6 +32,50 @@ public partial class EcosystemViewModel : ViewModelBase
         _ => "MOD",
     };
 
+    /// <summary>仅 MOD 类型显示加载器 chips（材质包/光影无加载器概念）</summary>
+    public bool IsModType => _type == ProjectType.Mod;
+
+    // ---------- 三级筛选选项 ----------
+
+    /// <summary>加载器 chips（"全部"=null）</summary>
+    public static IReadOnlyList<string> LoaderOptions { get; } = ["全部", "Fabric", "Forge", "NeoForge", "Quilt"];
+
+    /// <summary>游戏版本下拉（"跟随实例"=null + 常用版本）</summary>
+    public static IReadOnlyList<string> GameVersionOptions { get; } =
+        ["跟随实例", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2"];
+
+    /// <summary>功能分类（Modrinth categories，中文显示；"全部"=null）</summary>
+    public static IReadOnlyList<CategoryOption> CategoryOptions { get; } =
+    [
+        new CategoryOption("全部", null),
+        new CategoryOption("优化", "optimization"),
+        new CategoryOption("辅助", "utility"),
+        new CategoryOption("冒险", "adventure"),
+        new CategoryOption("装饰", "decorations"),
+        new CategoryOption("魔法", "magic"),
+        new CategoryOption("世界生成", "worldgen"),
+        new CategoryOption("科技", "technology"),
+        new CategoryOption("存储", "storage"),
+        new CategoryOption("装备", "equipment"),
+        new CategoryOption("库", "library"),
+        new CategoryOption("生物", "mobs"),
+        new CategoryOption("红石", "redstone"),
+    ];
+
+    public sealed record CategoryOption(string Display, string? Key);
+
+    /// <summary>加载器筛选（null=跟随实例猜测）</summary>
+    [ObservableProperty]
+    public partial string? SelectedLoader { get; set; }
+
+    /// <summary>游戏版本筛选（null=跟随实例解析）</summary>
+    [ObservableProperty]
+    public partial string? SelectedGameVersion { get; set; }
+
+    /// <summary>功能分类筛选（null=全部）</summary>
+    [ObservableProperty]
+    public partial CategoryOption? SelectedCategory { get; set; }
+
     public ObservableCollection<ProjectCardVM> Cards { get; } = [];
     public ObservableCollection<VersionInstanceVM> Instances { get; } = [];
 
@@ -66,6 +110,14 @@ public partial class EcosystemViewModel : ViewModelBase
     public partial bool IsDetailOpen { get; set; }
 
     partial void OnDetailChanged(ProjectDetailViewModel? value) => IsDetailOpen = value is not null;
+
+    partial void OnSelectedLoaderChanged(string? value) => DebouncedSearch();
+    partial void OnSelectedGameVersionChanged(string? value) => DebouncedSearch();
+    partial void OnSelectedCategoryChanged(CategoryOption? value) => DebouncedSearch();
+
+    /// <summary>加载器 chips 选择（"全部"=null；仅 MOD 类型显示）</summary>
+    [RelayCommand]
+    private void SelectLoader(string loader) => SelectedLoader = loader == "全部" ? null : loader;
 
     /// <summary>初始化：扫描已装实例并触发首搜</summary>
     public async Task InitializeAsync()
@@ -113,15 +165,14 @@ public partial class EcosystemViewModel : ViewModelBase
         try
         {
             var instance = SelectedInstance;
-            string? gameVersion = null;
-            string? loader = null;
-            if (instance is not null)
-            {
-                if (EcosystemService.TryParseGameVersion(instance.Name, out var gv)) gameVersion = gv;
-                loader = EcosystemService.GuessLoader(instance.Name);
-            }
+            // 三级筛选：显式选择优先，否则跟随实例（加载器猜测/版本解析）
+            var loader = SelectedLoader
+                ?? (instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
+            var gameVersion = SelectedGameVersion
+                ?? (instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
+            var category = SelectedCategory?.Key;
 
-            var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader,
+            var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 limit: 20, offset: _offset, ct);
             if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
 

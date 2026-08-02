@@ -43,11 +43,11 @@ public partial class VersionBrowseViewModel : ViewModelBase
 
             Sidebar.Categories.Clear();
             Sidebar.Categories.Add(new VersionCategoryItemVM("最新正式版", VersionCategory.LatestRelease,
-                Math.Min(VersionClassifier.LatestReleaseCount, releases.Count)));
-            Sidebar.Categories.Add(new VersionCategoryItemVM("全部正式版", VersionCategory.AllReleases, releases.Count));
-            Sidebar.Categories.Add(new VersionCategoryItemVM("快照", VersionCategory.Snapshots, snapshots.Count));
-            Sidebar.Categories.Add(new VersionCategoryItemVM("远古", VersionCategory.Ancient, ancient.Count));
-            Sidebar.Categories.Add(new VersionCategoryItemVM("愚人节", VersionCategory.AprilFools, april.Count));
+                Math.Min(VersionClassifier.LatestReleaseCount, releases.Count), "最近 5 个稳定版本"));
+            Sidebar.Categories.Add(new VersionCategoryItemVM("全部正式版", VersionCategory.AllReleases, releases.Count, "所有稳定版本"));
+            Sidebar.Categories.Add(new VersionCategoryItemVM("快照", VersionCategory.Snapshots, snapshots.Count, "开发预览版"));
+            Sidebar.Categories.Add(new VersionCategoryItemVM("远古", VersionCategory.Ancient, ancient.Count, "Alpha / Beta 时代"));
+            Sidebar.Categories.Add(new VersionCategoryItemVM("愚人节", VersionCategory.AprilFools, april.Count, "4 月 1 日特别版"));
 
             Sidebar.SetAllEntries(all);
             Sidebar.SelectedCategory = Sidebar.Categories[0];
@@ -70,8 +70,8 @@ public partial class VersionBrowseViewModel : ViewModelBase
     }
 }
 
-/// <summary>左侧分类项</summary>
-public sealed record VersionCategoryItemVM(string Title, VersionCategory Kind, int Count);
+/// <summary>左侧分类项（副标题解释分类含义）</summary>
+public sealed record VersionCategoryItemVM(string Title, VersionCategory Kind, int Count, string Subtitle);
 
 /// <summary>左栏：分类导航 + 搜索 + 版本列表（虚拟化）</summary>
 public partial class VersionSidebarViewModel : ObservableObject

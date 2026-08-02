@@ -28,12 +28,13 @@ public sealed class EcosystemService
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
     }
 
-    /// <summary>搜索（facets 按 类型|游戏版本|加载器 过滤，offset 分页）</summary>
+    /// <summary>搜索（facets 按 类型|游戏版本|加载器|功能分类 过滤，offset 分页）</summary>
     public async Task<ModrinthSearchResponse?> SearchAsync(
         ProjectType type, string? query = null, string? gameVersion = null,
-        string? loader = null, int limit = 20, int offset = 0, CancellationToken ct = default)
+        string? loader = null, string? category = null,
+        int limit = 20, int offset = 0, CancellationToken ct = default)
     {
-        var facets = BuildFacets(type, gameVersion, loader);
+        var facets = BuildFacets(type, gameVersion, loader, category);
         var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query ?? "")}"
                   + $"&facets={Uri.EscapeDataString(facets)}&limit={limit}&offset={offset}";
         return await GetJsonAsync<ModrinthSearchResponse>(url, ct);
@@ -152,12 +153,14 @@ public sealed class EcosystemService
 
     // ---------- 静态工具（离线可单测） ----------
 
-    /// <summary>构建 facets JSON，如 [["project_type:mod"],["versions:1.21.1"],["categories:fabric"]]</summary>
-    public static string BuildFacets(ProjectType type, string? gameVersion, string? loader)
+    /// <summary>构建 facets JSON，如 [["project_type:mod"],["versions:1.21.1"],["categories:fabric"],["categories:optimization"]]。
+    /// 加载器与功能分类同用 categories 键（Modrinth 同键多值取 OR）。</summary>
+    public static string BuildFacets(ProjectType type, string? gameVersion, string? loader, string? category = null)
     {
         var outer = new List<string[]> { new[] { $"project_type:{FacetName(type)}" } };
         if (gameVersion is not null) outer.Add(new[] { $"versions:{gameVersion}" });
         if (loader is not null) outer.Add(new[] { $"categories:{loader}" });
+        if (category is not null) outer.Add(new[] { $"categories:{category}" });
         return JsonSerializer.Serialize(outer);
     }
 

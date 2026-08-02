@@ -29,6 +29,20 @@ public class EcosystemServiceTests
         Assert.Equal("[[\"project_type:mod\"],[\"versions:1.21.1\"],[\"categories:fabric\"]]", facets);
     }
 
+    [Fact]
+    public void BuildFacets_TypeVersionLoaderCategory()
+    {
+        var facets = EcosystemService.BuildFacets(ProjectType.Mod, "1.21.1", "fabric", "optimization");
+        Assert.Equal("[[\"project_type:mod\"],[\"versions:1.21.1\"],[\"categories:fabric\"],[\"categories:optimization\"]]", facets);
+    }
+
+    [Fact]
+    public void BuildFacets_CategoryOnly()
+    {
+        var facets = EcosystemService.BuildFacets(ProjectType.Mod, null, null, "utility");
+        Assert.Equal("[[\"project_type:mod\"],[\"categories:utility\"]]", facets);
+    }
+
     // ---------- TryParseGameVersion ----------
 
     [Theory]

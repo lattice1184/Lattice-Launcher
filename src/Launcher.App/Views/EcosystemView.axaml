@@ -1,11 +1,12 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:app="using:Launcher.App.Converters"
              x:Class="Launcher.App.Views.EcosystemView"
              x:DataType="vm:EcosystemViewModel">
 
     <DockPanel>
-        <!-- 顶部：搜索 + 实例 + 状态（类型 tab 由外层下载板块控制） -->
+        <!-- 顶部：搜索 + 实例 + 三级筛选 + 状态（类型 tab 由外层下载板块控制） -->
         <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                 <TextBox Text="{Binding Query}" Watermark="搜索…"/>
@@ -19,6 +20,39 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
             </Grid>
+
+            <!-- 三级筛选：加载器 chips（仅 MOD）+ 游戏版本 + 功能分类 -->
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsModType}">
+                    <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
+                            Command="{Binding SelectLoaderCommand}" CommandParameter="全部"
+                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=ALL}"/>
+                    <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
+                            Command="{Binding SelectLoaderCommand}" CommandParameter="Fabric"
+                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Fabric}"/>
+                    <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
+                            Command="{Binding SelectLoaderCommand}" CommandParameter="Forge"
+                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Forge}"/>
+                    <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
+                            Command="{Binding SelectLoaderCommand}" CommandParameter="NeoForge"
+                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=NeoForge}"/>
+                    <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
+                            Command="{Binding SelectLoaderCommand}" CommandParameter="Quilt"
+                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
+                </StackPanel>
+                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.GameVersionOptions}"
+                          SelectedItem="{Binding SelectedGameVersion}"
+                          PlaceholderText="跟随实例" Width="110"/>
+                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.CategoryOptions}"
+                          SelectedItem="{Binding SelectedCategory}" Width="130">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+CategoryOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+
             <TextBlock Text="{Binding Status}" Foreground="#8A93A6" FontSize="12"/>
         </StackPanel>
 

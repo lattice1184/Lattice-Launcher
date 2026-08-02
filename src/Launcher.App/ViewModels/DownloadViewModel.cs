@@ -13,6 +13,9 @@ public partial class DownloadViewModel : ViewModelBase
 {
     public ObservableCollection<DownloadTask> Tasks => DownloadManager.Instance.Tasks;
 
+    /// <summary>下载游戏（版本浏览分栏，PCL2 下载页第一项）</summary>
+    public VersionBrowseViewModel VersionBrowse { get; }
+
     // 资源下载面板（每种类型一个实例，tab 切换显示）
     public EcosystemViewModel Mods { get; }
     public EcosystemViewModel Modpacks { get; }
@@ -29,9 +32,12 @@ public partial class DownloadViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool HasActive { get; set; }
 
-    // Tab 状态（与 MainViewModel 导航同款模式）
+    // Tab 状态（与 MainViewModel 导航同款模式；默认"下载游戏"，PCL2 顺序）
     [ObservableProperty]
-    public partial bool IsQueueTabSelected { get; set; } = true;
+    public partial bool IsGameTabSelected { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsQueueTabSelected { get; set; }
 
     [ObservableProperty]
     public partial bool IsModTabSelected { get; set; }
@@ -47,6 +53,8 @@ public partial class DownloadViewModel : ViewModelBase
 
     public DownloadViewModel()
     {
+        VersionBrowse = new VersionBrowseViewModel();
+        _ = VersionBrowse.LoadAsync();
         Mods = new EcosystemViewModel(ProjectType.Mod);
         Modpacks = new EcosystemViewModel(ProjectType.Modpack);
         Resourcepacks = new EcosystemViewModel(ProjectType.Resourcepack);
@@ -63,6 +71,7 @@ public partial class DownloadViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string tab)
     {
+        IsGameTabSelected = tab == "game";
         IsQueueTabSelected = tab == "queue";
         IsModTabSelected = tab == "mod";
         IsModpackTabSelected = tab == "modpack";

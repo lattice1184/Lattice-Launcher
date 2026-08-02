@@ -23,8 +23,12 @@
                                     Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Sidebar.SelectCategoryCommand}"
                                     CommandParameter="{Binding}">
                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <TextBlock Text="{Binding Title}"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="dim" FontSize="11"/>
+                                    <StackPanel Spacing="1">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Subtitle}" Classes="dim" FontSize="11"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="dim" FontSize="11"
+                                               VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
                         </DataTemplate>

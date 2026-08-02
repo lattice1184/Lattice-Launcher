@@ -13,23 +13,18 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsHomeActive { get; set; } = true;
 
     [ObservableProperty]
-    public partial bool IsVersionsActive { get; set; }
-
-    [ObservableProperty]
     public partial bool IsDownloadsActive { get; set; }
 
     [ObservableProperty]
     public partial bool IsAccountActive { get; set; }
 
     public HomeViewModel Home { get; } = new();
-    public VersionBrowseViewModel Versions { get; } = new();
     public DownloadViewModel Downloads { get; } = new();
     public AccountViewModel Account { get; } = new();
 
     public MainViewModel()
     {
         CurrentPage = Home;
-        _ = Versions.LoadAsync();
         _ = Home.InitializeAsync();
     }
 
@@ -37,12 +32,10 @@ public partial class MainViewModel : ViewModelBase
     private void Navigate(string page)
     {
         IsHomeActive = page == "home";
-        IsVersionsActive = page == "versions";
         IsDownloadsActive = page == "download";
         IsAccountActive = page == "account";
         CurrentPage = page switch
         {
-            "versions" => Versions,
             "download" => Downloads,
             "account" => Account,
             _ => Home,

@@ -95,8 +95,10 @@
     </UserControl.Resources>
 
     <DockPanel>
-        <!-- 板块 tab 栏：下载记录 / MOD / 整合包 / 材质包 / 光影包 -->
+        <!-- 板块 tab 栏：下载游戏 / 下载记录 / MOD / 整合包 / 材质包 / 光影包 -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+            <Button Content="下载游戏" Classes="tab" Classes.active="{Binding IsGameTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="game"/>
             <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
             <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
@@ -110,9 +112,12 @@
         </StackPanel>
 
         <Grid>
+            <!-- 下载游戏（版本浏览分栏） -->
+            <views:VersionBrowseView DataContext="{Binding VersionBrowse}"
+                                     IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsGameTabSelected}"/>
             <!-- 下载记录（队列） -->
             <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
-                            IsVisible="{Binding IsQueueTabSelected}"/>
+                            IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsQueueTabSelected}"/>
             <!-- 资源下载（IsVisible 经 $parent[Grid] 取父 VM 的 tab 状态，避免 x:DataType 编译检查） -->
             <views:EcosystemView DataContext="{Binding Mods}"
                                  IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsModTabSelected}"/>
