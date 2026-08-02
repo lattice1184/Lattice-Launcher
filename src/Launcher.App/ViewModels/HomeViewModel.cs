@@ -86,8 +86,10 @@ public partial class HomeViewModel : ViewModelBase
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
             InstalledVersions.Clear();
+            // 来源标识：当前游戏目录来自 PCL2 / 本启动器 / 官方 / 自配
+            var sourceLabel = GameDirectory.SourceLabel(GameDirectory.DetectSource());
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                InstalledVersions.Add(new VersionInstanceVM(e.Id));
+                InstalledVersions.Add(new VersionInstanceVM(e.Id, sourceLabel));
             // 目录扫描：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
             var versionsDir = Path.Combine(GameDirectory.Detect(), "versions");
             if (Directory.Exists(versionsDir))
@@ -97,7 +99,7 @@ public partial class HomeViewModel : ViewModelBase
                     var id = Path.GetFileName(dir);
                     if (InstalledVersions.Any(v => v.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(dir, $"{id}.json")))
-                        InstalledVersions.Add(new VersionInstanceVM(id));
+                        InstalledVersions.Add(new VersionInstanceVM(id, sourceLabel));
                 }
             }
             if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];

@@ -73,9 +73,11 @@ public partial class VersionBrowseViewModel : ViewModelBase
 /// <summary>左侧分类项（副标题解释分类含义）</summary>
 public sealed record VersionCategoryItemVM(string Title, VersionCategory Kind, int Count, string Subtitle);
 
-/// <summary>左栏：分类导航 + 搜索 + 版本列表（虚拟化）</summary>
+/// <summary>左栏：分类导航 + 搜索 + 版本列表（分页 10/页，左右箭头翻页）</summary>
 public partial class VersionSidebarViewModel : ObservableObject
 {
+    private const int PageSize = 10;
+
     private List<VersionManifestService.GameVersionEntry> _all = [];
     private readonly Dictionary<string, VersionListItemVM> _itemsById = new(StringComparer.OrdinalIgnoreCase);
 
@@ -91,6 +93,22 @@ public partial class VersionSidebarViewModel : ObservableObject
     [ObservableProperty]
     public partial VersionListItemVM? SelectedItem { get; set; }
 
+    // 分页状态
+    [ObservableProperty]
+    public partial int CurrentPage { get; set; }
+
+    [ObservableProperty]
+    public partial int TotalPages { get; set; } = 1;
+
+    [ObservableProperty]
+    public partial bool HasPrev { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasNext { get; set; }
+
+    [ObservableProperty]
+    public partial string PageText { get; set; } = "1/1";
+
     public event Action<VersionListItemVM>? SelectionChanged;
 
     public void SetAllEntries(List<VersionManifestService.GameVersionEntry> all)
@@ -105,13 +123,36 @@ public partial class VersionSidebarViewModel : ObservableObject
     [RelayCommand]
     private void SelectCategory(VersionCategoryItemVM category) => SelectedCategory = category;
 
-    partial void OnSelectedCategoryChanged(VersionCategoryItemVM? value)
+    [RelayCommand]
+    private void PrevPage()
     {
+        if (CurrentPage <= 0) return;
         SelectedItem = null;
+        CurrentPage--;
         RebuildItems();
     }
 
-    partial void OnSearchTextChanged(string value) => RebuildItems();
+    [RelayCommand]
+    private void NextPage()
+    {
+        if (CurrentPage >= TotalPages - 1) return;
+        SelectedItem = null;
+        CurrentPage++;
+        RebuildItems();
+    }
+
+    partial void OnSelectedCategoryChanged(VersionCategoryItemVM? value)
+    {
+        SelectedItem = null;
+        CurrentPage = 0;
+        RebuildItems();
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        CurrentPage = 0;
+        RebuildItems();
+    }
 
     partial void OnSelectedItemChanged(VersionListItemVM? value)
     {
@@ -124,8 +165,8 @@ public partial class VersionSidebarViewModel : ObservableObject
         IEnumerable<VersionManifestService.GameVersionEntry> source;
         if (!string.IsNullOrWhiteSpace(SearchText))
         {
-            // 搜索跨分类过滤（904 条字符串过滤足够快）
-            source = _all.Where(e => e.Id.Contains(SearchText, StringComparison.OrdinalIgnoreCase));
+            // 搜索跨分类过滤（英文 id 子串 + 中文关键词）
+            source = _all.Where(e => Matches(e, SearchText));
         }
         else
         {
@@ -140,7 +181,30 @@ public partial class VersionSidebarViewModel : ObservableObject
                 _ => [],
             };
         }
-        foreach (var e in source) Items.Add(_itemsById[e.Id]);
+
+        // 分页：每页 10 条，页码重置到当前页（分类/搜索变化时回第 1 页由调用方置 0）
+        var all = source.ToList();
+        TotalPages = Math.Max(1, (all.Count + PageSize - 1) / PageSize);
+        if (CurrentPage >= TotalPages) CurrentPage = TotalPages - 1;
+        HasPrev = CurrentPage > 0;
+        HasNext = CurrentPage < TotalPages - 1;
+        PageText = $"{CurrentPage + 1}/{TotalPages}";
+        foreach (var e in all.Skip(CurrentPage * PageSize).Take(PageSize))
+            Items.Add(_itemsById[e.Id]);
+    }
+
+    /// <summary>版本匹配：英文 id 子串或中文关键词（正式/稳定→release，快照→snapshot，远古→old_*，愚人→愚人节）</summary>
+    private static bool Matches(VersionManifestService.GameVersionEntry e, string kw)
+    {
+        if (e.Id.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+        return kw switch
+        {
+            "正式" or "稳定" => e.Type == "release",
+            "快照" => e.Type == "snapshot",
+            "远古" => e.Type is "old_alpha" or "old_beta",
+            "愚人" => VersionClassifier.IsAprilFools(e),
+            _ => false,
+        };
     }
 
     /// <summary>安装完成重扫后点亮所有行</summary>

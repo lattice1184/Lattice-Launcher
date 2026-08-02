@@ -34,7 +34,7 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <!-- ListBox 默认虚拟化（Avalonia 12 内建），904 条只实例化可见项 -->
+                <!-- 版本列表（分页 10/页，竖排） -->
                 <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
                          Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
@@ -49,6 +49,17 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <!-- 分页栏：左右箭头换页，竖排列表不变 -->
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10"
+                            HorizontalAlignment="Center" Margin="0,8,0,0">
+                    <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding Sidebar.PrevPageCommand}" IsEnabled="{Binding Sidebar.HasPrev}"/>
+                    <TextBlock Text="{Binding Sidebar.PageText}" Classes="sub" FontSize="12"
+                               VerticalAlignment="Center" MinWidth="36" TextAlignment="Center"/>
+                    <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding Sidebar.NextPageCommand}" IsEnabled="{Binding Sidebar.HasNext}"/>
+                </StackPanel>
             </DockPanel>
 
             <GridSplitter Grid.Column="1" Width="4" Background="Transparent"/>

@@ -1,11 +1,60 @@
 namespace Launcher.Core.Utils;
 
+/// <summary>游戏目录来源（启动列表标识用）</summary>
+public enum GameDirectorySource { OwnDefault, Standard, Pcl, Custom }
+
 /// <summary>
 /// 游戏目录（.minecraft）解析，PCL2 式：优先启动器自建目录 Downloads\YanKa Launcher\.minecraft，
 /// 其次探测已有环境（PCL 启动器 / AppData 标准位），最后回退自建目录。
 /// </summary>
 public static class GameDirectory
 {
+    /// <summary>来源中文标签（"本启动器"/"PCL2"/"官方"/"自配"）</summary>
+    public static string SourceLabel(GameDirectorySource source) => source switch
+    {
+        GameDirectorySource.OwnDefault => "本启动器",
+        GameDirectorySource.Pcl => "PCL2",
+        GameDirectorySource.Standard => "官方",
+        GameDirectorySource.Custom => "自配",
+        _ => "",
+    };
+
+    /// <summary>判定 Detect() 当前命中的来源（与 Detect 同优先级顺序）</summary>
+    public static GameDirectorySource DetectSource()
+    {
+        if (LauncherSettings.Current.GameDirectory is { } custom
+            && Directory.Exists(Path.Combine(custom, "versions")))
+        {
+            return GameDirectorySource.Custom;
+        }
+
+        var own = OwnDefault();
+        if (Directory.Exists(Path.Combine(own, "versions"))
+            && Directory.EnumerateDirectories(Path.Combine(own, "versions")).Any())
+        {
+            return GameDirectorySource.OwnDefault;
+        }
+
+        var standard = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
+        if (Directory.Exists(Path.Combine(standard, "versions"))
+            && Directory.EnumerateDirectories(Path.Combine(standard, "versions")).Any())
+        {
+            return GameDirectorySource.Standard;
+        }
+
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        if (Directory.Exists(downloads))
+        {
+            foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
+            {
+                if (Directory.Exists(Path.Combine(dir, ".minecraft", "versions")))
+                    return GameDirectorySource.Pcl;
+            }
+        }
+
+        return GameDirectorySource.OwnDefault;
+    }
     /// <summary>启动器自建根（PCL2 式：Downloads\YanKa Launcher\.minecraft）</summary>
     public static string OwnDefault()
     {

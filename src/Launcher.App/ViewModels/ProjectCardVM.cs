@@ -49,5 +49,8 @@ public partial class ProjectCardVM : ObservableObject
     };
 }
 
-/// <summary>目标版本实例（生态安装目标）</summary>
-public sealed record VersionInstanceVM(string Name);
+/// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）</summary>
+public sealed record VersionInstanceVM(string Name, string SourceLabel = "")
+{
+    public string DisplayName => SourceLabel.Length > 0 ? $"{Name} · {SourceLabel}" : Name;
+}
