@@ -73,6 +73,14 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int SpeedLimitKbps { get; set; }
 
+    /// <summary>分片并发档位（0=低8 / 1=中16 / 2=高24 连接）</summary>
+    [ObservableProperty]
+    public partial int DownloadTierIndex { get; set; }
+
+    /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
+    [ObservableProperty]
+    public partial string CurseForgeApiKeyText { get; set; } = "";
+
     // ---------- 外观 ----------
 
     /// <summary>窗口透明度（0.7-1.0）</summary>
@@ -112,6 +120,8 @@ public partial class SettingsViewModel : ViewModelBase
         MirrorFallbackEnabled = s.MirrorFallbackEnabled;
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
+        DownloadTierIndex = (int)s.DownloadTier / 8 - 1;
+        CurseForgeApiKeyText = s.CurseForgeApiKey ?? "";
         WindowOpacity = s.WindowOpacity;
         AccentColor = s.AccentColor;
         DensityIndex = (int)s.Density;
@@ -129,6 +139,8 @@ public partial class SettingsViewModel : ViewModelBase
         s.MirrorFallbackEnabled = MirrorFallbackEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
+        s.DownloadTier = (DownloadTier)((DownloadTierIndex + 1) * 8);
+        s.CurseForgeApiKey = CurseForgeApiKeyText.Trim();
         s.Save();
     }
 
@@ -165,6 +177,8 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnMaxConcurrentDownloadsChanged(int value) => DebouncedSave();
     partial void OnSpeedLimitKbpsChanged(int value) => DebouncedSave();
+    partial void OnDownloadTierIndexChanged(int value) => Save();
+    partial void OnCurseForgeApiKeyTextChanged(string value) => Save();
 
     // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
     partial void OnWindowOpacityChanged(double value) => PreviewChanged?.Invoke();

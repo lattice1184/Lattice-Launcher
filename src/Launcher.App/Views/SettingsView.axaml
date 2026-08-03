@@ -140,6 +140,20 @@
                             <TextBlock Grid.Column="2" Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
                                        Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="分片并发档位" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <Button Content="低（8 连接）" Classes="ghost" FontSize="12" Padding="12,5"
+                                    Click="OnTierClick" CommandParameter="0"/>
+                            <Button Content="中（16 连接）" Classes="ghost" FontSize="12" Padding="12,5"
+                                    Click="OnTierClick" CommandParameter="1"/>
+                            <Button Content="高（24 连接）" Classes="ghost" FontSize="12" Padding="12,5"
+                                    Click="OnTierClick" CommandParameter="2"/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                            <TextBlock Text="CurseForge API Key" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Text="{Binding CurseForgeApiKeyText}" PasswordChar="*"
+                                     Watermark="可选：配置后启用 CurseForge 模组源（console.curseforge.com 申请）"/>
+                        </Grid>
                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="下载限速（KB/s，0=不限）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
