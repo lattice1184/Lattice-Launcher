@@ -6,8 +6,14 @@
 
     <DockPanel>
         <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
-            <TextBlock Text="版本管理" FontSize="20" FontWeight="Bold"/>
-            <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="版本管理" FontSize="20" FontWeight="Bold"/>
+                    <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="导入整合包" Classes="ghost" FontSize="12" Padding="12,5"
+                        VerticalAlignment="Top" Command="{Binding ImportModpackCommand}"/>
+            </Grid>
         </StackPanel>
 
         <!-- 两栏：左分类导航 + 右详情 -->
@@ -39,8 +45,13 @@
             <!-- 分割线 -->
             <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
 
-            <!-- 中：版本列表 + 分页 -->
-            <DockPanel Grid.Column="2">
+            <!-- 中：版本列表 + 分页（分类/翻页时淡入过渡） -->
+            <DockPanel Grid.Column="2" Opacity="{Binding Sidebar.ListOpacity}">
+                <DockPanel.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+                    </Transitions>
+                </DockPanel.Transitions>
                 <!-- 版本列表（分页 10/页，竖排） -->
                 <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
                          Background="Transparent" BorderThickness="0">
@@ -72,13 +83,23 @@
             <!-- 分割线 -->
             <GridSplitter Grid.Column="3" Width="1" Background="{StaticResource BorderColor}"/>
 
-            <!-- 右栏：详情 -->
-            <Border Grid.Column="4" Padding="4,0,0,0">
+            <!-- 右栏：详情（选中切换滑入淡入） -->
+            <Border Grid.Column="4" Padding="4,0,0,0"
+                    Opacity="{Binding Detail.DetailOpacity}">
+                <Border.RenderTransform>
+                    <TranslateTransform X="{Binding Detail.SlideX}"/>
+                </Border.RenderTransform>
+                <Border.Transitions>
+                    <Transitions>
+                        <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+                        <DoubleTransition Property="(TranslateTransform.X)" Duration="0:0:0.22"/>
+                    </Transitions>
+                </Border.Transitions>
                 <Grid>
                 <!-- 占位 -->
                 <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
                             VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="← 选择中间版本" Classes="sub" FontSize="13"/>
+                    <TextBlock Text="选择左侧分类，点击版本查看详情" Classes="sub" FontSize="13"/>
                 </StackPanel>
 
                 <!-- 详情 -->
@@ -109,6 +130,9 @@
                         <Button Grid.Column="3" Content="下载安装" Classes="primary" Padding="28,10" FontSize="14"
                                 Command="{Binding Detail.DownloadCommand}"
                                 IsVisible="{Binding Detail.ShowDownloadButton}"/>
+                        <Button Grid.Column="3" Content="重新下载" Classes="ghost" Padding="20,10" FontSize="13"
+                                Command="{Binding Detail.RepairCommand}"
+                                IsVisible="{Binding Detail.ShowRepairButton}"/>
                     </Grid>
 
                     <!-- 加载器安装 -->

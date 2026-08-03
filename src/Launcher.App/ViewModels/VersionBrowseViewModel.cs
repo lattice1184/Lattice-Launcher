@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
 using Launcher.Core.Download;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
@@ -70,6 +72,44 @@ public partial class VersionBrowseViewModel : ViewModelBase
         }
     }
 
+    /// <summary>整合包 zip 选择（View 层 FilePicker 回调）</summary>
+    public Func<Task<string?>>? PickModpackFile { get; set; }
+
+    /// <summary>导入整合包：选 zip → 确认 → 解压为隔离实例 → Toast + 重扫</summary>
+    [RelayCommand]
+    private async Task ImportModpack()
+    {
+        if (PickModpackFile is null) return;
+        var file = await PickModpackFile();
+        if (file is null) return;
+
+        var info = ModpackImporter.Parse(file, out var reason);
+        if (info is null)
+        {
+            NotificationService.Error(reason ?? "无法解析整合包");
+            return;
+        }
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                $"导入整合包「{info.VersionId}」？ MC {info.McVersion} · {info.FileCount} 个文件，将解压到版本目录。",
+                "导入整合包", "导入", "取消"))
+        {
+            return;
+        }
+
+        try
+        {
+            var dir = GameDirectory.InstallDir();
+            await Task.Run(() => ModpackImporter.Import(file, dir, CancellationToken.None));
+            NotificationService.Success($"已导入 {info.VersionId}");
+            OnInstalled(info.VersionId);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"导入失败: {ex.Message}");
+        }
+    }
+
     /// <summary>安装完成：重扫磁盘并点亮已安装状态</summary>
     private void OnInstalled(string versionId)
     {
@@ -119,6 +159,10 @@ public partial class VersionSidebarViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string PageText { get; set; } = "1/1";
+
+    /// <summary>列表区透明度（分类/翻页切换时 0→1 淡入过渡，去硬切感）</summary>
+    [ObservableProperty]
+    public partial double ListOpacity { get; set; } = 1;
 
     public event Action<VersionListItemVM>? SelectionChanged;
 
@@ -202,6 +246,10 @@ public partial class VersionSidebarViewModel : ObservableObject
         PageText = $"{CurrentPage + 1}/{TotalPages}";
         foreach (var e in all.Skip(CurrentPage * PageSize).Take(PageSize))
             Items.Add(_itemsById[e.Id]);
+
+        // 列表内容切换：先透明再淡入（DoubleTransition 平滑过渡）
+        ListOpacity = 0;
+        Dispatcher.UIThread.Post(() => ListOpacity = 1);
     }
 
     /// <summary>版本匹配：英文 id 子串或中文关键词（正式/稳定→release，快照→snapshot，远古→old_*，愚人→愚人节）</summary>
@@ -293,8 +341,19 @@ public partial class VersionDetailViewModel : ViewModelBase
     [ObservableProperty]
     public partial VersionManageViewModel? Manage { get; set; }
 
+    /// <summary>详情面板滑入偏移（选中切换时 24→0，去硬切感）</summary>
+    [ObservableProperty]
+    public partial double SlideX { get; set; }
+
+    /// <summary>详情面板透明度（选中切换时 0→1 淡入）</summary>
+    [ObservableProperty]
+    public partial double DetailOpacity { get; set; } = 1;
+
     public string? ManifestUrl { get; private set; }
     public bool ShowDownloadButton => !Installed && !IsDownloading;
+
+    /// <summary>已安装版本显示"重新下载"（损坏修复）</summary>
+    public bool ShowRepairButton => Installed && !IsDownloading;
     public bool ShowProgress => IsDownloading;
     public bool HasError => ErrorText.Length > 0;
     public string DownloadProgressText => $"{DownloadProgressPercent:0}%";
@@ -309,9 +368,11 @@ public partial class VersionDetailViewModel : ViewModelBase
         _onInstalled = onInstalled;
     }
 
-    /// <summary>选中左栏行 → 填充详情 + 懒加载体积</summary>
+    /// <summary>选中左栏行 → 填充详情 + 懒加载体积（同版本重复选中不重建；内容切换滑入淡入）</summary>
     public void Select(VersionListItemVM item)
     {
+        if (HasSelection && Id == item.Id) return; // 面板状态（加载器选择等）不因重复点击丢失
+
         Id = item.Id;
         Type = item.Type;
         ReleaseDate = item.ReleaseDate;
@@ -326,6 +387,15 @@ public partial class VersionDetailViewModel : ViewModelBase
         Manage = item.Installed
             ? new VersionManageViewModel(dir, item.Id, OnVersionDeleted)
             : null;
+
+        // 内容切换过渡：先偏移透明 → UI 线程复位（DoubleTransition 平滑）
+        SlideX = 24;
+        DetailOpacity = 0;
+        Dispatcher.UIThread.Post(() =>
+        {
+            SlideX = 0;
+            DetailOpacity = 1;
+        });
         _ = LoadSizeAsync(item);
     }
 
@@ -371,9 +441,27 @@ public partial class VersionDetailViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task Download()
+    private async Task Download() => await DownloadCoreAsync(repair: false);
+
+    /// <summary>重新下载/修复：确认后重装缺失或损坏文件（幂等跳过已有文件）</summary>
+    [RelayCommand]
+    private async Task Repair()
     {
-        if (IsDownloading || Installed) return;
+        if (IsDownloading) return;
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                $"将重新下载 {Id} 的缺失或损坏文件（已有文件自动跳过）。继续？",
+                "重新下载", "重新下载", "取消"))
+        {
+            return;
+        }
+        await DownloadCoreAsync(repair: true);
+    }
+
+    private async Task DownloadCoreAsync(bool repair)
+    {
+        if (IsDownloading) return;
+        if (!repair && Installed) return;
         IsDownloading = true;
         ErrorText = "";
         DownloadProgressPercent = 0;
@@ -398,6 +486,7 @@ public partial class VersionDetailViewModel : ViewModelBase
             {
                 Installed = true;
                 _onInstalled(Id);
+                NotificationService.Success(repair ? $"{Id} 修复完成" : $"{Id} 安装完成");
             }
             else if (task.Error is { } failed)
             {
@@ -412,6 +501,7 @@ public partial class VersionDetailViewModel : ViewModelBase
         {
             IsDownloading = false;
             OnPropertyChanged(nameof(ShowDownloadButton));
+            OnPropertyChanged(nameof(ShowRepairButton));
             OnPropertyChanged(nameof(ShowProgress));
             OnPropertyChanged(nameof(HasError));
         }

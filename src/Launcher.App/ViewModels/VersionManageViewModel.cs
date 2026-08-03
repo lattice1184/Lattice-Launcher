@@ -34,6 +34,9 @@ public partial class VersionManageViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsConfirmDelete { get; set; }
 
+    /// <summary>导出整合包的目标目录选择（View 层 FolderPicker 回调；null = 默认 downloads/modpacks）</summary>
+    public Func<Task<string?>>? PickFolder { get; set; }
+
     public string ModsCountText => $"MOD（{Mods.Count}）";
     public string SavesCountText => $"存档（{Saves.Count}）";
 
@@ -238,7 +241,8 @@ public partial class VersionManageViewModel : ViewModelBase
                         JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
                 });
 
-                var outDir = Path.Combine(_gameDir, "downloads", "modpacks");
+                var outDir = await (PickFolder?.Invoke() ?? Task.FromResult<string?>(null))
+                               ?? Path.Combine(_gameDir, "downloads", "modpacks");
                 Directory.CreateDirectory(outDir);
                 var zipPath = Path.Combine(outDir, $"{_versionId}-整合包.zip");
                 await Task.Run(() => ZipFile.CreateFromDirectory(staging, zipPath,
