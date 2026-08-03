@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Download;
+using Launcher.Core.Ecosystem;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
 using PCL.Core.Minecraft.ResourceProject.Curseforge;
@@ -460,14 +461,20 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
             var instanceName = instance.Name;
-            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", (p, ct) =>
-                includeDeps
-                    ? _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,
+            DependencyInstallReport? report = null;
+            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", async (p, ct) =>
+            {
+                report = includeDeps
+                    ? await _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,
                         gameVersion, loader, dp => p(dp), ct)
-                    : InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, p, ct));
+                    : await InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, p, ct);
+            });
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
-                NotificationService.Success($"{card.Title} 安装完成");
+                NotificationService.Success(
+                    report is { Installed.Count: > 0 }
+                        ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
+                        : $"{card.Title} 安装完成", 4500);
             else if (task.Error is { } err)
                 NotificationService.Error(err);
         }
@@ -477,10 +484,15 @@ public partial class EcosystemViewModel : ViewModelBase
         }
     }
 
-    /// <summary>仅安装主文件（依赖可选跳过路径）</summary>
-    private Task InstallMainOnlyAsync(string projectId, ModrinthVersion version, string instanceName,
-        ProjectType type, DownloadProgressHandler progress, CancellationToken ct)
-        => _eco.InstallAsync(projectId, version, instanceName, type, dp => progress(dp), ct);
+    /// <summary>仅安装主文件（依赖可选跳过路径）；返回报告供路径 Toast</summary>
+    private async Task<DependencyInstallReport?> InstallMainOnlyAsync(string projectId, ModrinthVersion version,
+        string instanceName, ProjectType type, DownloadProgressHandler progress, CancellationToken ct)
+    {
+        var path = await _eco.InstallAsync(projectId, version, instanceName, type, dp => progress(dp), ct);
+        var r = new DependencyInstallReport();
+        r.Installed.Add(new InstalledDependency(projectId, version.Id, path));
+        return r;
+    }
 
     /// <summary>CurseForge 卡片一键安装：最佳文件匹配 → 依赖确认 → 全局下载中心执行 → Toast</summary>
     private async Task InstallCfCardAsync(ProjectCardVM card, VersionInstanceVM? instance, string? gameVersion)
@@ -509,13 +521,28 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
             var instanceName = instance.Name;
-            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", (p, ct) =>
-                includeDeps
-                    ? _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type, gameVersion, dp => p(dp), ct)
-                    : _cf.InstallAsync(modId, file, instanceName, card.Type, dp => p(dp), ct));
+            DependencyInstallReport? report = null;
+            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", async (p, ct) =>
+            {
+                if (includeDeps)
+                {
+                    report = await _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type,
+                        gameVersion, dp => p(dp), ct);
+                }
+                else
+                {
+                    var path = await _cf.InstallAsync(modId, file, instanceName, card.Type, dp => p(dp), ct);
+                    var r = new DependencyInstallReport();
+                    r.Installed.Add(new InstalledDependency(modId.ToString(), file.id.ToString(), path));
+                    report = r;
+                }
+            });
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
-                NotificationService.Success($"{card.Title} 安装完成");
+                NotificationService.Success(
+                    report is { Installed.Count: > 0 }
+                        ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
+                        : $"{card.Title} 安装完成", 4500);
             else if (task.Error is { } err)
                 NotificationService.Error(err);
         }
