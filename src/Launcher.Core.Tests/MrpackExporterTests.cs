@@ -39,7 +39,7 @@ public class MrpackExporterTests
             var files = root.GetProperty("files").EnumerateArray().ToList();
             Assert.Single(files);
             Assert.Equal("mods/sodium.jar", files[0].GetProperty("path").GetString());
-            Assert.Equal(32, files[0].GetProperty("hashes").GetProperty("sha1").GetString()!.Length); // hex 32
+            Assert.Equal(40, files[0].GetProperty("hashes").GetProperty("sha1").GetString()!.Length); // SHA1 = 20 字节 = 40 hex
             Assert.Equal(128, files[0].GetProperty("hashes").GetProperty("sha512").GetString()!.Length);
             Assert.Equal(4, files[0].GetProperty("fileSize").GetInt64());
         }
