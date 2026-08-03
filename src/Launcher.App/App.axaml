@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Launcher.App.App"
              xmlns:local="using:Launcher.App"
+             xmlns:behaviors="using:Launcher.App.Animations"
              RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
@@ -9,9 +10,6 @@
     </Application.DataTemplates>
 
     <Application.Resources>
-        <!-- 页面切换动画（资源）：淡入+滑移（默认）+ 右滑入（内容区/详情区） -->
-        <CrossFade x:Key="PageFade" Duration="0:0:0.22"/>
-        <PageSlide x:Key="PageSlideRight" Orientation="Horizontal" Duration="0:0:0.22"/>
 
         <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
         <!-- 表面层 -->
@@ -55,8 +53,10 @@
             <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
         </Style>
 
-        <!-- 按钮过渡（去生硬感；按压反馈用背景压暗——TransformOperations 字符串 XAML 不支持） -->
+        <!-- 按钮过渡：背景/边框 0.15s；弹性缩放（hover 拉伸 1.02 / pressed 压缩 0.96 / 释放回弹）由 SpringScaleBehavior 托管 -->
         <Style Selector="Button">
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <BrushTransition Property="Background" Duration="0:0:0.15"/>
@@ -135,7 +135,7 @@
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
-        <!-- 导航按钮：激活态左侧色条 + 填充 -->
+        <!-- 导航按钮：激活态左侧 Accent 色条 + 填充 -->
         <Style Selector="Button.nav">
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -148,6 +148,8 @@
         <Style Selector="Button.nav.active">
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="Background" Value="#12332F"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
         </Style>
         <Style Selector="Button.nav.active:hover">
             <Setter Property="Background" Value="#16403A"/>
@@ -201,12 +203,19 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
-        <!-- 列表行：扁平 + hover + 分隔线（替代"每行一卡片"的 AI 味） -->
+        <!-- 列表行：扁平 + hover（背景过渡 + 弹性放大 1.015）+ 分隔线 -->
         <Style Selector="Border.row">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.row:hover">
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
@@ -238,28 +247,11 @@
             </Setter>
         </Style>
 
-        <!-- ========== 动画组件库（区块/列表/详情过渡） ========== -->
-        <!-- 淡入：Opacity 由绑定驱动（如列表切换时 0→1），平滑过渡 -->
+        <!-- 淡入工具类（Opacity 由绑定驱动时平滑过渡） -->
         <Style Selector="Control.anim-fade">
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
-                </Transitions>
-            </Setter>
-        </Style>
-        <!-- 上滑进入：RenderTransform 绑定 translateY(12)→translateY(0) -->
-        <Style Selector="Control.anim-slide-up">
-            <Setter Property="Transitions">
-                <Transitions>
-                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22"/>
-                </Transitions>
-            </Setter>
-        </Style>
-        <!-- 右滑进入：RenderTransform 绑定 translateX(24)→translateX(0) -->
-        <Style Selector="Control.anim-slide-right">
-            <Setter Property="Transitions">
-                <Transitions>
-                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22"/>
                 </Transitions>
             </Setter>
         </Style>
