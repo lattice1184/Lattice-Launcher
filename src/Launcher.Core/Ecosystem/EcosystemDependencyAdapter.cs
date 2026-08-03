@@ -1,10 +1,12 @@
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
+using PCL.Core.Minecraft.ResourceProject.Curseforge;
 
 namespace Launcher.Core.Ecosystem;
 
 /// <summary>
-/// ModDependencyResolver 与 Modrinth API 的适配：ProjectResolver 从 Modrinth 拉项目版本并映射为依赖模型。
+/// ModDependencyResolver 与生态 API（Modrinth / CurseForge）的适配：
+/// ProjectResolver 从各源拉项目版本并映射为依赖模型。
 /// </summary>
 public static class EcosystemDependencyAdapter
 {
@@ -66,6 +68,64 @@ public static class EcosystemDependencyAdapter
             {
                 ProjectId = d.ProjectId!,
                 Source = "modrinth",
+                IsRequired = true,
+            })
+            .ToList();
+
+    // ---------- CurseForge ----------
+
+    /// <summary>创建 CurseForge ProjectResolver（同步签名，内部同步等待——依赖数量少，可接受）</summary>
+    public static Func<string, string, ModDependencyProject?> CreateResolver(
+        CurseForgeService cf, string? gameVersion)
+    {
+        return (source, projectId) =>
+        {
+            try
+            {
+                if (!int.TryParse(projectId, out var modId)) return null;
+                var files = cf.GetFilesAsync(modId, gameVersion).GetAwaiter().GetResult();
+                if (files.Count == 0) return null;
+                return new ModDependencyProject
+                {
+                    ProjectId = projectId,
+                    Source = source,
+                    Files = files.Select(ToFile).ToList(),
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        };
+    }
+
+    private static ModDependencyFile ToFile(CurseforgeFile f) => new()
+    {
+        Id = f.id.ToString(),
+        DisplayName = f.displayName,
+        Version = f.fileName,
+        GameVersions = f.gameVersions ?? [],
+        Loaders = [], // CF 无 loader 维度
+        ReleaseType = f.releaseType,
+        RequiredDependencies = (f.dependencies ?? [])
+            .Where(d => d.relationType == 1) // 1=Required
+            .Select(d => new ModDependencyReference
+            {
+                ProjectId = d.modId.ToString(),
+                Source = "curseforge",
+                IsRequired = true,
+            })
+            .ToList(),
+    };
+
+    /// <summary>把 CurseForge 文件的依赖提取为请求输入（relationType==1 必需）</summary>
+    public static List<ModDependencyReference> ToDependencyReferences(CurseforgeFile file) =>
+        (file.dependencies ?? [])
+            .Where(d => d.relationType == 1)
+            .Select(d => new ModDependencyReference
+            {
+                ProjectId = d.modId.ToString(),
+                Source = "curseforge",
                 IsRequired = true,
             })
             .ToList();
