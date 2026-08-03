@@ -10,8 +10,8 @@
             <TextBlock Text="下载服务端 → 配置 → 启动，控制台实时查看" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <Grid ColumnDefinitions="1.1*,2*" ColumnSpacing="12">
-        <ScrollViewer Grid.Column="0">
+        <Grid ColumnDefinitions="2*,1,3*">
+        <ScrollViewer Grid.Column="0" MinWidth="240">
             <StackPanel Spacing="8">
 
                 <!-- 版本选择 + 操作 -->
@@ -67,8 +67,8 @@
                         <ItemsControl ItemsSource="{Binding PropRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PropRowVM">
-                                    <Grid ColumnDefinitions="140,*" ColumnSpacing="8" Margin="0,3">
-                                        <TextBlock Text="{Binding Label}" Classes="sub" FontSize="12"
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,3">
+                                        <TextBlock Text="{Binding Label}" Classes="sub" FontSize="12" MinWidth="110"
                                                    VerticalAlignment="Center"/>
                                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding BoolValue}"
                                                       IsVisible="{Binding IsBool}"/>
@@ -87,8 +87,12 @@
                 </Border>
 
 
+                <!-- 拖拽分隔条（用户可调左右比例） -->
+                <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch"
+                              Background="{StaticResource BorderColor}" ResizeDirection="Columns"/>
+
                 <!-- 右：控制台（占满） -->
-                <Border Grid.Column="1" Classes="card" Padding="0">
+                <Border Grid.Column="2" Classes="card" Padding="0" MinWidth="300">
                     <DockPanel>
                         <Border DockPanel.Dock="Top" Padding="12,8"
                                 Background="{StaticResource BgSurface}"
@@ -107,16 +111,21 @@
                                         Click="OnSendClick" IsEnabled="{Binding IsRunning}"/>
                             </Grid>
                         </StackPanel>
-                        <ScrollViewer>
-                            <ItemsControl ItemsSource="{Binding Logs}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                                   Foreground="{StaticResource TextLog}" TextWrapping="Wrap"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <Grid>
+                            <ScrollViewer>
+                                <ItemsControl ItemsSource="{Binding Logs}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
+                                                       Foreground="{StaticResource TextLog}" TextWrapping="Wrap"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <TextBlock Text="启动服务端后日志显示在此" Foreground="{StaticResource TextDim}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsVisible="{Binding Logs.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
+                        </Grid>
                     </DockPanel>
                 </Border>
             </StackPanel>
