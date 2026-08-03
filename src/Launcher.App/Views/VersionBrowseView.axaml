@@ -77,8 +77,29 @@
                     <ScrollViewer IsVisible="{Binding Detail.HasSelection}">
                         <StackPanel Spacing="8" Margin="0,0,0,16">
 
+                            <!-- Tab 条：基本信息 / 配置 / 模组 / 存档 / 操作（替代 5 卡垂直堆叠） -->
+                            <Border Classes="card" Padding="6">
+                                <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="4">
+                                    <Button Content="基本信息" Classes="tab" Classes.active="{Binding Detail.IsInfoTabSelected}"
+                                            FontSize="12" Padding="8,6"
+                                            Command="{Binding Detail.SelectTabCommand}" CommandParameter="0"/>
+                                    <Button Grid.Column="1" Content="配置" Classes="tab" Classes.active="{Binding Detail.IsConfigTabSelected}"
+                                            FontSize="12" Padding="8,6"
+                                            Command="{Binding Detail.SelectTabCommand}" CommandParameter="1"/>
+                                    <Button Grid.Column="2" Content="模组" Classes="tab" Classes.active="{Binding Detail.IsModsTabSelected}"
+                                            FontSize="12" Padding="8,6"
+                                            Command="{Binding Detail.SelectTabCommand}" CommandParameter="2"/>
+                                    <Button Grid.Column="3" Content="存档" Classes="tab" Classes.active="{Binding Detail.IsSavesTabSelected}"
+                                            FontSize="12" Padding="8,6"
+                                            Command="{Binding Detail.SelectTabCommand}" CommandParameter="3"/>
+                                    <Button Grid.Column="4" Content="操作" Classes="tab" Classes.active="{Binding Detail.IsOpsTabSelected}"
+                                            FontSize="12" Padding="8,6"
+                                            Command="{Binding Detail.SelectTabCommand}" CommandParameter="4"/>
+                                </Grid>
+                            </Border>
+
                             <!-- 1. 基本信息 + 启动/停止/修复 -->
-                            <Border Classes="card" Padding="12">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.IsInfoTabSelected}">
                                 <StackPanel Spacing="8">
                                     <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                         <StackPanel Spacing="3">
@@ -103,7 +124,7 @@
                             </Border>
 
                             <!-- 2. 启动配置（版本级覆盖） -->
-                            <Border Classes="card" Padding="12">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.IsConfigTabSelected}">
                                 <StackPanel Spacing="8">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <TextBlock Text="启动配置（版本级）" FontSize="13" FontWeight="SemiBold"
@@ -134,7 +155,7 @@
                             </Border>
 
                             <!-- 4. 模组管理 -->
-                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.IsModsTabSelected}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.ModsCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
@@ -165,7 +186,7 @@
                             </Border>
 
                             <!-- 5. 存档管理 -->
-                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.IsSavesTabSelected}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.SavesCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
@@ -190,7 +211,7 @@
                             </Border>
 
                             <!-- 6. 版本操作 -->
-                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.IsOpsTabSelected}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="版本操作" FontSize="13" FontWeight="SemiBold"/>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
