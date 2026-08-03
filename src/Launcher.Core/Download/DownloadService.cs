@@ -39,26 +39,13 @@ public sealed class DownloadService
     {
         _http = http ?? CreateClient();
         _resolver = resolver ?? ResolvingDlSourceMapper.Default;
-        _options = options ?? DefaultFromSettings();
+        _options = options ?? DownloadOptions.FromSettings(LauncherSettings.Current);
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _limitPerStream = _options.BytesPerSecond > 0
             ? Math.Max(_options.BytesPerSecond / Math.Max(_options.ChunkCount, 1), 8192)
             : 0;
         _networkChecker = networkChecker
             ?? ((hosts, ct) => NetworkChecker.CheckAsync(hosts, TimeSpan.FromSeconds(3), ct));
-    }
-
-    /// <summary>未显式注入时按设置页生成：并发数 + 镜像回退开关 + 限速（改动即时生效，无需重启）</summary>
-    private static DownloadOptions DefaultFromSettings()
-    {
-        var s = LauncherSettings.Current;
-        return new DownloadOptions
-        {
-            LibraryConcurrency = s.MaxConcurrentDownloads > 0 ? s.MaxConcurrentDownloads : 8,
-            AssetConcurrency = s.MaxConcurrentDownloads > 0 ? Math.Max(s.MaxConcurrentDownloads * 2, 16) : 16,
-            MirrorFallbackEnabled = s.MirrorFallbackEnabled,
-            BytesPerSecond = s.DownloadSpeedLimitKbps > 0 ? s.DownloadSpeedLimitKbps * 1024 : 0,
-        };
     }
 
     /// <summary>每流限速配额（总限速均分到并发流；每流独立累加器 → 总吞吐=设定值）</summary>
@@ -219,7 +206,7 @@ public sealed class DownloadService
         await using (var src = await response.Content.ReadAsStreamAsync(ct))
         {
             using var dst = new FileStream(destPath, FileMode.Append, FileAccess.Write, FileShare.None);
-            var buffer = new byte[81920];
+            var buffer = new byte[_options.BufferSize];
             long read = 0;
             var throttle = new ThrottleState();
             int n;
@@ -337,7 +324,7 @@ public sealed class DownloadService
             response.EnsureSuccessStatusCode();
             await using var src = await response.Content.ReadAsStreamAsync(ct);
             await using var dst = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            var buffer = new byte[81920];
+            var buffer = new byte[_options.BufferSize];
             var throttle = new ThrottleState();
             int n;
             while ((n = await src.ReadAsync(buffer, ct)) > 0)
