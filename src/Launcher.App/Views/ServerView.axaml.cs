@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
@@ -11,6 +12,18 @@ public partial class ServerView : UserControl
     public ServerView()
     {
         InitializeComponent();
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is ServerViewModel vm)
+                vm.Logs.CollectionChanged += OnLogsChanged;
+        };
+    }
+
+    /// <summary>服务端日志到达时控制台自动滚动到底部</summary>
+    private void OnLogsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == NotifyCollectionChangedAction.Add)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => LogScroll?.ScrollToEnd());
     }
 
     private void OnCommandKeyDown(object? sender, KeyEventArgs e)
