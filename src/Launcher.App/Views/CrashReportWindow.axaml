@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Launcher.App.Views.CrashReportWindow"
+        Title="启动器遇到问题" Width="560" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgSurface}">
+
+    <StackPanel Margin="26,22" Spacing="14">
+        <StackPanel Spacing="4">
+            <TextBlock Text="启动器遇到问题" FontSize="18" FontWeight="Bold"
+                       Foreground="{StaticResource Danger}"/>
+            <TextBlock Text="可以导出错误报告发给开发者，帮助定位问题。" Classes="sub" FontSize="12"/>
+        </StackPanel>
+
+        <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="220">
+            <ScrollViewer>
+                <TextBlock x:Name="ErrorText" TextWrapping="Wrap" FontSize="12"
+                           Foreground="{StaticResource TextLog}" FontFamily="Consolas"/>
+            </ScrollViewer>
+        </Border>
+
+        <TextBlock Text="日志预览（最近错误日志尾部）" Classes="dim" FontSize="11"/>
+        <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="160">
+            <ScrollViewer>
+                <TextBlock x:Name="LogPreview" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{StaticResource TextLog}" FontFamily="Consolas"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button x:Name="CopyBtn" Content="复制错误信息" Classes="ghost" Click="OnCopy"/>
+            <Button x:Name="ExportBtn" Content="导出错误报告" Classes="primary" Click="OnExport"/>
+            <Button Content="知道了" Classes="ghost" Click="OnClose"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

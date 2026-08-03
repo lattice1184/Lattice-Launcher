@@ -65,4 +65,15 @@ public partial class SettingsView : UserControl
         var box = this.FindControl<TextBox>("MemoryCustomText");
         Vm.ApplyCustomMemory(box?.Text ?? "");
     }
+
+    private void OnAccentClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { CommandParameter: string color }) Vm!.AccentColor = color;
+    }
+
+    private void OnDensityClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
+            Vm!.DensityIndex = i;
+    }
 }

@@ -71,6 +71,27 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int SpeedLimitKbps { get; set; }
 
+    // ---------- 外观 ----------
+
+    /// <summary>窗口透明度（0.7-1.0）</summary>
+    [ObservableProperty]
+    public partial double WindowOpacity { get; set; } = 0.9;
+
+    /// <summary>当前强调色（#RRGGBB）</summary>
+    [ObservableProperty]
+    public partial string AccentColor { get; set; } = "#2DD4BF";
+
+    /// <summary>界面密度</summary>
+    [ObservableProperty]
+    public partial int DensityIndex { get; set; } = 1;
+
+    /// <summary>外观变化（MainWindow/App 应用透明度/强调色/密度）</summary>
+    public event Action? AppearanceChanged;
+
+    /// <summary>预设强调色（色块按钮）</summary>
+    public static IReadOnlyList<string> AccentPresets { get; } =
+        ["#2DD4BF", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
+
     public SettingsViewModel()
     {
         var s = LauncherSettings.Current;
@@ -86,6 +107,9 @@ public partial class SettingsViewModel : ViewModelBase
         MirrorFallbackEnabled = s.MirrorFallbackEnabled;
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
+        WindowOpacity = s.WindowOpacity;
+        AccentColor = s.AccentColor;
+        DensityIndex = (int)s.Density;
     }
 
     // ---------- 写入 ----------
@@ -100,7 +124,11 @@ public partial class SettingsViewModel : ViewModelBase
         s.MirrorFallbackEnabled = MirrorFallbackEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
+        s.WindowOpacity = WindowOpacity;
+        s.AccentColor = AccentColor;
+        s.Density = (DensityMode)DensityIndex;
         s.Save();
+        AppearanceChanged?.Invoke();
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();

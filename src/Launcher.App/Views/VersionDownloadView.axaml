@@ -10,7 +10,7 @@
             <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <Grid ColumnDefinitions="210,1,*,1,300" ColumnSpacing="10">
+        <Grid ColumnDefinitions="1.2*,1,2*,1,1.5*" ColumnSpacing="10">
             <!-- 左：分类 + 搜索 -->
             <DockPanel Grid.Column="0">
                 <TextBox DockPanel.Dock="Top" Text="{Binding Sidebar.SearchText, Mode=TwoWay}"

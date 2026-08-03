@@ -5,6 +5,8 @@ namespace Launcher.Core.Utils;
 /// <summary>
 /// 启动器设置（AppData\Launcher\settings.json）：自配游戏路径 + 版本隔离开关。
 /// </summary>
+public enum DensityMode { Compact = 0, Normal = 1, Comfortable = 2 }
+
 public sealed class LauncherSettings
 {
     private static readonly string DefaultPath = Path.Combine(
@@ -40,6 +42,17 @@ public sealed class LauncherSettings
 
     /// <summary>下载限速（KB/s；0 = 不限速）</summary>
     public int DownloadSpeedLimitKbps { get; set; }
+
+    // ---------- 外观 ----------
+
+    /// <summary>窗口透明度（0.7-1.0；1.0 = 不透明）</summary>
+    public double WindowOpacity { get; set; } = 0.9;
+
+    /// <summary>强调色（#RRGGBB；空 = 默认青绿）</summary>
+    public string AccentColor { get; set; } = "#2DD4BF";
+
+    /// <summary>界面密度（紧凑/标准/舒适 → 整 UI 缩放）</summary>
+    public DensityMode Density { get; set; } = DensityMode.Normal;
 
     public static LauncherSettings Current { get; } = Load();
 

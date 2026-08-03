@@ -60,8 +60,11 @@
                     </StackPanel>
                 </ExperimentalAcrylicBorder>
 
-                <!-- 右侧内容区（页面切换动画） -->
-                <Border Background="#F01D222C" Padding="16">
+                <!-- 右侧内容区（页面切换动画；密度缩放） -->
+                <Border x:Name="ContentSurface" Background="#F01D222C" Padding="16">
+                    <Border.RenderTransform>
+                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
                     <TransitioningContentControl Content="{Binding CurrentPage}"
                                                  PageTransition="{StaticResource PageFade}"/>
                 </Border>

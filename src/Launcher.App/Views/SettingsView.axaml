@@ -78,6 +78,47 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 外观 -->
+                <Border Classes="card" Padding="16">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="外观" FontSize="14" FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <TextBlock Text="窗口透明度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <Slider Grid.Column="1" Minimum="0.7" Maximum="1.0" TickFrequency="0.05"
+                                    Value="{Binding WindowOpacity}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding WindowOpacity, StringFormat={}{0:0.0}}" 
+                                       Classes="dim" FontSize="12" Width="36" TextAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="强调色" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <ItemsControl ItemsSource="{x:Static vm:SettingsViewModel.AccentPresets}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" Spacing="6"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Width="24" Height="24" CornerRadius="12" Padding="0"
+                                                Background="{Binding}" Click="OnAccentClick"
+                                                CommandParameter="{Binding}"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="界面密度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <Button Content="紧凑" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                                    CommandParameter="0"/>
+                            <Button Content="标准" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                                    CommandParameter="1"/>
+                            <Button Content="舒适" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                                    CommandParameter="2"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- 下载 -->
                 <Border Classes="card" Padding="16">
                     <StackPanel Spacing="10">

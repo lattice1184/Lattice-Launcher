@@ -35,6 +35,10 @@ public partial class VersionBrowseViewModel : ViewModelBase
     [ObservableProperty]
     public partial string Status { get; set; } = "加载中…";
 
+    /// <summary>左栏底部统计条（已装总数/本启动器/PCL）</summary>
+    [ObservableProperty]
+    public partial string StatsText { get; set; } = "";
+
     private List<InstalledVersionRowVM> _all = [];
 
     public VersionBrowseViewModel()
@@ -86,6 +90,9 @@ public partial class VersionBrowseViewModel : ViewModelBase
 
             _all = [.. _all.OrderByDescending(r => r.Id)];
             Rebuild();
+            var own = _all.Count(r => r.SourceLabel == "本启动器");
+            var pcl = _all.Count(r => r.SourceLabel == "PCL2");
+            StatsText = $"已装 {_all.Count} 个 · 本启动器 {own} · PCL {pcl}";
             Status = _all.Count == 0
                 ? "还没有已装版本，去【下载】里下载一个"
                 : $"已安装 {_all.Count} 个版本";

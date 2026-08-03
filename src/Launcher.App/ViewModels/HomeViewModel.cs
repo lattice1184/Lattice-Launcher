@@ -293,6 +293,7 @@ public partial class HomeViewModel : ViewModelBase
             IsRunning = false;
             _running = null;
             CurrentStageIndex = -1;
+            GameLogs.Clear(); // 退出后自动清空控制台（启动记录/日志文件保留本次错误）
         }
         catch (Exception ex)
         {
