@@ -225,6 +225,30 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     [ObservableProperty]
     public partial bool HasConfigOverrides { get; set; }
 
+    // ---------- 详情 Tab（基本信息/配置/模组/存档/操作——替代 5 卡垂直堆叠） ----------
+
+    /// <summary>当前详情 Tab 索引（0 基本信息 / 1 配置 / 2 模组 / 3 存档 / 4 操作）</summary>
+    [ObservableProperty]
+    public partial int SelectedTab { get; set; }
+
+    public bool IsInfoTabSelected => SelectedTab == 0;
+    public bool IsConfigTabSelected => SelectedTab == 1;
+    public bool IsModsTabSelected => SelectedTab == 2;
+    public bool IsSavesTabSelected => SelectedTab == 3;
+    public bool IsOpsTabSelected => SelectedTab == 4;
+
+    partial void OnSelectedTabChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsInfoTabSelected));
+        OnPropertyChanged(nameof(IsConfigTabSelected));
+        OnPropertyChanged(nameof(IsModsTabSelected));
+        OnPropertyChanged(nameof(IsSavesTabSelected));
+        OnPropertyChanged(nameof(IsOpsTabSelected));
+    }
+
+    [RelayCommand]
+    private void SelectTab(int index) => SelectedTab = index;
+
     public InstalledVersionDetailVM(VersionInstaller installer, Action<string> onInstalled)
     {
         _installer = installer;
