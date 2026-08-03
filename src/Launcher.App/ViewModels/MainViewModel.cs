@@ -56,7 +56,7 @@ public partial class MainViewModel : ViewModelBase
         IsAccountActive = page == "account";
         IsSettingsActive = page == "settings";
         if (page == "download") Downloads.ActivateDefault();
-        if (page == "home") _ = Home.RefreshVersionsAsync(); // 切回主页刷新已装版本（下载完成后可见）
+        if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.EnsureLoadedAsync(); // 首次进入版本页才拉清单
         CurrentPage = page switch
         {

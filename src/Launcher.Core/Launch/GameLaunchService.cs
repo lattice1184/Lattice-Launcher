@@ -37,11 +37,13 @@ public sealed class GameLaunchService
             foreach (var sub in new[] { "saves", "mods", "resourcepacks", "shaderpacks" })
                 Directory.CreateDirectory(Path.Combine(applyDir, sub));
         }
-        AutoChinese.Apply(applyDir);
+        if (LauncherSettings.Current.AutoChineseEnabled) AutoChinese.Apply(applyDir);
 
-        // 3. Java 自动选配
+        // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）
         onStage?.Invoke("检测 Java");
-        var java = JavaSelector.Pick(version.JavaVersion?.MajorVersion);
+        var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
+            ? custom
+            : JavaSelector.Pick(version.JavaVersion?.MajorVersion);
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
         onStage?.Invoke("解压 natives");

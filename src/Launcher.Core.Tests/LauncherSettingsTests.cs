@@ -50,4 +50,44 @@ public class LauncherSettingsTests
         var loaded = LauncherSettings.Load(path);
         Assert.NotNull(loaded);
     }
+
+    [Fact]
+    public void Defaults_LaunchFields()
+    {
+        var s = new LauncherSettings();
+        Assert.Equal(4096, s.MemoryMb);
+        Assert.Null(s.JavaPath);
+        Assert.Null(s.ExtraJvmArgs);
+        Assert.True(s.AutoChineseEnabled);
+        Assert.True(s.MirrorFallbackEnabled);
+        Assert.Equal(0, s.MaxConcurrentDownloads);
+    }
+
+    [Fact]
+    public void SaveAndLoad_LaunchFields_RoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            var s = new LauncherSettings
+            {
+                MemoryMb = 8192,
+                JavaPath = @"C:\Program Files\Java\jdk-21in\java.exe",
+                ExtraJvmArgs = "-Dxxx=1 -Xss2m",
+                AutoChineseEnabled = false,
+                MirrorFallbackEnabled = false,
+                MaxConcurrentDownloads = 12,
+            };
+            s.Save(path);
+
+            var loaded = LauncherSettings.Load(path);
+            Assert.Equal(8192, loaded.MemoryMb);
+            Assert.Equal(@"C:\Program Files\Java\jdk-21in\java.exe", loaded.JavaPath);
+            Assert.Equal("-Dxxx=1 -Xss2m", loaded.ExtraJvmArgs);
+            Assert.False(loaded.AutoChineseEnabled);
+            Assert.False(loaded.MirrorFallbackEnabled);
+            Assert.Equal(12, loaded.MaxConcurrentDownloads);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
 }

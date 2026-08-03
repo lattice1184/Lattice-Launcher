@@ -53,6 +53,20 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial string LaunchStatus { get; set; } = "选择版本并启动";
 
+    /// <summary>启动配置摘要（内存/Java/隔离，显示在启动区小字）</summary>
+    [ObservableProperty]
+    public partial string LaunchConfigText { get; set; } = "";
+
+    /// <summary>刷新配置摘要（启动区小字；设置页改动后切回主页即更新）</summary>
+    public void RefreshConfigText()
+    {
+        var s = LauncherSettings.Current;
+        var mem = s.MemoryMb > 0 ? $"{s.MemoryMb / 1024.0:0.#}G" : "总内存 60%";
+        var java = string.IsNullOrWhiteSpace(s.JavaPath) ? "自动" : Path.GetFileName(s.JavaPath);
+        var iso = s.VersionIsolation ? "隔离" : "共享";
+        LaunchConfigText = $"内存 {mem} · Java {java} · 版本{iso}";
+    }
+
     [ObservableProperty]
     public partial bool IsLaunching { get; set; }
 
@@ -82,6 +96,7 @@ public partial class HomeViewModel : ViewModelBase
     {
         _accounts.Load();
         RefreshPlayer();
+        RefreshConfigText();
         await RefreshVersionsAsync();
     }
 
@@ -175,12 +190,17 @@ public partial class HomeViewModel : ViewModelBase
 
         try
         {
-            // 启动链路（后台线程；阶段回调切回 UI 更新指示条）
+            // 启动链路（后台线程；阶段回调切回 UI 更新指示条）——内存/参数来自设置页
             var gameDir = version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
+            var s = LauncherSettings.Current;
+            var memMb = s.MemoryMb > 0
+                ? s.MemoryMb
+                : (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6);
+            var extraArgs = s.ExtraJvmArgs?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             _running = await Task.Run(() => _launcher.LaunchAsync(
                 version.Name, gameDir, account.Name, account.Uuid,
-                memoryMb: 4096, extraJvmArgs: null,
-                onLog: AppendLog, onStage: s => Dispatcher.UIThread.Post(() => SetStage(s)),
+                memoryMb: memMb, extraJvmArgs: extraArgs,
+                onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None));
 
             // 游戏进程已启动

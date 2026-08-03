@@ -34,10 +34,22 @@ public sealed class DownloadService
     {
         _http = http ?? CreateClient();
         _resolver = resolver ?? ResolvingDlSourceMapper.Default;
-        _options = options ?? DownloadOptions.Default;
+        _options = options ?? DefaultFromSettings();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _networkChecker = networkChecker
             ?? ((hosts, ct) => NetworkChecker.CheckAsync(hosts, TimeSpan.FromSeconds(3), ct));
+    }
+
+    /// <summary>未显式注入时按设置页生成：并发数 + 镜像回退开关（改动即时生效，无需重启）</summary>
+    private static DownloadOptions DefaultFromSettings()
+    {
+        var s = LauncherSettings.Current;
+        return new DownloadOptions
+        {
+            LibraryConcurrency = s.MaxConcurrentDownloads > 0 ? s.MaxConcurrentDownloads : 8,
+            AssetConcurrency = s.MaxConcurrentDownloads > 0 ? Math.Max(s.MaxConcurrentDownloads * 2, 16) : 16,
+            MirrorFallbackEnabled = s.MirrorFallbackEnabled,
+        };
     }
 
     private static HttpClient CreateClient()

@@ -36,6 +36,7 @@
             </ItemsControl>
 
             <TextBlock Text="{Binding LaunchStatus}" Classes="sub"/>
+            <TextBlock Text="{Binding LaunchConfigText}" Classes="dim" FontSize="11"/>
 
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
                 <ComboBox ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
