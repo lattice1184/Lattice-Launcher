@@ -1,2 +1,6 @@
 wdac/
 发布/
+bin/
+obj/
+.testtools/
+*.log
