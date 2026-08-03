@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace PCL.Core.Minecraft.ResourceProject.Curseforge;
 
@@ -12,4 +13,8 @@ public record CurseforgeFile(
     string fileName,
     int releaseType,
     int fileStatus,
-    CurseforgeHashes hashes);
+    CurseforgeHashes hashes,
+    string downloadUrl = "",
+    long fileLength = 0,
+    List<string>? gameVersions = null,
+    List<CurseforgeFileDependency>? dependencies = null);

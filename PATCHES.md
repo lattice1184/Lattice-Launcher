@@ -22,6 +22,7 @@
 | 8 | `PCL.Core/App/Essentials/RpcService.cs` | `[LifecycleService(Loaded)]` | **移除注册特性** | RPC 服务依赖 WPF 容器 |
 | 9 | `PCL.Core/Link/Lobby/LobbyService.cs` | `[LifecycleService(Loaded)]` | **移除注册特性** | 联机大厅非本启动器需求 |
 | 10 | `PCL.Core/UI/Theme/ThemeService.cs` | `[LifecycleService(WindowCreating)]` | **移除注册特性** | PCL 主题依赖 WPF 资源系统（CurrentApplication NRE） |
+| 11 | `PCL.Core/Minecraft/ResourceProject/Curseforge/CurseforgeFile.cs` | `CurseforgeFile` record 尾部追加 4 个可选参数（downloadUrl/fileLength/gameVersions/dependencies）+ 新增 `CurseforgeFileDependency.cs` | v2.15.0 模型缺安装必需字段（下载 URL/文件大小/支持版本/依赖列表）；STJ 缺字段取默认值，向后兼容 |
 
 > 说明：`UI/NColor.cs`、`UI/NRotateTransform.cs`、`Utils/WpfUtils.cs` 含 `System.Windows.Media` 类型引用，但 net10.0-windows 下类型存在即可编译运行，**不改**（仅 UI 辅助路径）。
 > 配套：`src/Launcher.App/metadata.json` 以 `PCL.metadata.json` 逻辑名嵌入（`Basics.Metadata` 静态初始化依赖）。
