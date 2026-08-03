@@ -112,13 +112,17 @@ public sealed class EcosystemService
         };
         var result = resolver.Resolve(request);
 
+        // 依赖显示名：项目标题 + 一句话说明（用户能看懂装的是什么——如 AANobbMI 是 Iris 的渲染 API 库）
         var names = new List<string>();
         foreach (var dep in result.ToInstall.Take(5))
         {
             try
             {
                 var detail = await GetProjectAsync(dep.ProjectId, ct);
-                names.Add(detail?.Title ?? dep.ProjectId);
+                if (detail is null) { names.Add(dep.ProjectId); continue; }
+                var hint = detail.Description;
+                if (hint is { Length: > 28 }) hint = hint[..28] + "…";
+                names.Add(string.IsNullOrEmpty(hint) ? detail.Title : $"{detail.Title}——{hint}");
             }
             catch { names.Add(dep.ProjectId); }
         }
