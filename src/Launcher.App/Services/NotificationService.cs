@@ -32,6 +32,10 @@ public partial class ToastItem : ObservableObject
     [ObservableProperty]
     public partial double Opacity { get; set; } = 1;
 
+    /// <summary>滑入/滑出偏移（进入 24→0，退出 0→-24；视图 TranslateTransform Y 绑定）</summary>
+    [ObservableProperty]
+    public partial double SlideY { get; set; } = 24;
+
     public ToastItem(string message, ToastType type)
     {
         Message = message;
@@ -47,12 +51,14 @@ public static class NotificationService
 {
     public static ObservableCollection<ToastItem> Toasts { get; } = [];
 
-    /// <summary>弹一条 Toast（自动淡出移除）</summary>
+    /// <summary>弹一条 Toast（滑入 + 停留 + 滑出，自动移除）</summary>
     public static void Show(string message, ToastType type = ToastType.Info, int durationMs = 3200)
     {
         var toast = new ToastItem(message, type);
         if (Dispatcher.UIThread.CheckAccess()) Toasts.Add(toast);
         else Dispatcher.UIThread.Post(() => Toasts.Add(toast));
+        // 滑入：24 → 0（视图 DoubleTransition 平滑）
+        Dispatcher.UIThread.Post(() => toast.SlideY = 0);
         _ = FadeOutAsync(toast, durationMs);
     }
 
@@ -65,8 +71,10 @@ public static class NotificationService
     private static async Task FadeOutAsync(ToastItem toast, int durationMs)
     {
         await Task.Delay(durationMs);
+        // 滑出：0 → -24 + 淡出
+        toast.SlideY = -24;
         toast.Opacity = 0;
-        await Task.Delay(240);
+        await Task.Delay(260);
         if (Dispatcher.UIThread.CheckAccess()) Toasts.Remove(toast);
         else Dispatcher.UIThread.Post(() => Toasts.Remove(toast));
     }

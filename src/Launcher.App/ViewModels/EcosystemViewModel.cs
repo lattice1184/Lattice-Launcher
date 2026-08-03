@@ -153,10 +153,11 @@ public partial class EcosystemViewModel : ViewModelBase
 
     partial void OnDetailChanged(ProjectDetailViewModel? value) => IsDetailOpen = value is not null;
 
-    partial void OnSelectedLoaderChanged(string? value) => DebouncedSearch();
-    partial void OnSelectedGameVersionChanged(string? value) => DebouncedSearch();
-    partial void OnSelectedCategoryChanged(CategoryOption? value) => DebouncedSearch();
-    partial void OnSelectedSortChanged(SortOption value) => DebouncedSearch();
+    // 筛选变化立即搜索（不走防抖——Modrinth facets 服务器筛选快，延迟全在防抖；竞态 seq 丢弃旧响应）
+    partial void OnSelectedLoaderChanged(string? value) => _ = RunSearchAsync(reset: true);
+    partial void OnSelectedGameVersionChanged(string? value) => _ = RunSearchAsync(reset: true);
+    partial void OnSelectedCategoryChanged(CategoryOption? value) => _ = RunSearchAsync(reset: true);
+    partial void OnSelectedSortChanged(SortOption value) => _ = RunSearchAsync(reset: true);
 
     /// <summary>加载器 chips 选择（"全部"=null；值转小写——Modrinth facets 要求 fabric/forge/neoforge/quilt）</summary>
     [RelayCommand]
@@ -182,14 +183,14 @@ public partial class EcosystemViewModel : ViewModelBase
 
     partial void OnQueryChanged(string value) => DebouncedSearch();
 
-    /// <summary>防抖搜索（400ms，取消旧请求）</summary>
+    /// <summary>防抖搜索（150ms，取消旧请求——仅搜索框需要防抖）</summary>
     private async void DebouncedSearch()
     {
         _searchCts?.Cancel();
         var cts = _searchCts = new CancellationTokenSource();
         try
         {
-            await Task.Delay(400, cts.Token);
+            await Task.Delay(150, cts.Token);
             await RunSearchAsync(reset: true, cts.Token);
         }
         catch (OperationCanceledException) { }

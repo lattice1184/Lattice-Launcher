@@ -15,7 +15,7 @@ public sealed record AccountRowVM(string Name, string TypeText, bool IsCurrent);
 /// </summary>
 public partial class AccountViewModel : ViewModelBase
 {
-    private readonly AccountService _accounts = new();
+    private readonly AccountService _accounts = AccountService.Shared;
 
     [ObservableProperty]
     public partial string NameInput { get; set; } = "";

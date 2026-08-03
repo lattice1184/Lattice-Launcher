@@ -48,6 +48,8 @@ public sealed class DownloadManager
         SetActive(Tasks.Count(t => t.IsActive));
         task.Completion.ContinueWith(_ => UiPost(() => SetActive(Tasks.Count(t => t.IsActive))),
             TaskScheduler.Default);
+        // 自动清空：终态（完成/失败/取消）任务 3 秒后自动从队列移除（暂停 Paused 不是终态不移除）
+        task.Completion.ContinueWith(_ => ScheduleAutoRemove(task), TaskScheduler.Default);
         // 防未观察异常：完成回调本身出错时记录（不崩溃进程）
         task.Completion.ContinueWith(t =>
             System.Diagnostics.Debug.WriteLine($"[DownloadManager] 计数回调异常: {t.Exception?.GetBaseException().Message}"),
@@ -80,6 +82,18 @@ public sealed class DownloadManager
 
     /// <summary>暂停状态变化（UI 继续按钮显隐）</summary>
     public event Action<bool>? PausedChanged;
+
+    /// <summary>终态任务延迟自动移除（3 秒——让用户看到完成状态与 Toast）</summary>
+    private async void ScheduleAutoRemove(DownloadTask task)
+    {
+        try
+        {
+            await Task.Delay(3000);
+            if (task.State is DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)
+                UiPost(() => { Tasks.Remove(task); SetActive(Tasks.Count(t => t.IsActive)); });
+        }
+        catch { /* 进程退出等 */ }
+    }
 
     /// <summary>清除已结束（完成/失败/取消）任务；需在 UI 线程调用</summary>
     public void ClearFinished()

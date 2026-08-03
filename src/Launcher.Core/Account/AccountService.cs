@@ -10,6 +10,12 @@ namespace Launcher.Core.Account;
 /// </summary>
 public sealed class AccountService
 {
+    /// <summary>进程级共享实例（账号页/主页/启动链路统一读同一状态，跨页面实时同步）</summary>
+    public static AccountService Shared { get; } = new();
+
+    /// <summary>账号状态变化（登录/切换/删除/退出）——主页玩家区等订阅实时刷新</summary>
+    public event Action? Changed;
+
     private readonly string _storePath;
 
     public AccountInfo? Current { get; private set; }
@@ -36,6 +42,7 @@ public sealed class AccountService
         else _accounts.Add(acc);
         Current = acc;
         Save();
+        Changed?.Invoke();
         return acc;
     }
 
@@ -46,6 +53,7 @@ public sealed class AccountService
         if (acc is null) return false;
         Current = acc;
         Save();
+        Changed?.Invoke();
         return true;
     }
 
@@ -55,7 +63,11 @@ public sealed class AccountService
         var removed = _accounts.RemoveAll(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) > 0;
         if (removed && Current?.Name.Equals(name, StringComparison.OrdinalIgnoreCase) == true)
             Current = null;
-        if (removed) Save();
+        if (removed)
+        {
+            Save();
+            Changed?.Invoke();
+        }
         return removed;
     }
 
@@ -77,7 +89,12 @@ public sealed class AccountService
         catch (Exception) { /* 存储损坏则忽略 */ }
     }
 
-    public void Logout() { Current = null; Save(); }
+    public void Logout()
+    {
+        Current = null;
+        Save();
+        Changed?.Invoke();
+    }
 
     private void Save()
     {

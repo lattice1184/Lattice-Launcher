@@ -70,6 +70,10 @@ public partial class ServerViewModel : ViewModelBase
     [ObservableProperty]
     public partial string ServerDirText { get; set; } = "";
 
+    /// <summary>机器状态摘要（内存/CPU/磁盘 + 建议配置）</summary>
+    [ObservableProperty]
+    public partial string MachineStatusText { get; set; } = "点击刷新查看机器状态与建议配置";
+
     public string CommandInput { get; set; } = "";
 
     /// <summary>当前服务端目录（servers/{versionId}）</summary>
@@ -114,6 +118,72 @@ public partial class ServerViewModel : ViewModelBase
         Status = File.Exists(Path.Combine(dir, "server.jar")) ? "服务端已下载，可启动" : "尚未下载服务端";
         LoadProperties();
     }
+
+    /// <summary>查看机器状态并给出建议配置（内存/CPU/磁盘 + Xmx/Java/视距）</summary>
+    [RelayCommand]
+    private void RefreshMachineStatus()
+    {
+        try
+        {
+            var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;      // 可用物理内存
+            var total = TotalPhysicalMemory();                               // 总物理内存
+            var cpu = Environment.ProcessorCount;
+            var diskFree = FreeDiskGb(GameDirectory.InstallDir());
+
+            // 建议：-Xmx = 可用内存 60%（1G~8G 区间）；Java 17+（现代 MC）；视距 10；玩家 20
+            var xmxMb = (long)Math.Clamp(avail * 0.6 / 1024 / 1024, 1024, 8192);
+            var java = xmxMb >= 4096 ? "17/21（大内存建议 21）" : "17+";
+
+            MachineStatusText =
+                $"内存：可用 {avail / 1024.0 / 1024 / 1024:0.#} GB / 总 {total / 1024.0 / 1024 / 1024:0.#} GB" + Environment.NewLine +
+                $"CPU：{cpu} 核 · 磁盘剩余：{diskFree:0.#} GB" + Environment.NewLine +
+                $"建议配置：-Xmx{xmxMb}M · Java {java} · 视距 10 · 最大玩家 20";
+        }
+        catch (Exception ex)
+        {
+            MachineStatusText = $"读取失败: {ex.Message}";
+        }
+    }
+
+    /// <summary>物理内存总量（GlobalMemoryStatusEx P/Invoke）</summary>
+    private static ulong TotalPhysicalMemory()
+    {
+        try
+        {
+            var status = new MemoryStatusEx { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MemoryStatusEx>() };
+            return GlobalMemoryStatusEx(ref status) ? status.ullTotalPhys : 0;
+        }
+        catch { return 0; }
+    }
+
+    private static double FreeDiskGb(string path)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(path) ?? "C:\\";
+            var drive = new DriveInfo(root);
+            return drive.AvailableFreeSpace / 1024.0 / 1024 / 1024;
+        }
+        catch { return 0; }
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MemoryStatusEx
+    {
+        public uint dwLength;
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
 
     /// <summary>下载服务端 jar（确认后执行；幂等跳过已有）</summary>
     [RelayCommand]

@@ -22,7 +22,7 @@ public partial class HomeViewModel : ViewModelBase
         ["解析版本", "检测 Java", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
 
     private readonly GameLaunchService _launcher = new();
-    private readonly AccountService _accounts = new();
+    private readonly AccountService _accounts = AccountService.Shared;
     private LaunchProcess.LaunchResult? _running;
     private const int MaxLogLines = 500;
 
@@ -90,6 +90,8 @@ public partial class HomeViewModel : ViewModelBase
     public HomeViewModel()
     {
         foreach (var name in StageNames) Stages.Add(new LaunchStageVM(name));
+        // 账号状态实时同步：账号页登录/切换/退出后主页玩家区立即刷新
+        _accounts.Changed += RefreshPlayer;
     }
 
     public async Task InitializeAsync()

@@ -88,6 +88,11 @@ public partial class DownloadViewModel : ViewModelBase
         if (sender is not DownloadTask t) return;
         if (!_recorded.Add(t)) return;
         DownloadHistoryService.Record(t);
+        // 完成/失败弹 Toast（滑入动画由 ToastHost 处理）
+        if (t.State == DownloadTaskState.Completed)
+            NotificationService.Success($"下载完成：{t.Name}");
+        else if (t.State == DownloadTaskState.Failed)
+            NotificationService.Error($"下载失败：{t.Name}");
     }
 
     private void ReloadHistory()

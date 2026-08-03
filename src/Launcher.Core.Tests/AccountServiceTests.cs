@@ -83,4 +83,23 @@ public class AccountServiceTests
         Assert.NotEqual(uuid, AccountService.OfflineUuid("Alex"));
         Assert.Equal('3', uuid[14]); // UUID v3
     }
+
+    [Fact]
+    public void Changed_Event_FiresOnLoginAndLogout()
+    {
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            var count = 0;
+            svc.Changed += () => count++;
+            svc.LoginOffline("Steve");
+            Assert.Equal(1, count);
+            svc.SwitchTo("Steve");
+            Assert.Equal(2, count);
+            svc.Logout();
+            Assert.Equal(3, count);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
 }

@@ -14,7 +14,9 @@ namespace Launcher.Core.Download;
 /// </summary>
 public sealed class DownloadService
 {
-    private const long ChunkThreshold = 2 * 1024 * 1024; // 2MB 以上走分片
+    // 256KB 以上走 8 连接分片：国内直连 Modrinth CDN 单连接被限速（几十 KB/s），
+    // 多连接分片可显著提速；弱网分片失败自动回退单连接（DownloadChunkedAsync catch）
+    private const long ChunkThreshold = 256 * 1024;
 
     private readonly HttpClient _http;
     private readonly IDlSourceResolver _resolver;
