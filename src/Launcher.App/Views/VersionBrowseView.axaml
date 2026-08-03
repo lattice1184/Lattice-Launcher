@@ -6,190 +6,161 @@
 
     <DockPanel>
         <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                 <StackPanel Spacing="2">
                     <TextBlock Text="版本管理" FontSize="20" FontWeight="Bold"/>
                     <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
                 </StackPanel>
-                <Button Grid.Column="1" Content="导入整合包" Classes="ghost" FontSize="12" Padding="12,5"
-                        VerticalAlignment="Top" Command="{Binding ImportModpackCommand}"/>
+                <Button Grid.Column="1" Content="下载游戏 →" Classes="ghost" FontSize="12" Padding="12,5"
+                        VerticalAlignment="Center" Click="OnGoDownload"/>
+                <Button Grid.Column="2" Content="导入整合包" Classes="ghost" FontSize="12" Padding="12,5"
+                        VerticalAlignment="Center" Click="OnImportModpack"/>
             </Grid>
         </StackPanel>
 
-        <!-- 两栏：左分类导航 + 右详情 -->
-        <Grid ColumnDefinitions="210,1,*,1,300" ColumnSpacing="10">
-            <!-- 左：分类 + 搜索（老位置） -->
+        <Grid ColumnDefinitions="260,1,*" ColumnSpacing="10">
+            <!-- 左：已装版本列表（搜索 + 行启动） -->
             <DockPanel Grid.Column="0">
-                <TextBox DockPanel.Dock="Top" Text="{Binding Sidebar.SearchText, Mode=TwoWay}"
-                         Watermark="搜索版本…" Margin="0,0,0,8"/>
-                <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding Sidebar.Categories}" Margin="0,0,0,6">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:VersionCategoryItemVM">
-                            <Button Classes="nav" Padding="12,7" Margin="0,1" HorizontalAlignment="Stretch"
-                                    Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Sidebar.SelectCategoryCommand}"
-                                    CommandParameter="{Binding}">
-                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                    <StackPanel Spacing="1">
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding Subtitle}" Classes="dim" FontSize="11"/>
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Count}" Classes="dim" FontSize="11"
-                                               VerticalAlignment="Center"/>
-                                </Grid>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </DockPanel>
-
-            <!-- 分割线 -->
-            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
-
-            <!-- 中：版本列表 + 分页（分类/翻页时淡入过渡） -->
-            <DockPanel Grid.Column="2" Opacity="{Binding Sidebar.ListOpacity}">
-                <DockPanel.Transitions>
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
-                    </Transitions>
-                </DockPanel.Transitions>
-                <!-- 版本列表（分页 10/页，竖排） -->
-                <ListBox ItemsSource="{Binding Sidebar.Items}" SelectedItem="{Binding Sidebar.SelectedItem}"
+                <TextBox DockPanel.Dock="Top" Text="{Binding SearchText, Mode=TwoWay}"
+                         Watermark="搜索已装版本…" Margin="0,0,0,8"/>
+                <ListBox ItemsSource="{Binding Versions}" SelectedItem="{Binding SelectedVersion}"
                          Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:VersionListItemVM">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                <Border Grid.Column="1" CornerRadius="3" Padding="6,1" Background="#1E3A2E"
-                                        VerticalAlignment="Center" IsVisible="{Binding Installed}">
-                                    <TextBlock Text="已装" FontSize="10" Foreground="#5AD07C"/>
-                                </Border>
+                        <DataTemplate x:DataType="vm:InstalledVersionRowVM">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,1">
+                                <StackPanel Spacing="1">
+                                    <TextBlock Text="{Binding Id}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="{Binding SourceLabel}" Classes="dim" FontSize="10"/>
+                                        <Border CornerRadius="3" Padding="5,0" Background="#12332F"
+                                                VerticalAlignment="Center" IsVisible="{Binding LoaderBadge.Length}">
+                                            <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="#B5F4E9"/>
+                                        </Border>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="▶" Classes="ghost" FontSize="11" Padding="8,3"
+                                        VerticalAlignment="Center" Click="OnLaunchRow"
+                                        CommandParameter="{Binding}"/>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-
-                <!-- 分页栏：左右箭头换页，竖排列表不变 -->
-                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10"
-                            HorizontalAlignment="Center" Margin="0,8,0,0">
-                    <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
-                            Command="{Binding Sidebar.PrevPageCommand}" IsEnabled="{Binding Sidebar.HasPrev}"/>
-                    <TextBlock Text="{Binding Sidebar.PageText}" Classes="sub" FontSize="12"
-                               VerticalAlignment="Center" MinWidth="36" TextAlignment="Center"/>
-                    <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
-                            Command="{Binding Sidebar.NextPageCommand}" IsEnabled="{Binding Sidebar.HasNext}"/>
-                </StackPanel>
             </DockPanel>
 
-            <!-- 分割线 -->
-            <GridSplitter Grid.Column="3" Width="1" Background="{StaticResource BorderColor}"/>
+            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
 
-            <!-- 右栏：详情（选中切换滑入淡入） -->
-            <Border Grid.Column="4" Padding="4,0,0,0"
-                    Opacity="{Binding Detail.DetailOpacity}">
-                <Border.RenderTransform>
-                    <TranslateTransform X="{Binding Detail.SlideX}"/>
-                </Border.RenderTransform>
-                <Border.Transitions>
-                    <Transitions>
-                        <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
-                        <DoubleTransition Property="(TranslateTransform.X)" Duration="0:0:0.22"/>
-                    </Transitions>
-                </Border.Transitions>
+            <!-- 右：六分区详情 -->
+            <Border Grid.Column="2" Padding="8,0,0,0">
                 <Grid>
-                <!-- 占位 -->
-                <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
-                            VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock Text="选择左侧分类，点击版本查看详情" Classes="sub" FontSize="13"/>
-                </StackPanel>
+                    <!-- 空状态 -->
+                    <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
+                                VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="← 选择左侧已装版本" Classes="sub" FontSize="13"/>
+                        <TextBlock Text="或去【下载】板块下载新版本" Classes="dim" FontSize="11"/>
+                    </StackPanel>
 
-                <!-- 详情 -->
-                <StackPanel Spacing="12" IsVisible="{Binding Detail.HasSelection}">
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
-                        <StackPanel Spacing="4">
-                            <TextBlock Text="{Binding Detail.Id}" FontSize="24" FontWeight="Bold"/>
-                            <TextBlock Text="{Binding Detail.ReleaseDate}" Classes="dim" FontSize="12"/>
-                            <TextBlock Text="{Binding Detail.SizeText}" Classes="sub" FontSize="12"/>
-                        </StackPanel>
-                        <Border Grid.Column="1" CornerRadius="4" Padding="10,4" Background="#1E3A2E"
-                                VerticalAlignment="Top" IsVisible="{Binding Detail.Installed}">
-                            <TextBlock Text="已安装" FontSize="12" Foreground="#5AD07C" FontWeight="SemiBold"/>
-                        </Border>
-                    </Grid>
+                    <!-- 详情 -->
+                    <ScrollViewer IsVisible="{Binding Detail.HasSelection}">
+                        <StackPanel Spacing="10" Margin="0,0,0,16">
 
-                    <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}" FontSize="12"
-                               TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
+                            <!-- 1. 基本信息 + 启动/停止/修复 -->
+                            <Border Classes="card" Padding="16">
+                                <StackPanel Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="{Binding Detail.Id}" FontSize="20" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding Detail.ReleaseDate}" Classes="dim" FontSize="11"/>
+                                            <TextBlock Text="{Binding Detail.SizeText}" Classes="sub" FontSize="11"/>
+                                            <TextBlock Text="{Binding Detail.SourceLabel}" Classes="dim" FontSize="11"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="启动" Classes="primary" Padding="24,9"
+                                                Command="{Binding Detail.LaunchCommand}"/>
+                                        <Button Grid.Column="2" Content="停止" Padding="18,9"
+                                                Command="{Binding Detail.StopCommand}"/>
+                                        <Button Grid.Column="3" Content="重新下载" Classes="ghost" Padding="14,9"
+                                                Command="{Binding Detail.RepairCommand}"
+                                                IsEnabled="{Binding Detail.ShowRepairButton}"/>
+                                    </Grid>
+                                    <ProgressBar Value="{Binding Detail.DownloadProgressPercent}" Maximum="100" Height="5"
+                                                 IsVisible="{Binding Detail.ShowProgress}"/>
+                                    <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}"
+                                               FontSize="12" TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
+                                </StackPanel>
+                            </Border>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
-                        <ProgressBar Grid.Column="0" Value="{Binding Detail.DownloadProgressPercent}" Maximum="100"
-                                     Height="6" VerticalAlignment="Center" IsVisible="{Binding Detail.ShowProgress}"/>
-                        <TextBlock Grid.Column="1" Text="{Binding Detail.DownloadProgressText}" Classes="sub"
-                                   FontSize="12" VerticalAlignment="Center" IsVisible="{Binding Detail.ShowProgress}"/>
-                        <Button Grid.Column="2" Content="查看下载进度 →" Classes="ghost" FontSize="12"
-                                Command="{Binding Detail.GoToDownloadQueueCommand}"
-                                IsVisible="{Binding Detail.ShowProgress}"/>
-                        <Button Grid.Column="3" Content="下载安装" Classes="primary" Padding="28,10" FontSize="14"
-                                Command="{Binding Detail.DownloadCommand}"
-                                IsVisible="{Binding Detail.ShowDownloadButton}"/>
-                        <Button Grid.Column="3" Content="重新下载" Classes="ghost" Padding="20,10" FontSize="13"
-                                Command="{Binding Detail.RepairCommand}"
-                                IsVisible="{Binding Detail.ShowRepairButton}"/>
-                    </Grid>
+                            <!-- 2. 启动配置（版本级覆盖） -->
+                            <Border Classes="card" Padding="16">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="启动配置（版本级）" FontSize="13" FontWeight="SemiBold"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="跟随全局" Classes="ghost" FontSize="11" Padding="10,4"
+                                                Command="{Binding Detail.ResetConfigCommand}"
+                                                IsVisible="{Binding Detail.HasConfigOverrides}"/>
+                                    </Grid>
+                                    <TextBlock Text="留空 = 跟随全局设置" Classes="dim" FontSize="10"/>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                        <TextBlock Text="内存 (MB)" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Detail.ConfigMemoryText}"
+                                                 Watermark="跟随全局（如 4096）"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                        <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Detail.ConfigJavaText}"
+                                                 Watermark="跟随全局（自动选配）"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                        <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Detail.ConfigArgsText}"
+                                                 Watermark="跟随全局（如 -Dxxx=1）"/>
+                                    </Grid>
+                                    <Button Content="保存本版本配置" Classes="ghost" FontSize="12" Padding="12,5"
+                                            HorizontalAlignment="Left" Command="{Binding Detail.SaveConfigCommand}"/>
+                                </StackPanel>
+                            </Border>
 
-                    <!-- 加载器安装 -->
-                    <Expander Header="安装加载器" IsVisible="{Binding Detail.Installed}">
-                        <StackPanel Spacing="8" Margin="0,8,0,0">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
-                                        Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Fabric"/>
-                                <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
-                                        Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Quilt"/>
-                                <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
-                                        Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Forge"/>
-                                <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
-                                        Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="NeoForge"/>
-                            </StackPanel>
-                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                <ComboBox Grid.Column="0" Width="210"
-                                          ItemsSource="{Binding Detail.Loader.Versions}"
-                                          SelectedItem="{Binding Detail.Loader.SelectedVersion}"
-                                          IsEnabled="{Binding !Detail.Loader.IsLoadingVersions}"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Detail.Loader.StatusText}"
-                                           Classes="sub" FontSize="12" VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"/>
-                                <Button Grid.Column="2" Content="安装" Classes="primary" FontSize="12" Padding="18,6"
-                                        Command="{Binding Detail.Loader.InstallCommand}"
-                                        IsEnabled="{Binding Detail.Loader.SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                            </Grid>
-                            <ProgressBar Value="{Binding Detail.Loader.ProgressPercent}" Maximum="100" Height="5"
-                                         IsVisible="{Binding Detail.Loader.IsInstalling}"/>
-                        </StackPanel>
-                    </Expander>
+                            <!-- 3. 加载器 -->
+                            <Border Classes="card" Padding="16">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="加载器" FontSize="13" FontWeight="SemiBold"/>
+                                    <StackPanel IsVisible="{Binding Detail.Loader, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                Spacing="8">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
+                                                    Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Fabric"/>
+                                            <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
+                                                    Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Quilt"/>
+                                            <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
+                                                    Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="Forge"/>
+                                            <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
+                                                    Command="{Binding Detail.Loader.SelectCommand}" CommandParameter="NeoForge"/>
+                                        </StackPanel>
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                            <ComboBox Grid.Column="0" Width="210"
+                                                      ItemsSource="{Binding Detail.Loader.Versions}"
+                                                      SelectedItem="{Binding Detail.Loader.SelectedVersion}"
+                                                      IsEnabled="{Binding !Detail.Loader.IsLoadingVersions}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Detail.Loader.StatusText}"
+                                                       Classes="sub" FontSize="12" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Button Grid.Column="2" Content="安装" Classes="primary" FontSize="12" Padding="18,6"
+                                                    Command="{Binding Detail.Loader.InstallCommand}"
+                                                    IsEnabled="{Binding Detail.Loader.SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                        </Grid>
+                                        <ProgressBar Value="{Binding Detail.Loader.ProgressPercent}" Maximum="100" Height="5"
+                                                     IsVisible="{Binding Detail.Loader.IsInstalling}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="此版本已带加载器" Classes="sub" FontSize="12"
+                                               IsVisible="{Binding Detail.Loader, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                </StackPanel>
+                            </Border>
 
-                    <!-- 版本管理（PCL2 式：删除/备份/导出/打开/MOD/存档） -->
-                    <Expander Header="版本管理"
-                              IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
-                        <StackPanel Spacing="8" Margin="0,8,0,0">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="删除" Classes="ghost" FontSize="12" Padding="12,5"
-                                        Command="{Binding Detail.Manage.DeleteCommand}"/>
-                                <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5"
-                                        Command="{Binding Detail.Manage.BackupCommand}"
-                                        IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                <Button Content="导出整合包" Classes="ghost" FontSize="12" Padding="12,5"
-                                        Command="{Binding Detail.Manage.ExportModpackCommand}"
-                                        IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"
-                                        Command="{Binding Detail.Manage.OpenFolderCommand}"/>
-                            </StackPanel>
-                            <TextBlock Text="{Binding Detail.Manage.StatusText}" Classes="sub" FontSize="12"
-                                       TextWrapping="Wrap"/>
-
-                            <!-- MOD 列表 -->
-                            <Expander Header="{Binding Detail.Manage.ModsCountText}">
-                                <StackPanel Spacing="4" Margin="0,6,0,0">
+                            <!-- 4. 模组管理 -->
+                            <Border Classes="card" Padding="16" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{Binding Detail.Manage.ModsCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
-                                            HorizontalAlignment="Left"
-                                            Command="{Binding Detail.Manage.OpenModsFolderCommand}"/>
+                                            HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenModsFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.Mods}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModItemVM">
@@ -199,45 +170,66 @@
                                                     <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
                                                                VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.ToggleModCommand}"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Grid.Column="3" Content="删除" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.DeleteModCommand}"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
-                            </Expander>
+                            </Border>
 
-                            <!-- 存档列表（世界名来自 level.dat，PCL.Core SaveManager 解析） -->
-                            <Expander Header="{Binding Detail.Manage.SavesCountText}">
-                                <StackPanel Spacing="4" Margin="0,6,0,0">
+                            <!-- 5. 存档管理 -->
+                            <Border Classes="card" Padding="16" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{Binding Detail.Manage.SavesCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
-                                            HorizontalAlignment="Left"
-                                            Command="{Binding Detail.Manage.OpenSavesFolderCommand}"/>
+                                            HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenSavesFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.Saves}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:SaveItemVM">
-                                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
                                                     <StackPanel Spacing="1">
                                                         <TextBlock Text="{Binding LevelName}" FontSize="12" Foreground="{StaticResource TextSecondary}"
                                                                    TextTrimming="CharacterEllipsis"/>
                                                         <TextBlock Text="{Binding LastPlayedText}" Classes="dim" FontSize="10"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="1" Content="打开" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Expander].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.OpenSaveFolderCommand}"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.OpenSaveFolderCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
-                            </Expander>
+                            </Border>
+
+                            <!-- 6. 版本操作 -->
+                            <Border Classes="card" Padding="16" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="版本操作" FontSize="13" FontWeight="SemiBold"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5"
+                                                Command="{Binding Detail.Manage.BackupCommand}"
+                                                IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
+                                        <Button Content="导出整合包" Classes="ghost" FontSize="12" Padding="12,5"
+                                                Command="{Binding Detail.Manage.ExportModpackCommand}"
+                                                IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
+                                        <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"
+                                                Command="{Binding Detail.Manage.OpenFolderCommand}"/>
+                                        <Button Content="删除" Classes="ghost" FontSize="12" Padding="12,5"
+                                                Command="{Binding Detail.Manage.DeleteCommand}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding Detail.Manage.StatusText}" Classes="sub" FontSize="12"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+
                         </StackPanel>
-                    </Expander>
-                </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Border>
         </Grid>

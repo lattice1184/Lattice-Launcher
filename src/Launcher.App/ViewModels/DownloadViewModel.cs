@@ -14,6 +14,7 @@ namespace Launcher.App.ViewModels;
 /// </summary>
 public partial class DownloadViewModel : ViewModelBase
 {
+    private VersionDownloadViewModel? _game;
     private EcosystemViewModel? _mods;
     private EcosystemViewModel? _modpacks;
     private EcosystemViewModel? _resourcepacks;
@@ -45,6 +46,9 @@ public partial class DownloadViewModel : ViewModelBase
     public partial ViewModelBase? ActiveTab { get; set; }
 
     // Tab 高亮状态（默认 MOD）
+    [ObservableProperty]
+    public partial bool IsGameTabSelected { get; set; }
+
     [ObservableProperty]
     public partial bool IsModTabSelected { get; set; } = true;
 
@@ -115,6 +119,9 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>跳到"下载记录"tab（下载中"查看下载进度"链接用）</summary>
     public void NavigateToQueue() => SelectTab("queue");
 
+    /// <summary>跳到"下载游戏"tab（版本页引导按钮用）</summary>
+    public void NavigateToGame() => SelectTab("game");
+
     private int _preloadStarted;
 
     /// <summary>进入下载页后错峰预热 4 个资源 tab 数据（建 VM + 加载数据，不建视图）——切 tab 秒开无撕裂</summary>
@@ -132,6 +139,7 @@ public partial class DownloadViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string tab)
     {
+        IsGameTabSelected = tab == "game";
         IsQueueTabSelected = tab == "queue";
         IsModTabSelected = tab == "mod";
         IsModpackTabSelected = tab == "modpack";
@@ -143,6 +151,7 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>懒创建 tab VM：首次激活才 new 并触发加载（异步，列表区转圈）</summary>
     private ViewModelBase GetOrCreateTab(string tab) => tab switch
     {
+        "game" => _game ??= CreateAndLoad(new VersionDownloadViewModel(), v => v.EnsureLoadedAsync()),
         "mod" => _mods ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Mod), e => e.InitializeAsync()),
         "modpack" => _modpacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Modpack), e => e.InitializeAsync()),
         "resourcepack" => _resourcepacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Resourcepack), e => e.InitializeAsync()),

@@ -13,7 +13,7 @@ public sealed class GameLaunchService
     public async Task<LaunchProcess.LaunchResult> LaunchAsync(
         string versionId, string gameDirectory,
         string accountName, string accountUuid, string accessToken,
-        long memoryMb, string[]? extraJvmArgs,
+        long memoryMb, string[]? extraJvmArgs, string? javaPathOverride = null,
         Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default)
     {
         // 1. 读版本 JSON
@@ -42,9 +42,11 @@ public sealed class GameLaunchService
         // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）。
         //    版本 JSON 无 javaVersion 时按 MC 版本推断（<1.17 → Java 8；1.17+ → 17/21），避免旧版本误选 Java 21
         onStage?.Invoke("检测 Java");
-        var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
-            ? custom
-            : JavaSelector.Pick(version.JavaVersion?.MajorVersion ?? InferJavaMajor(version.Id));
+        var java = javaPathOverride is { } ov && File.Exists(ov)
+            ? ov
+            : LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
+                ? custom
+                : JavaSelector.Pick(version.JavaVersion?.MajorVersion ?? InferJavaMajor(version.Id));
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
         onStage?.Invoke("解压 natives");

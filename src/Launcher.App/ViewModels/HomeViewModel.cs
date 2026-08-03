@@ -58,6 +58,20 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial string LaunchConfigText { get; set; } = "";
 
+    /// <summary>从版本页请求启动（自动选中版本并走 Launch 流程）</summary>
+    public async Task RequestLaunchAsync(string versionId, string gameDir)
+    {
+        await RefreshVersionsAsync();
+        var found = InstalledVersions.FirstOrDefault(v => v.Name.Equals(versionId, StringComparison.OrdinalIgnoreCase));
+        if (found is null)
+        {
+            InstalledVersions.Add(new VersionInstanceVM(versionId, "本启动器", gameDir));
+            found = InstalledVersions[^1];
+        }
+        SelectedVersion = found;
+        await LaunchAsync();
+    }
+
     /// <summary>刷新配置摘要（启动区小字；设置页改动后切回主页即更新）</summary>
     public void RefreshConfigText()
     {
@@ -175,7 +189,10 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task Launch()
+    private Task Launch() => LaunchAsync();
+
+    /// <summary>启动核心（主页按钮与版本页 [启动] 共用）</summary>
+    private async Task LaunchAsync()
     {
         if (IsLaunching || IsRunning) return;
         var version = SelectedVersion;
@@ -193,13 +210,16 @@ public partial class HomeViewModel : ViewModelBase
 
         try
         {
-            // 启动链路（后台线程；阶段回调切回 UI 更新指示条）——内存/参数来自设置页
+            // 启动链路（后台线程；阶段回调切回 UI 更新指示条）——内存/Java/参数：版本级配置覆盖全局
             var gameDir = version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var s = LauncherSettings.Current;
-            var memMb = s.MemoryMb > 0
-                ? s.MemoryMb
+            var (memCfg, javaCfg, argsCfg) = VersionConfigService.Merge(gameDir, version.Name, s);
+            var memMb = memCfg > 0
+                ? memCfg
                 : (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6);
-            var extraArgs = s.ExtraJvmArgs?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var extraArgs = argsCfg?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (!string.IsNullOrEmpty(javaCfg))
+                s.JavaPath = javaCfg; // 版本级 Java 优先（GameLaunchService 读 LauncherSettings）
             // 正版账号：启动前静默刷新 access token（过期自动换新，用户无感；刷新失败提示重新登录）
             var accessToken = "token";
             if (account.Type == "microsoft")

@@ -51,6 +51,23 @@ public partial class MainViewModel : ViewModelBase
         Downloads.NavigateToQueue();
     }
 
+    /// <summary>跳到下载板块的"下载游戏"tab（版本页引导按钮用）</summary>
+    public void NavigateToDownloadGame()
+    {
+        Navigate("download");
+        Downloads.NavigateToGame();
+    }
+
+    /// <summary>从版本页启动某版本：切主页并自动启动（版本页行 [启动] 按钮）</summary>
+    public void LaunchVersion(string versionId, string gameDir)
+    {
+        Navigate("home");
+        _ = Home.RequestLaunchAsync(versionId, gameDir);
+    }
+
+    /// <summary>停止游戏（版本页 [停止]）</summary>
+    public void StopGame() => Home.StopGameCommand.Execute(null);
+
     [RelayCommand]
     private void Navigate(string page)
     {
