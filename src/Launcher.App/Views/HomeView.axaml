@@ -5,18 +5,22 @@
              x:Class="Launcher.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
-    <DockPanel>
-        <!-- 顶部：玩家 + 版本选择 + 启动控制 -->
-        <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="{StaticResource BgRaised}">
-                    <Image Source="{Binding PlayerAvatar}" Width="40" Height="40" Stretch="Uniform"/>
-                </Border>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding PlayerName}" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
+    <Grid ColumnDefinitions="340,1" ColumnSpacing="14">
+        <!-- 左：启动控制（PCL 式集中左侧） -->
+        <StackPanel Grid.Column="0" Spacing="10">
+            <Button Padding="0" Background="Transparent" BorderThickness="0" HorizontalAlignment="Left"
+                    Click="OnAvatarClick" ToolTip.Tip="点击更换皮肤">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Border Width="56" Height="56" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                        <Image Source="{Binding PlayerAvatar}" Width="56" Height="56" Stretch="Uniform"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding PlayerName}" FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
+                        <TextBlock Text="点击头像换皮肤" FontSize="10" Classes="dim"/>
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+            </Button>
 
             <!-- 启动阶段指示条（颜色只在圆点上，文字统一灰阶） -->
             <ItemsControl ItemsSource="{Binding Stages}">
@@ -66,27 +70,28 @@
                          IsVisible="{Binding IsLaunching}"/>
         </StackPanel>
 
-        <!-- 游戏控制台（自动滚动；最小高度防布局跳动） -->
-        <Border Classes="card" Padding="12" MinHeight="140">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="游戏控制台" Classes="sub" FontSize="12" Margin="0,0,0,8"/>
-                <ScrollViewer x:Name="LogScroll">
-                    <ItemsControl ItemsSource="{Binding GameLogs}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                           Foreground="#B8C2D4" TextWrapping="NoWrap"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-            </DockPanel>
-        </Border>
+        <!-- 右：游戏控制台（弹性大区）+ 启动记录 -->
+        <DockPanel Grid.Column="1">
+            <Border Classes="card" Padding="12">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="游戏控制台" Classes="sub" FontSize="12" Margin="0,0,0,8"/>
+                    <ScrollViewer x:Name="LogScroll">
+                        <ItemsControl ItemsSource="{Binding GameLogs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
+                                               Foreground="#B8C2D4" TextWrapping="NoWrap"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
 
         <!-- 启动记录（跨会话，可回看失败原因） -->
-        <Expander Header="启动记录" IsExpanded="False" Margin="0,10,0,0">
+            <Expander DockPanel.Dock="Bottom" Header="启动记录" IsExpanded="False" Margin="0,10,0,0">
             <StackPanel Spacing="6" Margin="0,6,0,0">
-                <Button Content="清除记录" Classes="ghost" Padding="8,3" FontSize="11"
+                <Button Content="清除记录" Classes="danger" Padding="8,3" FontSize="11"
                         HorizontalAlignment="Left" Command="{Binding ClearLaunchHistoryCommand}"/>
                 <ItemsControl ItemsSource="{Binding LaunchHistory}">
                     <ItemsControl.ItemTemplate>
@@ -106,6 +111,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
-        </Expander>
-    </DockPanel>
+            </Expander>
+        </DockPanel>
+    </Grid>
 </UserControl>

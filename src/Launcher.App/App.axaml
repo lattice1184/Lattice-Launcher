@@ -95,6 +95,16 @@
             <Setter Property="Background" Value="{StaticResource AccentHover}"/>
         </Style>
 
+        <!-- 危险按钮（红字；hover 红底浅） -->
+        <Style Selector="Button.danger">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.danger:hover">
+            <Setter Property="Background" Value="#22E05A5A"/>
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+        </Style>
+
         <!-- 幽灵按钮 -->
         <Style Selector="Button.ghost">
             <Setter Property="Background" Value="Transparent"/>

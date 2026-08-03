@@ -40,7 +40,7 @@
                                     <Button Grid.Column="1" Content="切换" Classes="ghost" FontSize="11" Padding="10,3"
                                             Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).SwitchAccountCommand}"
                                             CommandParameter="{Binding}" IsVisible="{Binding !IsCurrent}"/>
-                                    <Button Grid.Column="2" Content="删除" Classes="ghost" FontSize="11" Padding="10,3"
+                                    <Button Grid.Column="2" Content="删除" Classes="danger" FontSize="11" Padding="10,3"
                                             Command="{Binding $parent[UserControl].((vm:AccountViewModel)DataContext).DeleteAccountCommand}"
                                             CommandParameter="{Binding}"/>
                                 </Grid>

@@ -40,6 +40,12 @@ public partial class App : Application
             {
                 DataContext = new MainViewModel(),
             };
+            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色
+            if (desktop.MainWindow.DataContext is MainViewModel mainVm)
+            {
+                mainVm.Settings.AppearanceChanged += ApplyAccentColor;
+                mainVm.Settings.PreviewChanged += ApplyAccentColor;
+            }
             desktop.MainWindow.Show();
 
             // 首次启动询问游戏目录（settings.json 未指定时），确认后写入，之后不再询问

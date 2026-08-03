@@ -15,9 +15,12 @@ public partial class MainWindow : Window
         {
             ApplyOpacityFallback();
             ApplyAppearance();
-            // 外观实时跟随设置页改动
+            // 外观实时跟随设置页改动（保存应用 + 预览）
             if (DataContext is MainViewModel main)
+            {
                 main.Settings.AppearanceChanged += ApplyAppearance;
+                main.Settings.PreviewChanged += ApplyAppearance;
+            }
         };
     }
 

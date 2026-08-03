@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
@@ -88,6 +89,9 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>外观变化（MainWindow/App 应用透明度/强调色/密度）</summary>
     public event Action? AppearanceChanged;
 
+    /// <summary>外观预览（点击选项即时预览，不写盘；保存才持久化）</summary>
+    public event Action? PreviewChanged;
+
     /// <summary>预设强调色（色块按钮）</summary>
     public static IReadOnlyList<string> AccentPresets { get; } =
         ["#2DD4BF", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
@@ -124,11 +128,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.MirrorFallbackEnabled = MirrorFallbackEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
-        s.WindowOpacity = WindowOpacity;
-        s.AccentColor = AccentColor;
-        s.Density = (DensityMode)DensityIndex;
         s.Save();
-        AppearanceChanged?.Invoke();
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();
@@ -164,6 +164,41 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnMaxConcurrentDownloadsChanged(int value) => DebouncedSave();
     partial void OnSpeedLimitKbpsChanged(int value) => DebouncedSave();
+
+    // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
+    partial void OnWindowOpacityChanged(double value) => PreviewChanged?.Invoke();
+    partial void OnAccentColorChanged(string value) => PreviewChanged?.Invoke();
+    partial void OnDensityIndexChanged(int value) => PreviewChanged?.Invoke();
+
+    /// <summary>保存并应用外观（写盘 + 持久应用）</summary>
+    [RelayCommand]
+    private void SaveAppearance()
+    {
+        var s = LauncherSettings.Current;
+        s.WindowOpacity = WindowOpacity;
+        s.AccentColor = AccentColor;
+        s.Density = (DensityMode)DensityIndex;
+        s.Save();
+        AppearanceChanged?.Invoke();
+        NotificationService.Success("外观已保存并应用");
+    }
+
+    /// <summary>重置外观（恢复默认：0.9 / 青绿 / 标准）</summary>
+    [RelayCommand]
+    private async Task ResetAppearance()
+    {
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                "重置外观设置（透明度/强调色/密度）为默认值？", "重置外观", "重置", "取消"))
+        {
+            return;
+        }
+        WindowOpacity = 0.9;
+        AccentColor = "#2DD4BF";
+        DensityIndex = 1;
+        PreviewChanged?.Invoke();
+        NotificationService.Success("已重置为默认外观（点击「保存并应用」生效）");
+    }
 
     private async void DebouncedSave()
     {

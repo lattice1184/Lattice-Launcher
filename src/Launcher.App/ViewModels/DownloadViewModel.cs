@@ -107,7 +107,13 @@ public partial class DownloadViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ClearHistory() => DownloadHistoryService.Clear();
+    private async Task ClearHistory()
+    {
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner, "清除全部下载历史？", "清除历史", "清除", "取消"))
+            return;
+        DownloadHistoryService.Clear();
+    }
 
     /// <summary>切页进入时激活默认 tab（MainViewModel.Navigate 调用；首次进入下载页才触发加载）</summary>
     public void ActivateDefault()

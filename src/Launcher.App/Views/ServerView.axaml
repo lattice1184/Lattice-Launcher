@@ -94,7 +94,15 @@
                                     <Grid ColumnDefinitions="140,*" ColumnSpacing="10" Margin="0,3">
                                         <TextBlock Text="{Binding Label}" Classes="sub" FontSize="12"
                                                    VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" Text="{Binding Value}" FontSize="12"/>
+                                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding BoolValue}"
+                                                      IsVisible="{Binding IsBool}"/>
+                                        <ComboBox Grid.Column="1" ItemsSource="{Binding Options}"
+                                                  SelectedItem="{Binding Value}" FontSize="12"
+                                                  IsVisible="{Binding IsChoice}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Value}" FontSize="12"
+                                                 IsVisible="{Binding IsText}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Value}" FontSize="12"
+                                                 IsVisible="{Binding IsNumber}"/>
                                     </Grid>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

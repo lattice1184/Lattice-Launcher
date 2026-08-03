@@ -123,7 +123,13 @@ public partial class HomeViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ClearLaunchHistory() => LaunchHistoryService.Clear();
+    private async Task ClearLaunchHistory()
+    {
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner, "清除全部启动记录？", "清除记录", "清除", "取消"))
+            return;
+        LaunchHistoryService.Clear();
+    }
 
     public async Task InitializeAsync()
     {
@@ -175,9 +181,40 @@ public partial class HomeViewModel : ViewModelBase
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
         PlayerAvatar = null;
-        if (acc is not null)
-            _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
-                bmp => PlayerAvatar = bmp);
+        if (acc is null) return;
+
+        // 本地皮肤优先（点击头像更换）；否则 minotar 网络头像
+        var skinPath = LocalSkinPath(acc.Name);
+        if (File.Exists(skinPath))
+        {
+            try { PlayerAvatar = new Avalonia.Media.Imaging.Bitmap(skinPath); return; }
+            catch { /* 损坏皮肤回退网络 */ }
+        }
+        _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
+            bmp => PlayerAvatar = bmp);
+    }
+
+    /// <summary>本地皮肤路径（AppData\Launcher\skins\{name}.png）</summary>
+    private static string LocalSkinPath(string name)
+        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Launcher", "skins", $"{name}.png");
+
+    /// <summary>更换皮肤：复制本地图片为头像（离线模式皮肤仅启动器显示，游戏内不生效——Minecraft 限制）</summary>
+    public void ApplyLocalSkin(string sourcePath)
+    {
+        var acc = _accounts.Current;
+        if (acc is null) return;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LocalSkinPath(acc.Name))!);
+            File.Copy(sourcePath, LocalSkinPath(acc.Name), overwrite: true);
+            RefreshPlayer();
+            NotificationService.Success("已更换皮肤（游戏内不生效，离线模式限制）");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"换肤失败: {ex.Message}");
+        }
     }
 
     /// <summary>推进阶段指示条</summary>

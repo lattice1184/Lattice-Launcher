@@ -11,20 +11,39 @@ using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>server.properties 编辑行（显示名 + 键 + 当前值）</summary>
+/// <summary>server.properties 编辑行控件类型</summary>
+public enum PropControlKind { Text, Bool, Number, Choice }
+
+/// <summary>server.properties 编辑行（按类型渲染：文本/开关/数字/下拉）</summary>
 public partial class PropRowVM : ObservableObject
 {
     public string Key { get; }
     public string Label { get; }
+    public PropControlKind Kind { get; }
+    public IReadOnlyList<string> Options { get; }
 
     [ObservableProperty]
     public partial string Value { get; set; }
 
-    public PropRowVM(string key, string label, string value)
+    public bool IsBool => Kind == PropControlKind.Bool;
+    public bool IsNumber => Kind == PropControlKind.Number;
+    public bool IsChoice => Kind == PropControlKind.Choice;
+    public bool IsText => Kind == PropControlKind.Text;
+
+    /// <summary>开关绑定（true/false ↔ Value）</summary>
+    public bool BoolValue
+    {
+        get => Value.Equals("true", StringComparison.OrdinalIgnoreCase);
+        set => Value = value ? "true" : "false";
+    }
+
+    public PropRowVM(string key, string label, string value, PropControlKind kind, IReadOnlyList<string>? options = null)
     {
         Key = key;
         Label = label;
         Value = value;
+        Kind = kind;
+        Options = options ?? [];
     }
 }
 
@@ -33,18 +52,18 @@ public partial class PropRowVM : ObservableObject
 /// </summary>
 public partial class ServerViewModel : ViewModelBase
 {
-    private static readonly (string Key, string Label)[] PropDefs =
+    private static readonly (string Key, string Label, PropControlKind Kind, string[]? Options)[] PropDefs =
     [
-        ("server-port", "端口"),
-        ("level-name", "世界名"),
-        ("max-players", "最大玩家"),
-        ("motd", "服务器描述 (MOTD)"),
-        ("online-mode", "正版验证 (online-mode)"),
-        ("difficulty", "难度 (easy/normal/hard)"),
-        ("gamemode", "游戏模式 (survival/creative)"),
-        ("view-distance", "视距 (区块)"),
-        ("pvp", "PVP"),
-        ("white-list", "白名单"),
+        ("server-port", "端口", PropControlKind.Number, null),
+        ("level-name", "世界名", PropControlKind.Text, null),
+        ("max-players", "最大玩家", PropControlKind.Number, null),
+        ("motd", "服务器描述 (MOTD)", PropControlKind.Text, null),
+        ("online-mode", "正版验证", PropControlKind.Bool, null),
+        ("difficulty", "难度", PropControlKind.Choice, ["easy", "normal", "hard"]),
+        ("gamemode", "游戏模式", PropControlKind.Choice, ["survival", "creative", "adventure", "spectator"]),
+        ("view-distance", "视距（区块）", PropControlKind.Number, null),
+        ("pvp", "PVP", PropControlKind.Bool, null),
+        ("white-list", "白名单", PropControlKind.Bool, null),
     ];
 
     private readonly ServerInstaller _installer = new();
@@ -332,7 +351,7 @@ public partial class ServerViewModel : ViewModelBase
         if (dir is null) return;
         var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
         PropRows.Clear();
-        foreach (var (key, label) in PropDefs)
+        foreach (var (key, label, kind, options) in PropDefs)
         {
             var fallback = key switch
             {
@@ -346,7 +365,7 @@ public partial class ServerViewModel : ViewModelBase
                 "view-distance" => "10",
                 _ => "",
             };
-            PropRows.Add(new PropRowVM(key, label, props.Get(key, fallback)));
+            PropRows.Add(new PropRowVM(key, label, props.Get(key, fallback), kind, options));
         }
     }
 

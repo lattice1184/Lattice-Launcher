@@ -50,7 +50,7 @@
                     <!-- 历史（终态任务，跨会话） -->
                     <Expander Header="下载历史" IsExpanded="False" Margin="0,4,0,8">
                         <StackPanel Spacing="6">
-                            <Button Content="清除历史" Classes="ghost" Padding="8,3" FontSize="11"
+                            <Button Content="清除历史" Classes="danger" Padding="8,3" FontSize="11"
                                     HorizontalAlignment="Left" Command="{Binding ClearHistoryCommand}"/>
                             <ItemsControl ItemsSource="{Binding History}">
                                 <ItemsControl.ItemTemplate>

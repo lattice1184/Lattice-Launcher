@@ -196,12 +196,12 @@ public partial class VersionManageViewModel : ViewModelBase
     // ---------- 删除 / 备份 / 导出 / 打开 ----------
 
     [RelayCommand]
-    private void Delete()
+    private async Task Delete()
     {
-        if (!IsConfirmDelete)
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                $"删除版本「{_versionId}」？此操作不可恢复（可先备份）。", "删除版本", "删除", "取消"))
         {
-            IsConfirmDelete = true;
-            StatusText = "再次点击确认删除（仅删除版本目录，可先备份）";
             return;
         }
         try
@@ -213,10 +213,6 @@ public partial class VersionManageViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"删除失败: {ex.Message}";
-        }
-        finally
-        {
-            IsConfirmDelete = false;
         }
     }
 

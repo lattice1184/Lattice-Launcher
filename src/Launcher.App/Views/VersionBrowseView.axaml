@@ -241,7 +241,7 @@
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
                                         <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"
                                                 Command="{Binding Detail.Manage.OpenFolderCommand}"/>
-                                        <Button Content="删除" Classes="ghost" FontSize="12" Padding="12,5"
+                                        <Button Content="删除" Classes="danger" FontSize="12" Padding="12,5"
                                                 Command="{Binding Detail.Manage.DeleteCommand}"/>
                                     </StackPanel>
                                     <TextBlock Text="{Binding Detail.Manage.StatusText}" Classes="sub" FontSize="12"
