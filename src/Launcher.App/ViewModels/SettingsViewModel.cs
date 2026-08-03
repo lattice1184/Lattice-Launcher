@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
