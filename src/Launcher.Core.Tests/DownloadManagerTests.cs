@@ -120,4 +120,51 @@ public class DownloadManagerTests
         gate.SetResult();
         await active.Completion;
     }
+
+    [Fact]
+    public void Suspend_ThenResume_ReplaysWork()
+    {
+        var manager = new DownloadManager();
+        var runs = 0;
+        var task = manager.Enqueue("t", async (p, ct) =>
+        {
+            runs++;
+            try { await Task.Delay(100, ct); }
+            catch (OperationCanceledException) { throw; }
+        });
+
+        task.Suspend();
+        Assert.True(task.Completion.Wait(2000), $"completion timeout, state={task.State}, runs={runs}");
+        var flag = (bool)typeof(DownloadTask).GetField("_suspendRequested",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(task)!;
+        Assert.True(flag, $"suspend flag lost, state={task.State}, runs={runs}");
+        Assert.True(task.Completion.Wait(2000));
+        Assert.Equal(DownloadTaskState.Paused, task.State);
+        Assert.Equal(1, runs);
+
+        task.Resume();
+        Assert.True(task.Completion.Wait(2000));
+        Assert.Equal(DownloadTaskState.Completed, task.State);
+        Assert.Equal(2, runs);
+    }
+
+    [Fact]
+    public async Task SuspendAll_ThenResumeAll_AllTasksContinue()
+    {
+        var manager = new DownloadManager(null);
+        var t1 = manager.Enqueue("a", async (p, ct) => await Task.Delay(100, ct));
+        var t2 = manager.Enqueue("b", async (p, ct) => await Task.Delay(100, ct));
+
+        manager.SuspendAll();
+        await t1.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        await t2.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(manager.HasPaused);
+
+        manager.ResumeAll();
+        await t1.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        await t2.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(DownloadTaskState.Completed, t1.State);
+        Assert.Equal(DownloadTaskState.Completed, t2.State);
+        Assert.False(manager.HasPaused);
+    }
 }

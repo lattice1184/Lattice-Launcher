@@ -4,6 +4,7 @@
              xmlns:core="using:Launcher.Core.Download"
              xmlns:app="using:Launcher.App.Converters"
              xmlns:views="using:Launcher.App.Views"
+             xmlns:svc="using:Launcher.App.Services"
              x:Class="Launcher.App.Views.DownloadView"
              x:DataType="vm:DownloadViewModel">
 
@@ -28,13 +29,40 @@
         <!-- 下载队列（tab 内容） -->
         <DataTemplate x:Key="QueuePanel" x:DataType="vm:DownloadViewModel">
             <DockPanel>
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
                     <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1" Content="清除已完成" Classes="ghost" Padding="10,4"
+                    <Button Grid.Column="1" Content="继续" Classes="ghost" Padding="10,4"
+                            Command="{Binding ResumeAllCommand}" IsVisible="{Binding HasPaused}"/>
+                    <Button Grid.Column="2" Content="暂停全部" Classes="ghost" Padding="10,4"
+                            Command="{Binding SuspendAllCommand}" IsVisible="{Binding HasActive}"/>
+                    <Button Grid.Column="3" Content="清除已完成" Classes="ghost" Padding="10,4"
                             Command="{Binding ClearFinishedCommand}"/>
                 </Grid>
 
                 <ScrollViewer>
+                    <StackPanel>
+                    <!-- 历史（终态任务，跨会话） -->
+                    <Expander Header="下载历史" IsExpanded="False" Margin="0,4,0,8">
+                        <StackPanel Spacing="6">
+                            <Button Content="清除历史" Classes="ghost" Padding="8,3" FontSize="11"
+                                    HorizontalAlignment="Left" Command="{Binding ClearHistoryCommand}"/>
+                            <ItemsControl ItemsSource="{Binding History}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="svc:DownloadHistoryEntry">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
+                                            <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding State}" FontSize="11"
+                                                       Foreground="{StaticResource TextDim}"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding Error}" FontSize="11"
+                                                       Foreground="{StaticResource Danger}" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Expander>
                     <ItemsControl ItemsSource="{Binding Tasks}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="core:DownloadTask">
@@ -89,6 +117,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </DockPanel>
         </DataTemplate>

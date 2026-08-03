@@ -67,6 +67,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int MaxConcurrentDownloads { get; set; }
 
+    /// <summary>下载限速（KB/s；0 = 不限）</summary>
+    [ObservableProperty]
+    public partial int SpeedLimitKbps { get; set; }
+
     public SettingsViewModel()
     {
         var s = LauncherSettings.Current;
@@ -81,6 +85,7 @@ public partial class SettingsViewModel : ViewModelBase
         AutoChineseEnabled = s.AutoChineseEnabled;
         MirrorFallbackEnabled = s.MirrorFallbackEnabled;
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
+        SpeedLimitKbps = s.DownloadSpeedLimitKbps;
     }
 
     // ---------- 写入 ----------
@@ -94,6 +99,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.AutoChineseEnabled = AutoChineseEnabled;
         s.MirrorFallbackEnabled = MirrorFallbackEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
+        s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.Save();
     }
 
@@ -126,6 +132,7 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnAutoChineseEnabledChanged(bool value) => Save();
     partial void OnMirrorFallbackEnabledChanged(bool value) => Save();
     partial void OnMaxConcurrentDownloadsChanged(int value) => Save();
+    partial void OnSpeedLimitKbpsChanged(int value) => Save();
 
     /// <summary>游戏目录：浏览选择后应用（由 View code-behind 的 FolderPicker 回调）</summary>
     public void ApplyGameDirectory(string path)

@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Modrinth;
 
@@ -19,6 +21,11 @@ public partial class DownloadViewModel : ViewModelBase
 
     public ObservableCollection<DownloadTask> Tasks => DownloadManager.Instance.Tasks;
 
+    /// <summary>下载历史（终态任务记录，跨会话保持）</summary>
+    public ObservableCollection<DownloadHistoryEntry> History { get; } = [];
+
+    private readonly HashSet<DownloadTask> _recorded = [];
+
     [ObservableProperty]
     public partial string Status { get; set; } = "暂无下载任务";
 
@@ -28,6 +35,10 @@ public partial class DownloadViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool HasActive { get; set; }
+
+    /// <summary>有已暂停任务（"继续"按钮显示）</summary>
+    [ObservableProperty]
+    public partial bool HasPaused { get; set; }
 
     /// <summary>当前 tab 内容（ContentControl 绑定；queue 用常驻面板不走这里）</summary>
     [ObservableProperty]
@@ -57,8 +68,36 @@ public partial class DownloadViewModel : ViewModelBase
     public DownloadViewModel()
     {
         DownloadManager.Instance.ActiveCountChanged += OnActiveChanged;
+        DownloadManager.Instance.PausedChanged += v => HasPaused = v;
+        DownloadHistoryService.Changed += ReloadHistory;
+        HasPaused = DownloadManager.Instance.HasPaused;
         OnActiveChanged(DownloadManager.Instance.ActiveCount);
+        ReloadHistory();
+        // 任务终态 → 记入历史（每任务一次）
+        Tasks.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems is null) return;
+            foreach (DownloadTask t in e.NewItems)
+                t.PropertyChanged += OnTaskPropertyChanged;
+        };
     }
+
+    private void OnTaskPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(DownloadTask.State)) return;
+        if (sender is not DownloadTask t) return;
+        if (!_recorded.Add(t)) return;
+        DownloadHistoryService.Record(t);
+    }
+
+    private void ReloadHistory()
+    {
+        History.Clear();
+        foreach (var h in DownloadHistoryService.All) History.Add(h);
+    }
+
+    [RelayCommand]
+    private void ClearHistory() => DownloadHistoryService.Clear();
 
     /// <summary>切页进入时激活默认 tab（MainViewModel.Navigate 调用；首次进入下载页才触发加载）</summary>
     public void ActivateDefault()
@@ -122,4 +161,10 @@ public partial class DownloadViewModel : ViewModelBase
 
     [RelayCommand]
     private void ClearFinished() => DownloadManager.Instance.ClearFinished();
+
+    [RelayCommand]
+    private void SuspendAll() => DownloadManager.Instance.SuspendAll();
+
+    [RelayCommand]
+    private void ResumeAll() => DownloadManager.Instance.ResumeAll();
 }

@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Launcher.Core.Download;
 
-public enum DownloadTaskState { Queued, Downloading, Verifying, Completed, Failed, Canceled }
+public enum DownloadTaskState { Queued, Downloading, Verifying, Completed, Failed, Canceled, Paused }
 
 /// <summary>
 /// 下载任务（全局下载中心 UI 数据源）：叶子任务（下载一个文件）或组任务（版本下载，Children 为各文件）。
@@ -22,9 +22,10 @@ public partial class DownloadTask : ObservableObject
         [DownloadTaskState.Completed] = "完成",
         [DownloadTaskState.Failed] = "失败",
         [DownloadTaskState.Canceled] = "已取消",
+        [DownloadTaskState.Paused] = "已暂停",
     };
 
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource _cts = new();
     private readonly SynchronizationContext? _ui;
     private readonly Stopwatch _watch = new();
     private readonly object _lock = new();
@@ -32,6 +33,11 @@ public partial class DownloadTask : ObservableObject
     private long _sampleStartBytes;
     private long _lastBytes = -1;
     private double _sampleStartTime;
+
+    // 暂停/继续：保留 work 委托与用户暂停标记；恢复时重放（文件断点续传）
+    private Func<DownloadProgressHandler, CancellationToken, Task>? _work;
+    private Func<DownloadGroupContext, CancellationToken, Task>? _groupWork;
+    private volatile bool _suspendRequested;
 
     public string Name { get; }
     public Task Completion { get; private set; } = Task.CompletedTask;
@@ -98,6 +104,7 @@ public partial class DownloadTask : ObservableObject
     internal DownloadTask(string name, Func<DownloadProgressHandler, CancellationToken, Task> work, SynchronizationContext? ui)
         : this(name, ui)
     {
+        _work = work;
         Completion = RunAsync(work);
     }
 
@@ -106,6 +113,7 @@ public partial class DownloadTask : ObservableObject
         : this(name, ui)
     {
         IsGroup = true;
+        _groupWork = groupWork;
         Completion = RunGroupAsync(groupWork);
     }
 
@@ -127,13 +135,15 @@ public partial class DownloadTask : ObservableObject
                 _watch.Start();
                 SetState(DownloadTaskState.Downloading);
                 await work(Report, _cts.Token);
-                SetState(_cts.IsCancellationRequested ? DownloadTaskState.Canceled : DownloadTaskState.Completed);
+                SetState(_cts.IsCancellationRequested
+                    ? (_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled)
+                    : DownloadTaskState.Completed);
                 if (!_cts.IsCancellationRequested) Post(() => ProgressPercent = 100);
             });
         }
         catch (OperationCanceledException)
         {
-            SetState(DownloadTaskState.Canceled);
+            SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
         }
         catch (Exception ex)
         {
@@ -163,7 +173,7 @@ public partial class DownloadTask : ObservableObject
                 var failed = ctx.Children.FirstOrDefault(c => c.State == DownloadTaskState.Failed);
                 if (_cts.IsCancellationRequested)
                 {
-                    SetState(DownloadTaskState.Canceled);
+                    SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
                 }
                 else if (failed is not null)
                 {
@@ -179,7 +189,7 @@ public partial class DownloadTask : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            SetState(DownloadTaskState.Canceled);
+            SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
         }
         catch (Exception ex)
         {
@@ -190,6 +200,31 @@ public partial class DownloadTask : ObservableObject
         {
             _watch.Stop();
         }
+    }
+
+    // ---------- 暂停 / 继续 ----------
+
+    /// <summary>暂停：取消当前执行（文件断点保留），状态置"已暂停"。
+    /// 用 _suspendRequested（volatile）判断，不依赖 State 的即时性（UI 线程 Post 异步时状态可能滞后）。</summary>
+    public void Suspend()
+    {
+        if (_suspendRequested) return;
+        _suspendRequested = true;
+        foreach (var child in Children) child.Suspend();
+        _cts.Cancel();
+    }
+
+    /// <summary>继续：重放 work（断点续传已下载部分）</summary>
+    public void Resume()
+    {
+        if (!_suspendRequested) return;
+        _suspendRequested = false;
+        _cts = new CancellationTokenSource();
+        if (IsGroup) Post(() => Children.Clear()); // 清掉暂停的旧子任务，重跑会新建
+        if (IsGroup && _groupWork is not null)
+            Completion = RunGroupAsync(_groupWork);
+        else if (_work is not null)
+            Completion = RunAsync(_work);
     }
 
     /// <summary>

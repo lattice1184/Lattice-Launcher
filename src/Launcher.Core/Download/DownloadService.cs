@@ -36,11 +36,14 @@ public sealed class DownloadService
         _resolver = resolver ?? ResolvingDlSourceMapper.Default;
         _options = options ?? DefaultFromSettings();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+        _limitPerStream = _options.BytesPerSecond > 0
+            ? Math.Max(_options.BytesPerSecond / Math.Max(_options.ChunkCount, 1), 8192)
+            : 0;
         _networkChecker = networkChecker
             ?? ((hosts, ct) => NetworkChecker.CheckAsync(hosts, TimeSpan.FromSeconds(3), ct));
     }
 
-    /// <summary>未显式注入时按设置页生成：并发数 + 镜像回退开关（改动即时生效，无需重启）</summary>
+    /// <summary>未显式注入时按设置页生成：并发数 + 镜像回退开关 + 限速（改动即时生效，无需重启）</summary>
     private static DownloadOptions DefaultFromSettings()
     {
         var s = LauncherSettings.Current;
@@ -49,7 +52,28 @@ public sealed class DownloadService
             LibraryConcurrency = s.MaxConcurrentDownloads > 0 ? s.MaxConcurrentDownloads : 8,
             AssetConcurrency = s.MaxConcurrentDownloads > 0 ? Math.Max(s.MaxConcurrentDownloads * 2, 16) : 16,
             MirrorFallbackEnabled = s.MirrorFallbackEnabled,
+            BytesPerSecond = s.DownloadSpeedLimitKbps > 0 ? s.DownloadSpeedLimitKbps * 1024 : 0,
         };
+    }
+
+    private long _throttleBytes;
+    private readonly long _limitPerStream;
+    private readonly System.Diagnostics.Stopwatch _throttleSw = System.Diagnostics.Stopwatch.StartNew();
+
+    /// <summary>限速节流：每 64KB 结算一次，超出配额则等待（分片模式下每片各限一份）</summary>
+    private async Task ThrottleAsync(int n, CancellationToken ct)
+    {
+        if (_limitPerStream <= 0) return;
+        _throttleBytes += n;
+        if (_throttleBytes >= 65536)
+        {
+            var target = (double)_throttleBytes / _limitPerStream;
+            var elapsed = _throttleSw.Elapsed.TotalSeconds;
+            if (elapsed < target)
+                await Task.Delay(TimeSpan.FromSeconds(target - elapsed), ct);
+            _throttleBytes = 0;
+            _throttleSw.Restart();
+        }
     }
 
     private static HttpClient CreateClient()
@@ -173,6 +197,7 @@ public sealed class DownloadService
             while ((n = await src.ReadAsync(buffer, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
+                await ThrottleAsync(n, ct);
                 read += n;
                 progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
                     total > 0 ? read * 100.0 / total : 0));
@@ -283,7 +308,13 @@ public sealed class DownloadService
             response.EnsureSuccessStatusCode();
             await using var src = await response.Content.ReadAsStreamAsync(ct);
             await using var dst = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            await src.CopyToAsync(dst, ct);
+            var buffer = new byte[81920];
+            int n;
+            while ((n = await src.ReadAsync(buffer, ct)) > 0)
+            {
+                await dst.WriteAsync(buffer.AsMemory(0, n), ct);
+                await ThrottleAsync(n, ct);
+            }
         }
         catch when (attempt < 1)
         {

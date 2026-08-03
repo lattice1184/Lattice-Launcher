@@ -38,6 +38,9 @@ public sealed class LauncherSettings
     /// <summary>最大并发下载数（0 = 默认）</summary>
     public int MaxConcurrentDownloads { get; set; }
 
+    /// <summary>下载限速（KB/s；0 = 不限速）</summary>
+    public int DownloadSpeedLimitKbps { get; set; }
+
     public static LauncherSettings Current { get; } = Load();
 
     public static LauncherSettings Load(string? path = null)

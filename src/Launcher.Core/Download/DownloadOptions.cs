@@ -20,6 +20,9 @@ public sealed class DownloadOptions
     /// <summary>官方源失败时启用镜像回退（BMCLAPI）</summary>
     public bool MirrorFallbackEnabled { get; init; } = true;
 
+    /// <summary>全局下载限速（字节/秒；0 = 不限速）</summary>
+    public long BytesPerSecond { get; init; }
+
     /// <summary>轮间退避（测试注入 0 加速；null → RetryPolicy.Backoff）</summary>
     public Func<int, TimeSpan>? BackoffProvider { get; init; }
 

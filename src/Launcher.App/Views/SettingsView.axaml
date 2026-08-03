@@ -92,6 +92,12 @@
                             <TextBlock Grid.Column="2" Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
                                        Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                            <TextBlock Text="下载限速（KB/s，0=不限）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                            <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding SpeedLimitKbps}" Classes="dim" FontSize="12"
+                                       Width="56" TextAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 

@@ -21,8 +21,11 @@ public sealed class DownloadManager
     /// <summary>活动任务数变化（0→1 / n→n-1），用于导航角标</summary>
     public event Action<int>? ActiveCountChanged;
 
-    /// <summary>应用内通常使用 Instance；公开构造函数供测试创建独立实例（测试环境无 UI 上下文 → 同步直跑）</summary>
-    public DownloadManager() => _ui = SynchronizationContext.Current;
+    /// <summary>应用内通常使用 Instance；公开构造函数供测试创建独立实例。</summary>
+    public DownloadManager() : this(SynchronizationContext.Current) { }
+
+    /// <summary>显式同步上下文（测试传 null = Post 同步直跑，不依赖当前线程上下文）</summary>
+    public DownloadManager(SynchronizationContext? syncContext) => _ui = syncContext;
 
     public DownloadTask Enqueue(string name, Func<DownloadProgressHandler, CancellationToken, Task> work)
     {
@@ -52,6 +55,31 @@ public sealed class DownloadManager
     }
 
     public void Cancel(DownloadTask task) => task.Cancel();
+
+    /// <summary>是否有已暂停任务（继续按钮显示条件）</summary>
+    public bool HasPaused => Tasks.Any(t => t.State == DownloadTaskState.Paused);
+
+    /// <summary>暂停全部活跃任务（文件断点保留）</summary>
+    public void SuspendAll()
+    {
+        foreach (var t in Tasks.Where(t => t.IsActive)) t.Suspend();
+        NotifyPausedChanged();
+    }
+
+    /// <summary>继续全部已暂停任务（断点续传）</summary>
+    public void ResumeAll()
+    {
+        foreach (var t in Tasks.Where(t => t.State == DownloadTaskState.Paused)) t.Resume();
+        NotifyPausedChanged();
+    }
+
+    private void NotifyPausedChanged()
+    {
+        UiPost(() => PausedChanged?.Invoke(HasPaused));
+    }
+
+    /// <summary>暂停状态变化（UI 继续按钮显隐）</summary>
+    public event Action<bool>? PausedChanged;
 
     /// <summary>清除已结束（完成/失败/取消）任务；需在 UI 线程调用</summary>
     public void ClearFinished()
