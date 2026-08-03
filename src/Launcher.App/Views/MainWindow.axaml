@@ -72,8 +72,7 @@
                     <Border.RenderTransform>
                         <ScaleTransform ScaleX="1" ScaleY="1"/>
                     </Border.RenderTransform>
-                    <TransitioningContentControl Content="{Binding CurrentPage}"
-                                                 PageTransition="{StaticResource PageFade}"/>
+                    <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentPage}"/>
                 </Border>
             </DockPanel>
 

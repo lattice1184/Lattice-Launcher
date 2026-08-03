@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Launcher.App.Animations;
 using Launcher.App.ViewModels;
 using Launcher.Core.Utils;
 
@@ -17,6 +18,8 @@ public partial class MainWindow : Window
             RestoreWindowSize();
             ApplyOpacityFallback();
             ApplyAppearance();
+            // 页面切换：弹性滑入淡出（BackEase overshoot 拉伸感）
+            PageHost.PageTransition = new UiAnim.FadeSlideTransition { Duration = TimeSpan.FromMilliseconds(220) };
             // 外观实时跟随设置页改动（保存应用 + 预览）
             if (DataContext is MainViewModel main)
             {
