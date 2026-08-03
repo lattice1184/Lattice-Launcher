@@ -55,8 +55,8 @@
                     <!-- 空状态 -->
                     <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
                                 VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="← 选择左侧已装版本" Classes="sub" FontSize="13"/>
-                        <TextBlock Text="或去【下载】板块下载新版本" Classes="dim" FontSize="11"/>
+                        <TextBlock Text="← 选一个版本看设置" Classes="sub" FontSize="13"/>
+                        <TextBlock Text="去【下载】下载新版本" Classes="dim" FontSize="11"/>
                     </StackPanel>
 
                     <!-- 详情 -->
@@ -161,7 +161,7 @@
                                     <TextBlock Text="{Binding Detail.Manage.ModsCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
                                             HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenModsFolderCommand}"/>
-                                    <ItemsControl ItemsSource="{Binding Detail.Manage.Mods}">
+                                    <ItemsControl ItemsSource="{Binding Detail.Manage.ModsPreview}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModItemVM">
                                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
@@ -179,6 +179,10 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
+                                    <Button Content="{Binding Detail.Manage.ModsExpandText}" Classes="ghost"
+                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                                            Command="{Binding Detail.Manage.ToggleShowAllModsCommand}"
+                                            IsVisible="{Binding Detail.Manage.HasMoreMods}"/>
                                 </StackPanel>
                             </Border>
 
@@ -215,7 +219,10 @@
                                         <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5"
                                                 Command="{Binding Detail.Manage.BackupCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="导出整合包" Classes="ghost" FontSize="12" Padding="12,5"
+                                        <Button Content="导出整合包 (mrpack)" Classes="ghost" FontSize="12" Padding="12,5"
+                                                Command="{Binding Detail.Manage.ExportMrpackCommand}"
+                                                IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
+                                        <Button Content="导出整合包 (ZIP)" Classes="ghost" FontSize="12" Padding="12,5"
                                                 Command="{Binding Detail.Manage.ExportModpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
                                         <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"

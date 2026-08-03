@@ -76,7 +76,7 @@ public partial class AccountViewModel : ViewModelBase
         var name = NameInput.Trim();
         if (string.IsNullOrEmpty(name)) { Status = "请输入用户名"; return; }
         _accounts.LoginOffline(name);
-        Status = $"已以离线账号 {name} 登录";
+        Status = $"已登录 {name}";
         Refresh();
     }
 

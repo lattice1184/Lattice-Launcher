@@ -59,7 +59,7 @@ public partial class ServerViewModel : ViewModelBase
     public partial VersionInstanceVM? SelectedVersion { get; set; }
 
     [ObservableProperty]
-    public partial string Status { get; set; } = "选择已安装版本以开服";
+    public partial string Status { get; set; } = "选一个版本开服";
 
     [ObservableProperty]
     public partial bool IsRunning { get; set; }
@@ -132,8 +132,18 @@ public partial class ServerViewModel : ViewModelBase
         if (value is null) return;
         var dir = ServerInstaller.ServerDir(GameDirectory.InstallDir(), value.Name);
         ServerDirText = dir;
-        Status = File.Exists(Path.Combine(dir, "server.jar")) ? "服务端已下载，可启动" : "尚未下载服务端";
+        Status = File.Exists(Path.Combine(dir, "server.jar")) ? "服务端就绪，可启动" : "还没下载服务端";
         LoadProperties();
+    }
+
+    /// <summary>建议配置（供显示与应用共用）</summary>
+    private (long XmxMb, int ViewDistance, int MaxPlayers) BuildSuggestion()
+    {
+        var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        return (
+            (long)Math.Clamp(avail * 0.6 / 1024 / 1024, 1024, 8192),
+            10,
+            20);
     }
 
     /// <summary>查看机器状态并给出建议配置（内存/CPU/磁盘 + Xmx/Java/视距）</summary>
@@ -146,20 +156,41 @@ public partial class ServerViewModel : ViewModelBase
             var total = TotalPhysicalMemory();                               // 总物理内存
             var cpu = Environment.ProcessorCount;
             var diskFree = FreeDiskGb(GameDirectory.InstallDir());
-
-            // 建议：-Xmx = 可用内存 60%（1G~8G 区间）；Java 17+（现代 MC）；视距 10；玩家 20
-            var xmxMb = (long)Math.Clamp(avail * 0.6 / 1024 / 1024, 1024, 8192);
+            var (xmxMb, view, players) = BuildSuggestion();
             var java = xmxMb >= 4096 ? "17/21（大内存建议 21）" : "17+";
 
             MachineStatusText =
                 $"内存：可用 {avail / 1024.0 / 1024 / 1024:0.#} GB / 总 {total / 1024.0 / 1024 / 1024:0.#} GB" + Environment.NewLine +
                 $"CPU：{cpu} 核 · 磁盘剩余：{diskFree:0.#} GB" + Environment.NewLine +
-                $"建议配置：-Xmx{xmxMb}M · Java {java} · 视距 10 · 最大玩家 20";
+                $"建议配置：-Xmx{xmxMb}M · Java {java} · 视距 {view} · 最大玩家 {players}";
         }
         catch (Exception ex)
         {
             MachineStatusText = $"读取失败: {ex.Message}";
         }
+    }
+
+    /// <summary>一键应用建议：写入 server.properties（视距/玩家）+ 更新全局内存</summary>
+    [RelayCommand]
+    private void ApplySuggestion()
+    {
+        var dir = ServerDir;
+        if (dir is null) { Status = "请先选择版本"; return; }
+        var (xmxMb, view, players) = BuildSuggestion();
+
+        // server.properties：只覆盖建议项，不碰用户已有配置
+        var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
+        props.Set("view-distance", view.ToString());
+        props.Set("max-players", players.ToString());
+        props.Save(Path.Combine(dir, "server.properties"));
+
+        // 全局内存 = 建议 Xmx
+        var s = LauncherSettings.Current;
+        s.MemoryMb = (int)xmxMb;
+        s.Save();
+
+        Status = $"已应用建议：内存 {xmxMb}MB · 视距 {view} · 玩家 {players}";
+        NotificationService.Success("已应用建议配置");
     }
 
     /// <summary>物理内存总量（GlobalMemoryStatusEx P/Invoke）</summary>
@@ -211,7 +242,7 @@ public partial class ServerViewModel : ViewModelBase
         if (IsInstalling) return;
         if (DialogService.MainWindow() is { } owner
             && !await DialogService.Confirm(owner,
-                $"下载 Minecraft {version.Name} 服务端（约 50MB）到 {ServerDir}？", "下载服务端", "下载", "取消"))
+                $"下载 {version.Name} 服务端（约 50MB）？", "下载服务端", "下载", "取消"))
         {
             return;
         }

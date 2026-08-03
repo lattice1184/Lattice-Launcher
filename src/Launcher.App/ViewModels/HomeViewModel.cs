@@ -102,12 +102,28 @@ public partial class HomeViewModel : ViewModelBase
 
     public ObservableCollection<string> GameLogs { get; } = [];
 
+    /// <summary>启动记录（跨会话，可回看失败原因）</summary>
+    public ObservableCollection<LaunchHistoryEntry> LaunchHistory { get; } = [];
+
+    private System.Diagnostics.Stopwatch? _launchWatch;
+
     public HomeViewModel()
     {
         foreach (var name in StageNames) Stages.Add(new LaunchStageVM(name));
         // 账号状态实时同步：账号页登录/切换/退出后主页玩家区立即刷新
         _accounts.Changed += RefreshPlayer;
+        LaunchHistoryService.Changed += ReloadLaunchHistory;
+        ReloadLaunchHistory();
     }
+
+    private void ReloadLaunchHistory()
+    {
+        LaunchHistory.Clear();
+        foreach (var h in LaunchHistoryService.All) LaunchHistory.Add(h);
+    }
+
+    [RelayCommand]
+    private void ClearLaunchHistory() => LaunchHistoryService.Clear();
 
     public async Task InitializeAsync()
     {
@@ -198,7 +214,7 @@ public partial class HomeViewModel : ViewModelBase
         var version = SelectedVersion;
         if (version is null) { LaunchStatus = "请先选择版本"; return; }
         var account = _accounts.Current;
-        if (account is null) { LaunchStatus = "请先在【账号】页登录（离线或正版）"; return; }
+        if (account is null) { LaunchStatus = "请先在【账号】页登录"; return; }
 
         GameLogs.Clear();
         IsLaunching = true;
@@ -207,6 +223,7 @@ public partial class HomeViewModel : ViewModelBase
         foreach (var s in Stages) { s.IsDone = false; s.IsCurrent = false; }
         LaunchState = "准备中";
         LaunchStatus = $"正在准备 {version.Name}…";
+        _launchWatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
         {
@@ -259,11 +276,19 @@ public partial class HomeViewModel : ViewModelBase
             {
                 LaunchState = "已退出";
                 LaunchStatus = "已停止游戏";
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Stopped, null, _launchWatch?.Elapsed.TotalSeconds ?? 0);
+            }
+            else if (code == 0)
+            {
+                LaunchState = "已退出";
+                LaunchStatus = "游戏正常退出";
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Success, null, _launchWatch?.Elapsed.TotalSeconds ?? 0);
             }
             else
             {
-                LaunchState = code == 0 ? "已退出" : $"异常退出（{code}）";
-                LaunchStatus = code == 0 ? "游戏正常退出" : "游戏异常退出，请查看日志";
+                LaunchState = $"异常退出（{code}）";
+                LaunchStatus = "游戏异常退出，请查看日志";
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0);
             }
             IsRunning = false;
             _running = null;
@@ -274,6 +299,7 @@ public partial class HomeViewModel : ViewModelBase
             LaunchState = "失败";
             LaunchStatus = ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
+            LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
             IsLaunching = false;
             IsRunning = false;
         }
@@ -297,6 +323,20 @@ public partial class HomeViewModel : ViewModelBase
         }
         if (GameLogs.Count >= MaxLogLines) GameLogs.RemoveAt(0);
         GameLogs.Add(line);
+        AppendToLaunchLog(line);
+    }
+
+    /// <summary>控制台同步落盘（AppData\Launcher\logs\launch-*.log）——启动报错可回看</summary>
+    private void AppendToLaunchLog(string line)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, $"launch-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            File.AppendAllText(path, line + Environment.NewLine);
+        }
+        catch { }
     }
 }
 

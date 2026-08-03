@@ -77,7 +77,7 @@
                 <Grid>
                     <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
                                 VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="选择左侧分类，点击版本下载" Classes="sub" FontSize="13"/>
+                        <TextBlock Text="点击版本下载" Classes="sub" FontSize="13"/>
                     </StackPanel>
 
                     <StackPanel Spacing="12" IsVisible="{Binding Detail.HasSelection}">
@@ -102,15 +102,15 @@
                             <TextBlock Grid.Column="1" Text="{Binding Detail.DownloadProgressPercent, StringFormat={}{0:0}%}"
                                        Classes="sub" FontSize="12" VerticalAlignment="Center"
                                        IsVisible="{Binding Detail.ShowProgress}"/>
-                            <Button Grid.Column="2" Content="下载安装" Classes="primary" Padding="28,10" FontSize="14"
+                            <Button Grid.Column="2" Content="下载" Classes="primary" Padding="28,10" FontSize="14"
                                     Command="{Binding Detail.DownloadCommand}"
                                     IsVisible="{Binding Detail.ShowDownloadButton}"/>
-                            <Button Grid.Column="2" Content="重新下载" Classes="ghost" Padding="20,10" FontSize="13"
+                            <Button Grid.Column="2" Content="修复" Classes="ghost" Padding="20,10" FontSize="13"
                                     Command="{Binding Detail.RepairCommand}"
                                     IsVisible="{Binding Detail.ShowRepairButton}"/>
                         </Grid>
 
-                        <TextBlock Text="提示：加载器（Fabric/Forge 等）请在【版本】页安装"
+                        <TextBlock Text="加载器（Fabric/Forge 等）在【版本】页安装"
                                    Classes="dim" FontSize="11" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Grid>

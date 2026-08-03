@@ -361,7 +361,7 @@ public partial class EcosystemViewModel : ViewModelBase
 
             if (instance is null)
             {
-                NotificationService.Error("请先在顶部选择目标实例");
+                NotificationService.Error("请先选择目标实例");
                 return;
             }
             var instanceName = instance.Name;

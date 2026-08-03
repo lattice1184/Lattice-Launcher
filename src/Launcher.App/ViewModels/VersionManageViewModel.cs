@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
+using Launcher.Core.Download;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -23,6 +24,37 @@ public partial class VersionManageViewModel : ViewModelBase
 
     public ObservableCollection<ModItemVM> Mods { get; } = [];
     public ObservableCollection<SaveItemVM> Saves { get; } = [];
+
+    private const int ModsPreviewLimit = 10;
+
+    /// <summary>MOD 预览（前 10 条；展开后为全部）</summary>
+    public ObservableCollection<ModItemVM> ModsPreview { get; } = [];
+
+    /// <summary>是否展开全部 MOD</summary>
+    [ObservableProperty]
+    public partial bool ShowAllMods { get; set; }
+
+    /// <summary>"展开全部（N）"文字（无更多时不显示）</summary>
+    [ObservableProperty]
+    public partial string ModsExpandText { get; set; } = "";
+
+    public bool HasMoreMods => Mods.Count > ModsPreviewLimit;
+
+    [RelayCommand]
+    private void ToggleShowAllMods()
+    {
+        ShowAllMods = !ShowAllMods;
+        RefreshModsPreview();
+    }
+
+    private void RefreshModsPreview()
+    {
+        ModsPreview.Clear();
+        var shown = ShowAllMods ? Mods : Mods.Take(ModsPreviewLimit);
+        foreach (var m in shown) ModsPreview.Add(m);
+        ModsExpandText = ShowAllMods ? "收起 ▴" : $"展开全部（{Mods.Count - ModsPreviewLimit}）▾";
+        OnPropertyChanged(nameof(HasMoreMods));
+    }
 
     [ObservableProperty]
     public partial string StatusText { get; set; } = "";
@@ -67,6 +99,8 @@ public partial class VersionManageViewModel : ViewModelBase
             Saves.Clear();
             foreach (var sv in saves) Saves.Add(sv);
             OnPropertyChanged(nameof(ModsCountText));
+            ShowAllMods = false;
+            RefreshModsPreview();
             OnPropertyChanged(nameof(SavesCountText));
             StatusText = "";
         }
@@ -125,6 +159,7 @@ public partial class VersionManageViewModel : ViewModelBase
         Mods.Clear();
         foreach (var m in CollectMods()) Mods.Add(m);
         OnPropertyChanged(nameof(ModsCountText));
+        RefreshModsPreview();
     }
 
     [RelayCommand]
@@ -259,6 +294,30 @@ public partial class VersionManageViewModel : ViewModelBase
             {
                 try { Directory.Delete(staging, true); } catch { }
             }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"导出失败: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>导出整合包为 mrpack（Modrinth 标准，可被 PCL/HMCL 导入）</summary>
+    [RelayCommand]
+    private async Task ExportMrpack()
+    {
+        IsBusy = true;
+        StatusText = "导出中…";
+        try
+        {
+            var outDir = await (PickFolder?.Invoke() ?? Task.FromResult<string?>(null))
+                           ?? Path.Combine(_gameDir, "downloads", "modpacks");
+            var zipPath = await Task.Run(() => MrpackExporter.Export(RootDir, _versionId, outDir));
+            StatusText = $"已导出 → {zipPath}";
+            Launcher.App.Services.NotificationService.Success($"已导出 mrpack：{Path.GetFileName(zipPath)}");
         }
         catch (Exception ex)
         {

@@ -87,7 +87,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
             _all = [.. _all.OrderByDescending(r => r.Id)];
             Rebuild();
             Status = _all.Count == 0
-                ? "尚未安装任何版本——去【下载】板块的「下载游戏」下载"
+                ? "还没有已装版本，去【下载】里下载一个"
                 : $"已安装 {_all.Count} 个版本";
         }
         catch (Exception ex)

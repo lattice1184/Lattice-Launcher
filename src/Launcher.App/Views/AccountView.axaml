@@ -56,8 +56,8 @@
                     <TextBlock Text="离线登录" FontWeight="SemiBold"/>
                     <TextBox Text="{Binding NameInput}" Watermark="用户名"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="登录离线账号" Classes="primary" Command="{Binding LoginOfflineCommand}"/>
-                        <Button Content="微软正版登录" Command="{Binding LoginMicrosoftCommand}"
+                        <Button Content="离线登录" Classes="primary" Command="{Binding LoginOfflineCommand}"/>
+                        <Button Content="正版登录" Command="{Binding LoginMicrosoftCommand}"
                                 IsEnabled="{Binding !IsMsAuthBusy}"/>
                         <Button Content="退出" Classes="ghost" Command="{Binding LogoutCommand}"
                                 IsVisible="{Binding IsLoggedIn}"/>
