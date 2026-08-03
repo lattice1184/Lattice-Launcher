@@ -5,16 +5,19 @@ using Launcher.App.Services;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
+using PCL.Core.Minecraft.ResourceProject.Curseforge;
 
 namespace Launcher.App.ViewModels;
 
 /// <summary>
 /// 资源下载面板（下载板块的一个 tab）：防抖搜索 + 实例过滤 + 卡片流 + 四态 + 分页。
 /// 类型在构造时固定（下载页为每种类型建一个实例）；tab 切换由外层 DownloadViewModel 控制。
+/// 来源筛选：全部 = Modrinth + CurseForge 双源并行合并。
 /// </summary>
 public partial class EcosystemViewModel : ViewModelBase
 {
     private readonly EcosystemService _eco = new();
+    private readonly CurseForgeService _cf = new();
     private readonly ProjectType _type;
     private CancellationTokenSource? _searchCts;
     private int _requestSeq;
@@ -26,6 +29,7 @@ public partial class EcosystemViewModel : ViewModelBase
         _type = type;
         SelectedSort = SortOptions[0];
         SelectedGameVersion = GameVersionOptions[0];
+        SelectedSource = SourceOptions[0];
     }
 
     /// <summary>tab 显示名（MOD/整合包/材质包/光影包）</summary>
@@ -73,6 +77,21 @@ public partial class EcosystemViewModel : ViewModelBase
     ];
 
     public sealed record SortOption(string Display, EcosystemService.SortIndex Index);
+
+    /// <summary>来源筛选（全部 = 双源并行合并；CurseForge 未配置 key 时提示）</summary>
+    public static IReadOnlyList<SourceOption> SourceOptions { get; } =
+    [
+        new SourceOption("全部", null),
+        new SourceOption("Modrinth", "modrinth"),
+        new SourceOption("CurseForge", "curseforge"),
+    ];
+
+    public sealed record SourceOption(string Display, string? Key);
+
+    [ObservableProperty]
+    public partial SourceOption? SelectedSource { get; set; }
+
+    partial void OnSelectedSourceChanged(SourceOption? value) => _ = RunSearchAsync(reset: true);
 
     /// <summary>功能分类（Modrinth categories，中文显示；"全部"=null）</summary>
     public static IReadOnlyList<CategoryOption> CategoryOptions { get; } =
@@ -248,24 +267,13 @@ public partial class EcosystemViewModel : ViewModelBase
                 ?? (instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
             var category = SelectedCategory?.Key;
 
-            var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
-                index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
-                limit: PageSize, offset: CurrentPage * PageSize, ct);
-            if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
-
-            Cards.Clear(); // 服务器分页：每次重建当前页
-            var hits = resp?.Hits ?? [];
-            foreach (var h in hits) Cards.Add(new ProjectCardVM(h));
-            var total = resp?.TotalHits ?? 0;
-            TotalPages = Math.Max(1, (total + PageSize - 1) / PageSize);
-            HasPrev = CurrentPage > 0;
-            HasNext = CurrentPage < TotalPages - 1;
-            PageText = $"{CurrentPage + 1}/{TotalPages}";
-            IsEmpty = Cards.Count == 0;
-            // 状态提示：筛选版本时列表天然只含适配项（Modrinth facets 语义）
-            Status = resp is null ? "无响应"
-                : gameVersion is not null ? $"共 {total} 个结果 · 已按 {gameVersion} 过滤"
-                : $"共 {total} 个结果";
+            var source = SelectedSource?.Key;
+            if (source == "curseforge")
+                await RunCfSearchAsync(seq, loader, gameVersion, ct);
+            else if (source == "modrinth")
+                await RunMrSearchAsync(seq, loader, gameVersion, category, ct);
+            else
+                await RunBothSearchAsync(seq, loader, gameVersion, category, ct);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -279,6 +287,74 @@ public partial class EcosystemViewModel : ViewModelBase
             if (seq == _requestSeq) IsLoading = false;
         }
     }
+
+    private async Task RunMrSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
+    {
+        var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+            index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
+            limit: PageSize, offset: CurrentPage * PageSize, ct);
+        if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
+        Cards.Clear(); // 服务器分页：每次重建当前页
+        foreach (var h in resp?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
+        FinishPage(seq, resp?.TotalHits ?? 0, gameVersion, resp is null ? "无响应" : null);
+    }
+
+    private async Task RunCfSearchAsync(int seq, string? loader, string? gameVersion, CancellationToken ct)
+    {
+        if (!_cf.IsEnabled)
+        {
+            if (seq != _requestSeq) return;
+            Cards.Clear();
+            FinishPage(seq, 0, gameVersion, "未配置 CurseForge API Key（设置 → CurseForge API Key）");
+            return;
+        }
+        var sort = CfSortOf(SelectedSort?.Index);
+        var page = await _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct);
+        if (seq != _requestSeq) return;
+        Cards.Clear();
+        foreach (var p in page?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
+        FinishPage(seq, page?.TotalCount ?? 0, gameVersion, page is null ? "无响应" : null);
+    }
+
+    private async Task RunBothSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
+    {
+        var sort = CfSortOf(SelectedSort?.Index);
+        var mr = _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+            index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
+            limit: PageSize, offset: CurrentPage * PageSize, ct);
+        var cf = _cf.IsEnabled
+            ? _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct)
+            : Task.FromResult<CurseForgeSearchPage?>(null);
+        await Task.WhenAll(mr, cf);
+        if (seq != _requestSeq) return;
+        Cards.Clear();
+        foreach (var h in mr.Result?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
+        foreach (var p in cf.Result?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
+        var total = (mr.Result?.TotalHits ?? 0) + (cf.Result?.TotalCount ?? 0);
+        FinishPage(seq, total, gameVersion, mr.Result is null && cf.Result is null ? "无响应" : null);
+    }
+
+    /// <summary>分页状态统一收尾（CF 无分页信息时总数=当前页条数，分页栏按此算）</summary>
+    private void FinishPage(int seq, int total, string? gameVersion, string? errorStatus)
+    {
+        TotalPages = Math.Max(1, (total + PageSize - 1) / PageSize);
+        HasPrev = CurrentPage > 0;
+        HasNext = CurrentPage < TotalPages - 1;
+        PageText = $"{CurrentPage + 1}/{TotalPages}";
+        IsEmpty = Cards.Count == 0;
+        Status = errorStatus ?? (gameVersion is not null
+            ? $"共 {total} 个结果 · 已按 {gameVersion} 过滤"
+            : $"共 {total} 个结果");
+    }
+
+    /// <summary>Modrinth 排序 → CF 排序（关注数无对应 → 相关度）</summary>
+    private static CurseForgeService.SortIndex CfSortOf(EcosystemService.SortIndex? index) => index switch
+    {
+        EcosystemService.SortIndex.Downloads => CurseForgeService.SortIndex.Downloads,
+        EcosystemService.SortIndex.Updated => CurseForgeService.SortIndex.Updated,
+        EcosystemService.SortIndex.Newest => CurseForgeService.SortIndex.Newest,
+        _ => CurseForgeService.SortIndex.Relevance,
+    };
 
     // 无参命令：避免 RelayCommand<bool> 与 XAML string CommandParameter 的类型不匹配崩溃
     [RelayCommand]
@@ -316,9 +392,23 @@ public partial class EcosystemViewModel : ViewModelBase
             ct.ThrowIfCancellationRequested();
             try
             {
-                var detail = await _eco.GetProjectAsync(id, ct);
-                if (detail is not null && TypeMatches(detail.ProjectType))
-                    Cards.Add(new ProjectCardVM(detail));
+                var (source, rawId) = ProjectCardVM.ParseId(id);
+                if (source == "curseforge")
+                {
+                    if (!int.TryParse(rawId, out var modId)) continue;
+                    var p = await _cf.GetProjectAsync(modId, ct);
+                    if (p is not null)
+                    {
+                        var card = new ProjectCardVM(p);
+                        if (TypeMatches(card.Type)) Cards.Add(card);
+                    }
+                }
+                else
+                {
+                    var detail = await _eco.GetProjectAsync(id, ct);
+                    if (detail is not null && TypeMatches(detail.ProjectType))
+                        Cards.Add(new ProjectCardVM(detail));
+                }
             }
             catch { /* 单个拉取失败跳过 */ }
         }
@@ -338,6 +428,11 @@ public partial class EcosystemViewModel : ViewModelBase
     {
         var instance = SelectedInstance;
         var gameVersion = instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null;
+        if (card.Source == "curseforge")
+        {
+            await InstallCfCardAsync(card, instance, gameVersion);
+            return;
+        }
         var loader = instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
         try
         {
@@ -387,9 +482,52 @@ public partial class EcosystemViewModel : ViewModelBase
         ProjectType type, DownloadProgressHandler progress, CancellationToken ct)
         => _eco.InstallAsync(projectId, version, instanceName, type, dp => progress(dp), ct);
 
+    /// <summary>CurseForge 卡片一键安装：最佳文件匹配 → 依赖确认 → 全局下载中心执行 → Toast</summary>
+    private async Task InstallCfCardAsync(ProjectCardVM card, VersionInstanceVM? instance, string? gameVersion)
+    {
+        if (!int.TryParse(ProjectCardVM.ParseId(card.Id).RawId, out var modId)) return;
+        try
+        {
+            var file = await _cf.FindBestFileAsync(modId, gameVersion, CancellationToken.None);
+            if (file is null)
+            {
+                NotificationService.Error($"{card.Title} 没有适配当前实例的文件");
+                return;
+            }
+
+            var depCount = (file.dependencies ?? []).Count(d => d.relationType == 1);
+            var includeDeps = true;
+            if (depCount > 0 && DialogService.MainWindow() is { } owner)
+            {
+                includeDeps = await DialogService.Confirm(owner,
+                    $"将安装 {depCount} 个前置依赖", $"安装 {card.Title}", "全部安装", "仅主文件");
+            }
+
+            if (instance is null)
+            {
+                NotificationService.Error("请先选择目标实例");
+                return;
+            }
+            var instanceName = instance.Name;
+            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", (p, ct) =>
+                includeDeps
+                    ? _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type, gameVersion, dp => p(dp), ct)
+                    : _cf.InstallAsync(modId, file, instanceName, card.Type, dp => p(dp), ct));
+            await task.Completion;
+            if (task.State == DownloadTaskState.Completed)
+                NotificationService.Success($"{card.Title} 安装完成");
+            else if (task.Error is { } err)
+                NotificationService.Error(err);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"安装失败: {ex.Message}");
+        }
+    }
+
     [RelayCommand]
     private void OpenDetail(ProjectCardVM card) =>
-        Detail = new ProjectDetailViewModel(_eco, card, SelectedInstance, () => Detail = null);
+        Detail = new ProjectDetailViewModel(_eco, _cf, card, SelectedInstance, () => Detail = null);
 
     [RelayCommand]
     private void CloseDetail() => Detail = null;

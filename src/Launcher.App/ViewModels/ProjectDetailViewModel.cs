@@ -8,19 +8,24 @@ using Launcher.Core.Download;
 using Launcher.Core.Ecosystem;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
+using PCL.Core.Minecraft.ResourceProject.Curseforge;
 
 namespace Launcher.App.ViewModels;
 
 /// <summary>
 /// 项目详情页：项目信息 + 截图画廊 + 版本匹配/手动选择 + 更新日志 + 一键安装（含依赖解析）。
+/// Modrinth / CurseForge 双源：按 card.Source 分支。
 /// </summary>
 public partial class ProjectDetailViewModel : ViewModelBase
 {
     private readonly EcosystemService _eco;
+    private readonly CurseForgeService _cf;
     private readonly ProjectCardVM _card;
     private readonly VersionInstanceVM? _instance;
     private readonly Action _closeCallback;
     private ModrinthVersion? _matchedVersion;
+    private CurseforgeFile? _cfFile;
+    private int _cfModId;
 
     [ObservableProperty]
     public partial string Title { get; set; }
@@ -161,9 +166,11 @@ public partial class ProjectDetailViewModel : ViewModelBase
     [RelayCommand]
     private void GoToDownloadQueue() => MainViewModel.Current?.NavigateToDownloadQueue();
 
-    public ProjectDetailViewModel(EcosystemService eco, ProjectCardVM card, VersionInstanceVM? instance, Action closeCallback)
+    public ProjectDetailViewModel(EcosystemService eco, CurseForgeService cf, ProjectCardVM card,
+        VersionInstanceVM? instance, Action closeCallback)
     {
         _eco = eco;
+        _cf = cf;
         _card = card;
         _instance = instance;
         _closeCallback = closeCallback;
@@ -182,6 +189,11 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
     private async Task LoadAsync()
     {
+        if (_card.Source == "curseforge")
+        {
+            await LoadCfAsync();
+            return;
+        }
         try
         {
             string? gameVersion = null;
@@ -225,6 +237,59 @@ public partial class ProjectDetailViewModel : ViewModelBase
         }
     }
 
+    /// <summary>CurseForge 详情：项目信息 + 最佳文件匹配 + 依赖计数（CF 无 changelog/关注字段）</summary>
+    private async Task LoadCfAsync()
+    {
+        try
+        {
+            if (!int.TryParse(ProjectCardVM.ParseId(_card.Id).RawId, out var modId)) return;
+            _cfModId = modId;
+            string? gameVersion = null;
+            if (_instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv))
+                gameVersion = gv;
+
+            var file = await _cf.FindBestFileAsync(modId, gameVersion);
+            _cfFile = file;
+            VersionHint = file is null
+                ? (_instance is null
+                    ? "未指定实例，可安装整合包或选择实例后安装"
+                    : $"未匹配到 {_instance.Name} 的版本")
+                : $"匹配文件: {file.fileName}";
+            CanInstall = file is not null;
+            if (file is not null)
+            {
+                var depCount = (file.dependencies ?? []).Count(d => d.relationType == 1);
+                DependencyHint = depCount == 0 ? "无需前置依赖" : $"将安装 {depCount} 个前置依赖";
+            }
+
+            try
+            {
+                var detail = await _cf.GetProjectAsync(modId);
+                if (detail is not null)
+                {
+                    Title = detail.name;
+                    Author = detail.authors is { Count: > 0 } ? string.Join("、", detail.authors.Select(a => a.name)) : "";
+                    Description = detail.summary ?? "";
+                    Stats = $"{ProjectCardVM.FormatCount(detail.downloadCount)} 下载";
+                    IconUrl = detail.logo?.thumbnailUrl ?? "";
+                    ProjectPageUrl = detail.links?.websiteUrl is { Length: > 0 } u
+                        ? u
+                        : $"https://www.curseforge.com/minecraft/mc-mods/{detail.slug}";
+                    _galleryUrls = (detail.screenshots ?? []).Select(s => s.thumbnailUrl).ToList();
+                    HasGallery = _galleryUrls.Count > 1;
+                    GalleryCountText = _galleryUrls.Count > 1 ? $"1/{_galleryUrls.Count}" : "";
+                    GalleryIndex = 0;
+                    if (_galleryUrls.Count > 0) LoadScreenshot(0);
+                }
+            }
+            catch { /* 详情拉取失败不阻塞 */ }
+        }
+        catch (Exception ex)
+        {
+            VersionHint = $"匹配失败: {ex.Message}";
+        }
+    }
+
     /// <summary>后台解析依赖：前置提示 + 安装按钮文字（"安装（含 N 个前置）"）</summary>
     private async Task ResolveDependencyHintAsync(ModrinthVersion version, string? gameVersion, string? loader)
     {
@@ -247,6 +312,11 @@ public partial class ProjectDetailViewModel : ViewModelBase
     [RelayCommand]
     private async Task LoadVersions()
     {
+        if (_card.Source == "curseforge")
+        {
+            NotificationService.Info("CurseForge 自动选择最佳文件，暂不支持手动选版");
+            return;
+        }
         if (AllVersions.Count > 0) return;
         try
         {
@@ -296,6 +366,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
         Progress = 0;
         ProgressState = "准备中…";
 
+        if (_card.Source == "curseforge")
+        {
+            await InstallCfAsync(ct);
+            return;
+        }
+
         try
         {
             if (_instance is null && _card.Type != ProjectType.Modpack)
@@ -319,75 +395,16 @@ public partial class ProjectDetailViewModel : ViewModelBase
             }
 
             // 经全局下载中心执行（后台线程 + 队列 UI + 内联进度双显示，一处真相）
-            DependencyInstallReport? report = null;
-            var task = DownloadManager.Instance.Enqueue($"安装 {_card.Title}", async (p, t) =>
+            await ExecuteInstallAsync(async (dp, t) =>
             {
                 if (includeDeps)
-                {
-                    report = await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
-                        gameVersion, loader,
-                        dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
-                }
-                else
-                {
-                    var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type,
-                        dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
-                    report = new DependencyInstallReport();
-                    report.Installed.Add(new InstalledDependency(_card.Id, version.Id, path));
-                }
-            });
-            if (ct.CanBeCanceled) ct.Register(() => task.Cancel());
-
-            // 内联进度区订阅同一任务属性
-            void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
-            {
-                if (e.PropertyName == nameof(DownloadTask.ProgressPercent)) Progress = task.ProgressPercent;
-                else if (e.PropertyName == nameof(DownloadTask.Stage)) ProgressState = task.Stage;
-                else if (e.PropertyName == nameof(DownloadTask.State)) { ProgressState = task.StateText; IsInstalling = task.IsActive; }
-                else if (e.PropertyName == nameof(DownloadTask.Error) && task.Error is { } err) ErrorMessage = err;
-            }
-            task.PropertyChanged += Sync;
-            try { await task.Completion; }
-            finally { task.PropertyChanged -= Sync; }
-
-            if (ct.IsCancellationRequested)
-            {
-                ProgressState = "已取消";
-            }
-            else if (task.State == DownloadTaskState.Completed && report is { AllSucceeded: true })
-            {
-                InstalledPath = report.Installed.Count > 0 ? report.Installed[0].Path : "";
-                var depCount = report.Installed.Count - 1;
-                DependenciesText = depCount > 0
-                    ? $"已安装 {depCount} 个依赖"
-                    : report.Failed.Count > 0
-                        ? $"{report.Failed.Count} 个依赖解析失败（不影响主文件）"
-                        : "";
-                InstallDone = true;
-                ProgressState = "安装完成";
-                Progress = 100;
-                InstallButtonText = "已安装";
-                if (_card.Type == ProjectType.Modpack)
-                    NotificationService.Info("整合包已下载到 downloads/modpacks——可到【版本】页点「导入整合包」创建实例");
-            }
-            else if (task.State == DownloadTaskState.Completed)
-            {
-                var failed = report is null ? "" : string.Join("; ", report.Failed.Select(f => $"{f.ProjectId}: {f.Reason}"));
-                ErrorMessage = $"部分安装失败: {failed}";
-                ProgressState = "部分失败";
-                InstallButtonText = "安装";
-            }
-            else if (task.State == DownloadTaskState.Failed)
-            {
-                ErrorMessage = task.Error ?? "未知错误";
-                ProgressState = "安装失败";
-                InstallButtonText = "安装";
-            }
-            else
-            {
-                ProgressState = task.StateText;
-                InstallButtonText = "安装";
-            }
+                    return await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
+                        gameVersion, loader, dp, t);
+                var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t);
+                var r = new DependencyInstallReport();
+                r.Installed.Add(new InstalledDependency(_card.Id, version.Id, path));
+                return r;
+            }, instanceName, ct);
         }
         catch (OperationCanceledException)
         {
@@ -403,6 +420,105 @@ public partial class ProjectDetailViewModel : ViewModelBase
             IsInstalling = false;
             if (!InstallDone) CanInstall = true;
         }
+    }
+
+    /// <summary>经全局下载中心执行安装：队列 + 内联进度同步 + 状态收尾（Modrinth/CurseForge 共用）</summary>
+    private async Task ExecuteInstallAsync(
+        Func<DownloadProgressHandler, CancellationToken, Task<DependencyInstallReport?>> work,
+        string instanceName, CancellationToken ct)
+    {
+        DependencyInstallReport? report = null;
+        var task = DownloadManager.Instance.Enqueue($"安装 {_card.Title}", async (p, t) =>
+        {
+            report = await work(dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+        });
+        if (ct.CanBeCanceled) ct.Register(() => task.Cancel());
+
+        // 内联进度区订阅同一任务属性
+        void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(DownloadTask.ProgressPercent)) Progress = task.ProgressPercent;
+            else if (e.PropertyName == nameof(DownloadTask.Stage)) ProgressState = task.Stage;
+            else if (e.PropertyName == nameof(DownloadTask.State)) { ProgressState = task.StateText; IsInstalling = task.IsActive; }
+            else if (e.PropertyName == nameof(DownloadTask.Error) && task.Error is { } err) ErrorMessage = err;
+        }
+        task.PropertyChanged += Sync;
+        try { await task.Completion; }
+        finally { task.PropertyChanged -= Sync; }
+
+        if (ct.IsCancellationRequested)
+        {
+            ProgressState = "已取消";
+        }
+        else if (task.State == DownloadTaskState.Completed && report is { AllSucceeded: true })
+        {
+            InstalledPath = report.Installed.Count > 0 ? report.Installed[0].Path : "";
+            var depCount = report.Installed.Count - 1;
+            DependenciesText = depCount > 0
+                ? $"已安装 {depCount} 个依赖"
+                : report.Failed.Count > 0
+                    ? $"{report.Failed.Count} 个依赖解析失败（不影响主文件）"
+                    : "";
+            InstallDone = true;
+            ProgressState = "安装完成";
+            Progress = 100;
+            InstallButtonText = "已安装";
+            if (_card.Type == ProjectType.Modpack)
+                NotificationService.Info("整合包已下载到 downloads/modpacks——可到【版本】页点「导入整合包」创建实例");
+        }
+        else if (task.State == DownloadTaskState.Completed)
+        {
+            var failed = report is null ? "" : string.Join("; ", report.Failed.Select(f => $"{f.ProjectId}: {f.Reason}"));
+            ErrorMessage = $"部分安装失败: {failed}";
+            ProgressState = "部分失败";
+            InstallButtonText = "安装";
+        }
+        else if (task.State == DownloadTaskState.Failed)
+        {
+            ErrorMessage = task.Error ?? "未知错误";
+            ProgressState = "安装失败";
+            InstallButtonText = "安装";
+        }
+        else
+        {
+            ProgressState = task.StateText;
+            InstallButtonText = "安装";
+        }
+    }
+
+    /// <summary>CurseForge 安装：最佳匹配文件 → 依赖确认 → 共享执行管道</summary>
+    private async Task InstallCfAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (_instance is null && _card.Type != ProjectType.Modpack)
+                throw new InvalidOperationException("请先在生态页顶部选择目标实例");
+            var file = _cfFile ?? throw new InvalidOperationException("没有匹配的可用文件");
+            var gameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv)
+                ? gv : null;
+            var instanceName = _instance?.Name ?? "modpack";
+
+            var includeDeps = true;
+            if (DependencyHint.Length > 0 && DialogService.MainWindow() is { } owner)
+            {
+                includeDeps = await DialogService.Confirm(owner,
+                    DependencyHint, $"安装 {_card.Title}", "全部安装", "仅主文件");
+            }
+
+            await ExecuteInstallAsync(async (dp, t) =>
+            {
+                if (includeDeps)
+                    return await _cf.InstallWithDependenciesAsync(_cfModId, file, instanceName, _card.Type,
+                        gameVersion, dp, t);
+                var path = await _cf.InstallAsync(_cfModId, file, instanceName, _card.Type, dp, t);
+                var r = new DependencyInstallReport();
+                r.Installed.Add(new InstalledDependency(_card.Id, file.id.ToString(), path));
+                return r;
+            }, instanceName, ct);
+        }
+        catch (OperationCanceledException) { ProgressState = "已取消"; }
+        catch (Exception ex) { ErrorMessage = ex.Message; ProgressState = "安装失败"; }
+        finally { IsInstalling = false; if (!InstallDone) CanInstall = true; }
     }
 }
 
