@@ -462,13 +462,16 @@ public partial class VersionDetailViewModel : ViewModelBase
     {
         if (IsDownloading) return;
         if (!repair && Installed) return;
+        // 快照：下载期间用户可能切到其他版本——完成回调/Toast 必须用发起时的版本
+        var targetId = Id;
+        var targetUrl = ManifestUrl;
         IsDownloading = true;
         ErrorText = "";
         DownloadProgressPercent = 0;
         try
         {
-            var version = await _installer.GetOrFetchVersionJsonAsync(Id, ManifestUrl, CancellationToken.None);
-            var task = DownloadManager.Instance.EnqueueGroup($"下载 {Id}", (ctx, ct) =>
+            var version = await _installer.GetOrFetchVersionJsonAsync(targetId, targetUrl, CancellationToken.None);
+            var task = DownloadManager.Instance.EnqueueGroup($"下载 {targetId}", (ctx, ct) =>
                 _installer.InstallAsync(version, ctx, ct));
 
             void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
@@ -484,9 +487,9 @@ public partial class VersionDetailViewModel : ViewModelBase
 
             if (task.State == DownloadTaskState.Completed)
             {
-                Installed = true;
-                _onInstalled(Id);
-                NotificationService.Success(repair ? $"{Id} 修复完成" : $"{Id} 安装完成");
+                if (Id == targetId) Installed = true; // 面板仍显示该版本才点亮（切走后由重扫负责）
+                _onInstalled(targetId);
+                NotificationService.Success(repair ? $"{targetId} 修复完成" : $"{targetId} 安装完成");
             }
             else if (task.Error is { } failed)
             {

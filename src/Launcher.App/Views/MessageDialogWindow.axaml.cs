@@ -46,4 +46,22 @@ public partial class MessageDialogWindow : Window
         _result?.TrySetResult(false);
         Close();
     }
+
+    /// <summary>兜底：标题栏 X / Alt+F4 / ESC 关闭也完成 Task（防调用方永久挂起）</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _result?.TrySetResult(false);
+        base.OnClosed(e);
+    }
+
+    protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Escape)
+        {
+            _result?.TrySetResult(false);
+            Close();
+            return;
+        }
+        base.OnKeyDown(e);
+    }
 }

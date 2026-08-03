@@ -122,9 +122,9 @@ public class DownloadManagerTests
     }
 
     [Fact]
-    public void Suspend_ThenResume_ReplaysWork()
+    public async Task Suspend_ThenResume_ReplaysWork()
     {
-        var manager = new DownloadManager();
+        var manager = new DownloadManager(null);
         var runs = 0;
         var task = manager.Enqueue("t", async (p, ct) =>
         {
@@ -134,16 +134,15 @@ public class DownloadManagerTests
         });
 
         task.Suspend();
-        Assert.True(task.Completion.Wait(2000), $"completion timeout, state={task.State}, runs={runs}");
-        var flag = (bool)typeof(DownloadTask).GetField("_suspendRequested",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(task)!;
-        Assert.True(flag, $"suspend flag lost, state={task.State}, runs={runs}");
-        Assert.True(task.Completion.Wait(2000));
+        // Paused 不是终态——Completion 不完成（稳定 TCS），轮询状态
+        for (var i = 0; i < 200 && task.State != DownloadTaskState.Paused; i++)
+            await Task.Delay(10);
         Assert.Equal(DownloadTaskState.Paused, task.State);
         Assert.Equal(1, runs);
 
         task.Resume();
-        Assert.True(task.Completion.Wait(2000));
+        // Resume 重跑 → 终态完成（同一 Completion 对象，await 有效）
+        await task.Completion.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(DownloadTaskState.Completed, task.State);
         Assert.Equal(2, runs);
     }
@@ -156,8 +155,8 @@ public class DownloadManagerTests
         var t2 = manager.Enqueue("b", async (p, ct) => await Task.Delay(100, ct));
 
         manager.SuspendAll();
-        await t1.Completion.WaitAsync(TimeSpan.FromSeconds(2));
-        await t2.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        for (var i = 0; i < 200 && (!t1.Completion.IsCompleted || !t2.Completion.IsCompleted); i++)
+            await Task.Delay(10);
         Assert.True(manager.HasPaused);
 
         manager.ResumeAll();

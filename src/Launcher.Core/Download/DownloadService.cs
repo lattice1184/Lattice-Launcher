@@ -58,23 +58,29 @@ public sealed class DownloadService
         };
     }
 
-    private long _throttleBytes;
+    /// <summary>每流限速配额（总限速均分到并发流；每流独立累加器 → 总吞吐=设定值）</summary>
     private readonly long _limitPerStream;
-    private readonly System.Diagnostics.Stopwatch _throttleSw = System.Diagnostics.Stopwatch.StartNew();
 
-    /// <summary>限速节流：每 64KB 结算一次，超出配额则等待（分片模式下每片各限一份）</summary>
-    private async Task ThrottleAsync(int n, CancellationToken ct)
+    /// <summary>每流限速状态（独立累加器——流间不互相拖累，总吞吐=设定值）</summary>
+    private sealed class ThrottleState
     {
-        if (_limitPerStream <= 0) return;
-        _throttleBytes += n;
-        if (_throttleBytes >= 65536)
+        public long Bytes;
+        public readonly System.Diagnostics.Stopwatch Sw = System.Diagnostics.Stopwatch.StartNew();
+    }
+
+    /// <summary>每流限速节流：每 64KB 结算一次，超出配额则等待</summary>
+    private static async Task ThrottleStreamAsync(int n, CancellationToken ct, ThrottleState st, long limit)
+    {
+        if (limit <= 0) return;
+        st.Bytes += n;
+        if (st.Bytes >= 65536)
         {
-            var target = (double)_throttleBytes / _limitPerStream;
-            var elapsed = _throttleSw.Elapsed.TotalSeconds;
+            var target = (double)st.Bytes / limit;
+            var elapsed = st.Sw.Elapsed.TotalSeconds;
             if (elapsed < target)
                 await Task.Delay(TimeSpan.FromSeconds(target - elapsed), ct);
-            _throttleBytes = 0;
-            _throttleSw.Restart();
+            st.Bytes = 0;
+            st.Sw.Restart();
         }
     }
 
@@ -195,11 +201,12 @@ public sealed class DownloadService
             using var dst = new FileStream(destPath, FileMode.Append, FileAccess.Write, FileShare.None);
             var buffer = new byte[81920];
             long read = 0;
+            var throttle = new ThrottleState();
             int n;
             while ((n = await src.ReadAsync(buffer, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
-                await ThrottleAsync(n, ct);
+                await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 read += n;
                 progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
                     total > 0 ? read * 100.0 / total : 0));
@@ -311,11 +318,12 @@ public sealed class DownloadService
             await using var src = await response.Content.ReadAsStreamAsync(ct);
             await using var dst = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
             var buffer = new byte[81920];
+            var throttle = new ThrottleState();
             int n;
             while ((n = await src.ReadAsync(buffer, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
-                await ThrottleAsync(n, ct);
+                await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
             }
         }
         catch when (attempt < 1)

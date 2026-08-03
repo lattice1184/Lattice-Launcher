@@ -41,8 +41,13 @@
                             Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
                 </StackPanel>
                 <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.GameVersionOptions}"
-                          SelectedItem="{Binding SelectedGameVersion}"
-                          PlaceholderText="跟随实例" Width="110"/>
+                          SelectedItem="{Binding SelectedGameVersion}" Width="110">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+GameVersionOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.CategoryOptions}"
                           SelectedItem="{Binding SelectedCategory}" Width="130">
                     <ComboBox.ItemTemplate>

@@ -40,7 +40,15 @@ public partial class DownloadTask : ObservableObject
     private volatile bool _suspendRequested;
 
     public string Name { get; }
-    public Task Completion { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// 完成信号（内部 TCS，**终态**（完成/失败/取消）才完成；暂停不完成——Resume 后继续等待）。
+    /// 对象稳定：Resume 重跑不替换（下游 await/自动移除/角标订阅始终有效）。
+    /// </summary>
+    private readonly TaskCompletionSource _completionTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Completion => _completionTcs.Task;
+
     public bool IsActive => State is DownloadTaskState.Queued or DownloadTaskState.Downloading or DownloadTaskState.Verifying;
 
     /// <summary>组任务：子任务集合（叶子为空）。Children 不进 DownloadManager.Tasks，不参与 ActiveCount</summary>
@@ -105,7 +113,7 @@ public partial class DownloadTask : ObservableObject
         : this(name, ui)
     {
         _work = work;
-        Completion = RunAsync(work);
+        _ = RunAsync(work);
     }
 
     /// <summary>组任务（下载一个版本；children 由 DownloadGroupContext 创建）</summary>
@@ -114,7 +122,7 @@ public partial class DownloadTask : ObservableObject
     {
         IsGroup = true;
         _groupWork = groupWork;
-        Completion = RunGroupAsync(groupWork);
+        _ = RunGroupAsync(groupWork);
     }
 
     private DownloadTask(string name, SynchronizationContext? ui)
@@ -153,6 +161,9 @@ public partial class DownloadTask : ObservableObject
         finally
         {
             _watch.Stop();
+            // 终态（含 Paused？否——暂停只是挂起，Resume 后继续；这里 Paused 由 Suspend 的 Cancel 触发，
+            // 需区分：用户暂停 → 不完成；取消 → 完成）。用 _suspendRequested 判定。
+            if (!_suspendRequested) _completionTcs.TrySetResult();
         }
     }
 
@@ -171,14 +182,21 @@ public partial class DownloadTask : ObservableObject
                 await Task.WhenAll(ctx.Children.Select(c => c.Completion));
 
                 var failed = ctx.Children.FirstOrDefault(c => c.State == DownloadTaskState.Failed);
-                if (_cts.IsCancellationRequested)
+                // 任一子任务失败 → 级联取消其余兄弟（停止无效下载/写盘，如版本下载中一个库 404 不再白白下 assets）
+                if (failed is not null && !_cts.IsCancellationRequested)
                 {
-                    SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
+                    _cts.Cancel();
+                    foreach (var c in ctx.Children) c.Cancel();
                 }
-                else if (failed is not null)
+                // 失败优先（内部级联取消后父任务仍是 Failed）；用户主动取消时子任务全 Canceled → 走 Canceled 分支
+                if (failed is not null)
                 {
                     SetState(DownloadTaskState.Failed);
                     Post(() => Error = failed.Error ?? "子任务失败");
+                }
+                else if (_cts.IsCancellationRequested)
+                {
+                    SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
                 }
                 else
                 {
@@ -199,6 +217,7 @@ public partial class DownloadTask : ObservableObject
         finally
         {
             _watch.Stop();
+            if (!_suspendRequested) _completionTcs.TrySetResult();
         }
     }
 
@@ -222,9 +241,9 @@ public partial class DownloadTask : ObservableObject
         _cts = new CancellationTokenSource();
         if (IsGroup) Post(() => Children.Clear()); // 清掉暂停的旧子任务，重跑会新建
         if (IsGroup && _groupWork is not null)
-            Completion = RunGroupAsync(_groupWork);
+            _ = RunGroupAsync(_groupWork);
         else if (_work is not null)
-            Completion = RunAsync(_work);
+            _ = RunAsync(_work);
     }
 
     /// <summary>

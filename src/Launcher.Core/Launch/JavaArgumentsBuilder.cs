@@ -188,6 +188,8 @@ public sealed class JavaArgumentsBuilder
             ["natives_directory"] = nativesDir,
             ["launcher_name"] = "YanKaLauncher",
             ["launcher_version"] = "0.1.0",
+            // Forge/NeoForge 1.17+ 安装器生成的 version.json 含 ${library_directory}（bootstraplauncher 路径）
+            ["library_directory"] = Path.Combine(gameDir, "libraries").Replace('\\', '/'),
         };
     }
 

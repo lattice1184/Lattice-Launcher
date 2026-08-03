@@ -86,7 +86,8 @@ public partial class DownloadViewModel : ViewModelBase
     {
         if (e.PropertyName != nameof(DownloadTask.State)) return;
         if (sender is not DownloadTask t) return;
-        if (!_recorded.Add(t)) return;
+        if (t.State is not (DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)) return;
+        if (!_recorded.Add(t)) return; // 终态只记一次（暂停 Paused 不是终态）
         DownloadHistoryService.Record(t);
         // 完成/失败弹 Toast（滑入动画由 ToastHost 处理）
         if (t.State == DownloadTaskState.Completed)

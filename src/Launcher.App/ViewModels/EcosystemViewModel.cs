@@ -25,6 +25,7 @@ public partial class EcosystemViewModel : ViewModelBase
     {
         _type = type;
         SelectedSort = SortOptions[0];
+        SelectedGameVersion = GameVersionOptions[0];
     }
 
     /// <summary>tab 显示名（MOD/整合包/材质包/光影包）</summary>
@@ -44,9 +45,22 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>加载器 chips（"全部"=null）</summary>
     public static IReadOnlyList<string> LoaderOptions { get; } = ["全部", "Fabric", "Forge", "NeoForge", "Quilt"];
 
-    /// <summary>游戏版本下拉（"跟随实例"=null + 常用版本）</summary>
-    public static IReadOnlyList<string> GameVersionOptions { get; } =
-        ["跟随实例", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2"];
+    /// <summary>游戏版本下拉（"跟随实例"=null + 常用版本）——Display/Value 分离，避免字面字符串当过滤条件</summary>
+    public static IReadOnlyList<GameVersionOption> GameVersionOptions { get; } =
+    [
+        new GameVersionOption("跟随实例", null),
+        new GameVersionOption("1.21.6", "1.21.6"),
+        new GameVersionOption("1.21.5", "1.21.5"),
+        new GameVersionOption("1.21.4", "1.21.4"),
+        new GameVersionOption("1.21.3", "1.21.3"),
+        new GameVersionOption("1.21.1", "1.21.1"),
+        new GameVersionOption("1.20.4", "1.20.4"),
+        new GameVersionOption("1.20.1", "1.20.1"),
+        new GameVersionOption("1.19.4", "1.19.4"),
+        new GameVersionOption("1.18.2", "1.18.2"),
+    ];
+
+    public sealed record GameVersionOption(string Display, string? Value);
 
     /// <summary>排序选项（下载量/更新时间/关注/最新）</summary>
     public static IReadOnlyList<SortOption> SortOptions { get; } =
@@ -84,9 +98,9 @@ public partial class EcosystemViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? SelectedLoader { get; set; }
 
-    /// <summary>游戏版本筛选（null=跟随实例解析）</summary>
+    /// <summary>游戏版本筛选（选中"跟随实例"时 Value=null → 跟随实例解析）</summary>
     [ObservableProperty]
-    public partial string? SelectedGameVersion { get; set; }
+    public partial GameVersionOption? SelectedGameVersion { get; set; }
 
     /// <summary>功能分类筛选（null=全部）</summary>
     [ObservableProperty]
@@ -155,7 +169,7 @@ public partial class EcosystemViewModel : ViewModelBase
 
     // 筛选变化立即搜索（不走防抖——Modrinth facets 服务器筛选快，延迟全在防抖；竞态 seq 丢弃旧响应）
     partial void OnSelectedLoaderChanged(string? value) => _ = RunSearchAsync(reset: true);
-    partial void OnSelectedGameVersionChanged(string? value) => _ = RunSearchAsync(reset: true);
+    partial void OnSelectedGameVersionChanged(GameVersionOption? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedCategoryChanged(CategoryOption? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedSortChanged(SortOption value) => _ = RunSearchAsync(reset: true);
 
@@ -214,7 +228,7 @@ public partial class EcosystemViewModel : ViewModelBase
             // 三级筛选：显式选择优先，否则跟随实例（加载器猜测/版本解析）
             var loader = SelectedLoader
                 ?? (instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
-            var gameVersion = SelectedGameVersion
+            var gameVersion = SelectedGameVersion?.Value
                 ?? (instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
             var category = SelectedCategory?.Key;
 
@@ -312,7 +326,9 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
 
-            var deps = await _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None);
+            // 依赖解析内部同步等网络（EcosystemDependencyAdapter .GetResult()）——必须离线 UI 线程，否则永久死锁
+            var deps = await Task.Run(() =>
+                _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None));
             var includeDeps = true;
             if (deps.Count > 0 && DialogService.MainWindow() is { } owner)
             {
