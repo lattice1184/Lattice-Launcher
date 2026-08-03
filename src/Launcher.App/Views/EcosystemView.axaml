@@ -21,61 +21,63 @@
                 </ComboBox>
             </Grid>
 
-            <!-- 三级筛选：加载器 chips（仅 MOD）+ 游戏版本 + 功能分类 -->
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsModType}">
-                    <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
-                            Command="{Binding SelectLoaderCommand}" CommandParameter="全部"
-                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=ALL}"/>
-                    <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
-                            Command="{Binding SelectLoaderCommand}" CommandParameter="Fabric"
-                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Fabric}"/>
-                    <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
-                            Command="{Binding SelectLoaderCommand}" CommandParameter="Forge"
-                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Forge}"/>
-                    <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
-                            Command="{Binding SelectLoaderCommand}" CommandParameter="NeoForge"
-                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=NeoForge}"/>
-                    <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
-                            Command="{Binding SelectLoaderCommand}" CommandParameter="Quilt"
-                            Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
-                </StackPanel>
-                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.GameVersionOptions}"
-                          SelectedItem="{Binding SelectedGameVersion}" Width="110">
+            <!-- 筛选行 1：加载器 chips（仅 MOD） -->
+            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsModType}">
+                <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="全部"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=ALL}"/>
+                <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Fabric"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Fabric}"/>
+                <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Forge"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Forge}"/>
+                <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="NeoForge"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=NeoForge}"/>
+                <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Quilt"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
+            </StackPanel>
+
+            <!-- 筛选行 2：版本/分类/排序/来源 Grid 均分（宽窗口无右侧空白）+ 收藏右对齐 -->
+            <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10">
+                <ComboBox Grid.Column="0" ItemsSource="{x:Static vm:EcosystemViewModel.GameVersionOptions}"
+                          SelectedItem="{Binding SelectedGameVersion}" MinWidth="110">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+GameVersionOption">
                             <TextBlock Text="{Binding Display}"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.CategoryOptions}"
-                          SelectedItem="{Binding SelectedCategory}" Width="130">
+                <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:EcosystemViewModel.CategoryOptions}"
+                          SelectedItem="{Binding SelectedCategory}" MinWidth="120">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+CategoryOption">
                             <TextBlock Text="{Binding Display}"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.SortOptions}"
-                          SelectedItem="{Binding SelectedSort}" Width="110">
+                <ComboBox Grid.Column="2" ItemsSource="{x:Static vm:EcosystemViewModel.SortOptions}"
+                          SelectedItem="{Binding SelectedSort}" MinWidth="110">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+SortOption">
                             <TextBlock Text="{Binding Display}"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.SourceOptions}"
-                          SelectedItem="{Binding SelectedSource}" Width="100">
+                <ComboBox Grid.Column="3" ItemsSource="{x:Static vm:EcosystemViewModel.SourceOptions}"
+                          SelectedItem="{Binding SelectedSource}" MinWidth="100">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+SourceOption">
                             <TextBlock Text="{Binding Display}"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Content="★ 收藏" Classes="ghost" FontSize="11" Padding="10,3"
+                <Button Grid.Column="4" Content="★ 收藏" Classes="ghost" FontSize="11" Padding="10,3"
                         Classes.active="{Binding FavoritesOnly}"
                         Command="{Binding ToggleFavoritesCommand}"/>
-            </StackPanel>
+            </Grid>
 
             <TextBlock Text="{Binding Status}" Foreground="#8A93A6" FontSize="12"/>
         </StackPanel>
