@@ -66,9 +66,6 @@ public partial class VersionManageViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsConfirmDelete { get; set; }
 
-    /// <summary>导出整合包的目标目录选择（View 层 FolderPicker 回调；null = 默认 downloads/modpacks）</summary>
-    public Func<Task<string?>>? PickFolder { get; set; }
-
     public string ModsCountText => $"MOD（{Mods.Count}）";
     public string SavesCountText => $"存档（{Saves.Count}）";
 
@@ -249,6 +246,8 @@ public partial class VersionManageViewModel : ViewModelBase
     [RelayCommand]
     private async Task ExportModpack()
     {
+        var settings = await ShowExportSettingsAsync();
+        if (settings is null) return; // 取消
         IsBusy = true;
         StatusText = "导出中…";
         try
@@ -257,22 +256,16 @@ public partial class VersionManageViewModel : ViewModelBase
             Directory.CreateDirectory(staging);
             try
             {
-                // 收集整合包内容：mods / saves / config / options.txt
                 await Task.Run(() =>
                 {
-                    foreach (var sub in new[] { "mods", "saves", "config", "resourcepacks", "shaderpacks" })
-                    {
-                        var src = Path.Combine(RootDir, sub);
-                        if (Directory.Exists(src)) CopyDir(src, Path.Combine(staging, sub));
-                    }
-                    var options = Path.Combine(RootDir, "options.txt");
-                    if (File.Exists(options)) File.Copy(options, Path.Combine(staging, "options.txt"));
+                    CopySelected(staging, settings);
 
-                    // manifest.json
+                    // manifest.json（含包名/描述）
                     var manifest = new
                     {
-                        name = _versionId,
+                        name = settings.Name,
                         version = "1.0",
+                        description = settings.Description,
                         mcVersion = ExtractMcVersion(_versionId),
                         loader = ExtractLoader(_versionId),
                         fileCount = Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories).Count(),
@@ -282,13 +275,12 @@ public partial class VersionManageViewModel : ViewModelBase
                         JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
                 });
 
-                var outDir = await (PickFolder?.Invoke() ?? Task.FromResult<string?>(null))
-                               ?? Path.Combine(_gameDir, "downloads", "modpacks");
-                Directory.CreateDirectory(outDir);
-                var zipPath = Path.Combine(outDir, $"{_versionId}-整合包.zip");
+                Directory.CreateDirectory(settings.OutputDir);
+                var zipPath = Path.Combine(settings.OutputDir, $"{settings.Name}-整合包.zip");
                 await Task.Run(() => ZipFile.CreateFromDirectory(staging, zipPath,
                     CompressionLevel.Optimal, includeBaseDirectory: false));
                 StatusText = $"已导出 → {zipPath}";
+                NotificationService.Success($"已导出整合包：{Path.GetFileName(zipPath)}");
             }
             finally
             {
@@ -305,19 +297,51 @@ public partial class VersionManageViewModel : ViewModelBase
         }
     }
 
+    /// <summary>导出设置对话框（PCL 式：勾选内容/位置/包名）；取消返回 null</summary>
+    private async Task<ExportSettings?> ShowExportSettingsAsync()
+    {
+        var owner = DialogService.MainWindow();
+        var defaultDir = Path.Combine(_gameDir, "downloads", "modpacks");
+        return await Views.ExportDialogWindow.ShowAsync(owner, _versionId, defaultDir);
+    }
+
+    /// <summary>按勾选复制内容到 staging（PCL 式：只打包勾选部分）</summary>
+    private void CopySelected(string staging, ExportSettings s)
+    {
+        if (s.IncludeMods) CopyIfExists(Path.Combine(RootDir, "mods"), Path.Combine(staging, "mods"));
+        if (s.IncludeSaves) CopyIfExists(Path.Combine(RootDir, "saves"), Path.Combine(staging, "saves"));
+        if (s.IncludeConfig) CopyIfExists(Path.Combine(RootDir, "config"), Path.Combine(staging, "config"));
+        if (s.IncludeResourcepacks) CopyIfExists(Path.Combine(RootDir, "resourcepacks"), Path.Combine(staging, "resourcepacks"));
+        if (s.IncludeShaders) CopyIfExists(Path.Combine(RootDir, "shaderpacks"), Path.Combine(staging, "shaderpacks"));
+        if (s.IncludeOptions)
+        {
+            var options = Path.Combine(RootDir, "options.txt");
+            if (File.Exists(options)) File.Copy(options, Path.Combine(staging, "options.txt"));
+        }
+    }
+
+    private static void CopyIfExists(string src, string dest)
+    {
+        if (Directory.Exists(src)) CopyDir(src, dest);
+    }
+
     /// <summary>导出整合包为 mrpack（Modrinth 标准，可被 PCL/HMCL 导入）</summary>
     [RelayCommand]
     private async Task ExportMrpack()
     {
+        var settings = await ShowExportSettingsAsync();
+        if (settings is null) return; // 取消
         IsBusy = true;
         StatusText = "导出中…";
         try
         {
-            var outDir = await (PickFolder?.Invoke() ?? Task.FromResult<string?>(null))
-                           ?? Path.Combine(_gameDir, "downloads", "modpacks");
-            var zipPath = await Task.Run(() => MrpackExporter.Export(RootDir, _versionId, outDir));
+            var options = new MrpackExporter.ExportOptions(
+                settings.IncludeMods, settings.IncludeSaves, settings.IncludeConfig,
+                settings.IncludeResourcepacks, settings.IncludeShaders, settings.IncludeOptions,
+                settings.Name, settings.Description);
+            var zipPath = await Task.Run(() => MrpackExporter.Export(RootDir, options, settings.OutputDir));
             StatusText = $"已导出 → {zipPath}";
-            Launcher.App.Services.NotificationService.Success($"已导出 mrpack：{Path.GetFileName(zipPath)}");
+            NotificationService.Success($"已导出 mrpack：{Path.GetFileName(zipPath)}");
         }
         catch (Exception ex)
         {

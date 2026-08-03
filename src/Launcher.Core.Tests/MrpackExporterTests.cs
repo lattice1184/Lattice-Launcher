@@ -20,7 +20,8 @@ public class MrpackExporterTests
             File.WriteAllText(Path.Combine(versionDir, "config", "x.toml"), "a=1");
 
             var outDir = Path.Combine(dir, "out");
-            var zipPath = MrpackExporter.Export(versionDir, "1.21.1-fabric-0.16.9", outDir);
+            var opts = new MrpackExporter.ExportOptions(true, true, true, true, true, true, "1.21.1-fabric-0.16.9", "");
+            var zipPath = MrpackExporter.Export(versionDir, opts, outDir);
             Assert.True(File.Exists(zipPath));
             Assert.EndsWith(".mrpack", zipPath);
 
@@ -54,7 +55,8 @@ public class MrpackExporterTests
         {
             var versionDir = Path.Combine(dir, "versions", "1.21.1");
             Directory.CreateDirectory(versionDir);
-            var zipPath = MrpackExporter.Export(versionDir, "1.21.1", dir);
+            var opts = new MrpackExporter.ExportOptions(true, true, true, true, true, true, "1.21.1", "");
+            var zipPath = MrpackExporter.Export(versionDir, opts, dir);
 
             using var zip = ZipFile.OpenRead(zipPath);
             using var sr = new StreamReader(zip.GetEntry("modrinth.index.json")!.Open());
@@ -62,6 +64,39 @@ public class MrpackExporterTests
             var deps = doc.RootElement.GetProperty("dependencies");
             Assert.Equal("1.21.1", deps.GetProperty("minecraft").GetString());
             Assert.False(deps.TryGetProperty("fabric-loader", out _));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void Export_ModsOnly_OverridesHasNoConfigSaves()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"mrpack-{Guid.NewGuid():N}");
+        try
+        {
+            var versionDir = Path.Combine(dir, "versions", "1.21.1");
+            Directory.CreateDirectory(Path.Combine(versionDir, "mods"));
+            Directory.CreateDirectory(Path.Combine(versionDir, "config"));
+            Directory.CreateDirectory(Path.Combine(versionDir, "saves"));
+            File.WriteAllBytes(Path.Combine(versionDir, "mods", "a.jar"), new byte[] { 1 });
+
+            var opts = new MrpackExporter.ExportOptions(
+                IncludeMods: true, IncludeSaves: false, IncludeConfig: false,
+                IncludeResourcepacks: false, IncludeShaders: false, IncludeOptions: false,
+                Name: "mods-only", Description: "test");
+            var zipPath = MrpackExporter.Export(versionDir, opts, dir);
+
+            using var zip = ZipFile.OpenRead(zipPath);
+            // mrpack 规范：mods 只进 files（downloads 引用），不进 overrides
+            Assert.Null(zip.GetEntry("overrides/mods"));             // 模组由 files 引用
+            Assert.Null(zip.GetEntry("overrides/config"));           // 未勾选 → 无 config
+            Assert.Null(zip.GetEntry("overrides/saves"));            // 未勾选 → 无 saves
+
+            using var sr = new StreamReader(zip.GetEntry("modrinth.index.json")!.Open());
+            using var doc = JsonDocument.Parse(sr.ReadToEnd());
+            Assert.Single(doc.RootElement.GetProperty("files").EnumerateArray());
+            Assert.Equal("mods-only", doc.RootElement.GetProperty("name").GetString());
+            Assert.Equal("test", doc.RootElement.GetProperty("summary").GetString());
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }

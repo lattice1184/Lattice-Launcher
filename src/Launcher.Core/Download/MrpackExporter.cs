@@ -11,31 +11,40 @@ namespace Launcher.Core.Download;
 /// </summary>
 public static class MrpackExporter
 {
-    /// <summary>导出 → .mrpack 文件路径（versionDir 为隔离实例根：mods/saves/config…）</summary>
-    public static string Export(string versionDir, string versionId, string outDir, string? mcVersion = null, string? loader = null)
+    /// <summary>导出选项（内容勾选 + 包名/描述，PCL 式）</summary>
+    public sealed record ExportOptions(
+        bool IncludeMods, bool IncludeSaves, bool IncludeConfig,
+        bool IncludeResourcepacks, bool IncludeShaders, bool IncludeOptions,
+        string Name, string Description);
+
+    /// <summary>导出 → .mrpack 文件路径（versionDir 为隔离实例根；按勾选过滤内容）</summary>
+    public static string Export(string versionDir, ExportOptions options, string outDir, string? mcVersion = null, string? loader = null)
     {
         Directory.CreateDirectory(outDir);
-        var zipPath = Path.Combine(outDir, $"{versionId}-整合包.mrpack");
+        var zipPath = Path.Combine(outDir, $"{options.Name}-整合包.mrpack");
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
 
-        // 1. modrinth.index.json
-        var modsDir = Path.Combine(versionDir, "mods");
+        // 1. modrinth.index.json（勾选模组才列 files）
         var files = new List<object>();
-        if (Directory.Exists(modsDir))
+        if (options.IncludeMods)
         {
-            foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
+            var modsDir = Path.Combine(versionDir, "mods");
+            if (Directory.Exists(modsDir))
             {
-                var rel = Path.Combine("mods", Path.GetFileName(jar)).Replace('\\', '/');
-                var sha1 = HashFile(jar, SHA1.HashData);
-                var sha512 = HashFile(jar, SHA512.HashData);
-                files.Add(new
+                foreach (var jar in Directory.EnumerateFiles(modsDir, "*.jar"))
                 {
-                    path = rel,
-                    hashes = new { sha1, sha512 },
-                    env = new { client = "required", server = "unsupported" },
-                    downloads = Array.Empty<string>(),
-                    fileSize = new FileInfo(jar).Length,
-                });
+                    var rel = Path.Combine("mods", Path.GetFileName(jar)).Replace('\\', '/');
+                    var sha1 = HashFile(jar, SHA1.HashData);
+                    var sha512 = HashFile(jar, SHA512.HashData);
+                    files.Add(new
+                    {
+                        path = rel,
+                        hashes = new { sha1, sha512 },
+                        env = new { client = "required", server = "unsupported" },
+                        downloads = Array.Empty<string>(),
+                        fileSize = new FileInfo(jar).Length,
+                    });
+                }
             }
         }
 
@@ -43,9 +52,9 @@ public static class MrpackExporter
         {
             formatVersion = 1,
             game = "minecraft",
-            versionId = versionId,
-            name = versionId,
-            summary = $"由 YanKa Launcher 导出的整合包 {versionId}",
+            versionId = options.Name,
+            name = options.Name,
+            summary = options.Description.Length > 0 ? options.Description : $"由 YanKa Launcher 导出的整合包 {options.Name}",
             files,
             dependencies = BuildDependencies(mcVersion, loader, versionDir),
         };
@@ -53,9 +62,18 @@ public static class MrpackExporter
         using (var sw = new StreamWriter(entry.Open(), new UTF8Encoding(false)))
             sw.Write(JsonSerializer.Serialize(index, new JsonSerializerOptions { WriteIndented = true }));
 
-        // 2. overrides/：mods（重复的已由 files 引用，overrides 放配置/存档/资源）
-        foreach (var sub in new[] { "config", "saves", "resourcepacks", "shaderpacks", "options.txt" })
+        // 2. overrides/：按勾选打包（配置/存档/资源包/光影包/选项）
+        var overrides = new (bool Enabled, string Sub, bool IsFile)[]
         {
+            (options.IncludeConfig, "config", false),
+            (options.IncludeSaves, "saves", false),
+            (options.IncludeResourcepacks, "resourcepacks", false),
+            (options.IncludeShaders, "shaderpacks", false),
+            (options.IncludeOptions, "options.txt", true),
+        };
+        foreach (var (enabled, sub, isFile) in overrides)
+        {
+            if (!enabled) continue;
             var src = Path.Combine(versionDir, sub);
             if (Directory.Exists(src))
                 AddDir(zip, src, Path.Combine("overrides", sub));
