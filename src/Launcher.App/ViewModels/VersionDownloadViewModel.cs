@@ -175,7 +175,16 @@ public partial class DownloadDetailVM : ObservableObject
     }
 
     [RelayCommand]
-    private async Task Download() => await DownloadCoreAsync(repair: false);
+    private async Task Download()
+    {
+        if (IsDownloading || Installed) return;
+        // PCL 式：先选加载器（纯净/四家 + 版本），[开始下载] 才执行
+        var owner = DialogService.MainWindow();
+        if (owner is null) return;
+        var choice = await Views.LoaderChoiceDialog.ShowAsync(owner, Id);
+        if (choice is null) return;
+        await DownloadCoreAsync(repair: false, choice);
+    }
 
     /// <summary>重新下载（损坏修复）</summary>
     [RelayCommand]
@@ -192,7 +201,23 @@ public partial class DownloadDetailVM : ObservableObject
         await DownloadCoreAsync(repair: true);
     }
 
-    private async Task DownloadCoreAsync(bool repair)
+    /// <summary>顺序安装：原版 → 加载器（组任务内按顺序 await；失败级联取消）</summary>
+    private async Task InstallWithLoaderAsync(
+        VersionInstaller installer, Launcher.Core.Model.Mojang.VersionJson version,
+        Views.LoaderChoice? choice, DownloadGroupContext ctx, CancellationToken ct)
+    {
+        // 1. 原版
+        await installer.InstallAsync(version, ctx, ct);
+        // 2. 加载器（作为组内子任务，进度/取消级联自动生效）
+        if (choice is { IsVanilla: false, Kind: { } kind, Version: { } loaderVersion })
+        {
+            var service = new LoaderService(gameDirectory: GameDirectory.InstallDir());
+            var plan = await service.CreatePlanAsync(kind, version.Id, loaderVersion, ct);
+            ctx.AddChild($"安装 {kind} {loaderVersion}", 0, (p, c) => service.InstallAsync(plan, p, c));
+        }
+    }
+
+    private async Task DownloadCoreAsync(bool repair, Views.LoaderChoice? choice = null)
     {
         if (IsDownloading) return;
         if (!repair && Installed) return;
@@ -203,10 +228,10 @@ public partial class DownloadDetailVM : ObservableObject
         DownloadProgressPercent = 0;
         try
         {
-            var installer = repair && targetUrl is not null ? _installer : _installer;
+            var installer = repair ? new VersionInstaller(gameDirectory: GameDirectory.InstallDir()) : _installer;
             var version = await installer.GetOrFetchVersionJsonAsync(targetId, targetUrl, CancellationToken.None);
-            var task = DownloadManager.Instance.EnqueueGroup($"下载 {targetId}", (ctx, ct) =>
-                installer.InstallAsync(version, ctx, ct));
+            var task = DownloadManager.Instance.EnqueueGroup($"下载 {targetId}{(choice is { IsVanilla: false } ? $" + {choice.Kind}" : "")}", (ctx, ct) =>
+                InstallWithLoaderAsync(installer, version, choice, ctx, ct));
 
             void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
             {
@@ -224,6 +249,7 @@ public partial class DownloadDetailVM : ObservableObject
                 if (Id == targetId) Installed = true;
                 _onInstalled(targetId);
                 NotificationService.Success(repair ? $"{targetId} 修复完成" : $"{targetId} 安装完成");
+                if (!repair) MainViewModel.Current?.NavigateToDownloadQueue(); // 自动跳转下载记录
             }
             else if (task.Error is { } failed)
             {

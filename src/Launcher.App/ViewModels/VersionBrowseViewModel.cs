@@ -244,11 +244,9 @@ public partial class InstalledVersionDetailVM : ViewModelBase
         DownloadProgressPercent = 0;
         HasSelection = true;
 
-        // 分区：版本管理（模组/存档/操作） + 加载器（未装时）
+        // 分区：版本管理（模组/存档/操作）——加载器在下载时选择（下载页融合流程）
         Manage = new VersionManageViewModel(GameDir, Id, OnVersionDeleted);
-        Loader = row.LoaderBadge.Length == 0
-            ? new LoaderPickerViewModel(Id, GameDir, () => { })
-            : null;
+        Loader = null;
 
         LoadConfig();
         _ = LoadSizeAsync(row);

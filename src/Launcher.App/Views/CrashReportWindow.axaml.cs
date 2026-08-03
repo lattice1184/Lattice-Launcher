@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Launcher.App.Services;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.Views;
@@ -22,20 +23,24 @@ public partial class CrashReportWindow : Window
     }
 
     /// <summary>展示崩溃窗口（主窗口存在时作为模态；否则独立）</summary>
-    public static void Show(string error)
+    public static void Show(string error) => Show("启动器遇到问题", error, RecentLogs());
+
+    /// <summary>展示崩溃窗口（自定义标题/错误/日志预览——游戏崩溃与启动器崩溃共用）</summary>
+    public static void Show(string title, string error, string logPreview)
     {
         var win = new CrashReportWindow { _error = error };
+        win.Title = title;
         win.ErrorText.Text = error;
-        win.LogPreview.Text = RecentLogs();
+        win.LogPreview.Text = logPreview;
         if (Application.Current?.ApplicationLifetime is
-            Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime { MainWindow: { } main })
+            Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime { MainWindow: { } main }
+            && main.PlatformImpl is not null && main.IsVisible)
         {
-            win.ShowDialog(main);
+            try { win.ShowDialog(main); return; }
+            catch { /* 兜底独立窗口 */ }
         }
-        else
-        {
-            win.Show();
-        }
+        win.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        win.Show();
     }
 
     /// <summary>最近错误日志尾部（AppData\Launcher\logs\crash-*.log 最新 3 个，各尾部 40 行）</summary>
@@ -79,13 +84,18 @@ public partial class CrashReportWindow : Window
                 // 1. 错误信息
                 var err = zip.CreateEntry("错误信息.txt");
                 using (var sw = new StreamWriter(err.Open(), new UTF8Encoding(false)))
-                    sw.Write(_error + Environment.NewLine + SystemInfo());
-                // 2. 最近日志
+                    sw.Write(_error + Environment.NewLine + LogExportHelper.SystemInfo());
+                // 2. 最近崩溃日志 + 游戏日志
                 var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
                 if (Directory.Exists(logDir))
                 {
                     foreach (var f in Directory.EnumerateFiles(logDir, "crash-*.log")
                                  .OrderByDescending(x => new FileInfo(x).LastWriteTimeUtc).Take(3))
+                    {
+                        zip.CreateEntryFromFile(f, $"logs/{Path.GetFileName(f)}");
+                    }
+                    foreach (var f in Directory.EnumerateFiles(logDir, "launch-*.log")
+                                 .OrderByDescending(x => new FileInfo(x).LastWriteTimeUtc).Take(2))
                     {
                         zip.CreateEntryFromFile(f, $"logs/{Path.GetFileName(f)}");
                     }

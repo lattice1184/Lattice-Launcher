@@ -58,6 +58,12 @@ public partial class App : Application
             Guard("Lifecycle.OnLoading", () => Lifecycle.OnLoading());
             Guard("Lifecycle.OnWindowCreated", () => Lifecycle.OnWindowCreated());
             desktop.Exit += (_, _) => Guard("Lifecycle.Shutdown", () => Lifecycle.Shutdown());
+            // UI 线程未捕获异常兜底（弹崩溃窗口 + 防崩溃）
+            Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
+            {
+                e.Handled = true;
+                ShowFatalError($"未捕获异常：{e.Exception}");
+            };
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -74,7 +80,7 @@ public partial class App : Application
             var logDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
             Directory.CreateDirectory(logDir);
-            File.AppendAllText(Path.Combine(logDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.txt"),
+            File.AppendAllText(Path.Combine(logDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.log"),
                 $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
         }
         catch { /* 日志写入失败不阻塞 */ }

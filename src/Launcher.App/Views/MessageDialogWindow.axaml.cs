@@ -30,8 +30,17 @@ public partial class MessageDialogWindow : Window
 
         var tcs = new TaskCompletionSource<bool>();
         win._result = tcs;
-        if (owner is not null) await win.ShowDialog(owner);
-        else win.Show();
+        try
+        {
+            // owner 不可见/未加载时 ShowDialog 抛异常（静默失败导致确认框不出现）——兜底独立窗口
+            if (owner is { PlatformImpl: not null, IsVisible: true }) await win.ShowDialog(owner);
+            else { win.WindowStartupLocation = WindowStartupLocation.CenterScreen; win.Show(); }
+        }
+        catch
+        {
+            win.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            win.Show();
+        }
         return await tcs.Task;
     }
 

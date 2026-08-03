@@ -84,13 +84,9 @@
                     <DataTemplate x:DataType="svc:ToastItem">
                         <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
                                 CornerRadius="8" Padding="14,9" Opacity="{Binding Opacity}">
-                            <Border.RenderTransform>
-                                <TranslateTransform Y="{Binding SlideY}"/>
-                            </Border.RenderTransform>
                             <Border.Transitions>
                                 <Transitions>
                                     <DoubleTransition Property="Opacity" Duration="0:0:0.24"/>
-                                    <DoubleTransition Property="(TranslateTransform.Y)" Duration="0:0:0.24"/>
                                 </Transitions>
                             </Border.Transitions>
                             <StackPanel Orientation="Horizontal" Spacing="8">

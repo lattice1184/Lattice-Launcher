@@ -6,7 +6,7 @@
 
     <DockPanel>
         <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
-            <TextBlock Text="开服" FontSize="20" FontWeight="Bold"/>
+            <TextBlock Text="开服" FontSize="18" FontWeight="Bold"/>
             <TextBlock Text="下载服务端 → 配置 → 启动，控制台实时查看" Classes="sub" FontSize="12"/>
         </StackPanel>
 
@@ -14,7 +14,7 @@
             <StackPanel Spacing="10" MaxWidth="760" HorizontalAlignment="Left">
 
                 <!-- 版本选择 + 操作 -->
-                <Border Classes="card" Padding="16">
+                <Border Classes="card" Padding="14">
                     <StackPanel Spacing="10">
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                             <ComboBox Grid.Column="0" ItemsSource="{Binding InstalledVersions}"
@@ -41,7 +41,7 @@
                 </Border>
 
                 <!-- 机器状态 + 建议配置 -->
-                <Border Classes="card" Padding="16">
+                <Border Classes="card" Padding="14">
                     <StackPanel Spacing="8">
                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                             <TextBlock Text="机器状态" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -56,7 +56,7 @@
                 </Border>
 
                 <!-- 控制台 + 命令输入 -->
-                <Border Classes="card" Padding="16">
+                <Border Classes="card" Padding="14">
                     <StackPanel Spacing="8">
                         <TextBlock Text="控制台" FontWeight="SemiBold"/>
                         <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="10" Height="220">
@@ -81,7 +81,7 @@
                 </Border>
 
                 <!-- server.properties 图形化 -->
-                <Border Classes="card" Padding="16">
+                <Border Classes="card" Padding="14">
                     <StackPanel Spacing="8">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                             <TextBlock Text="server.properties" FontWeight="SemiBold" VerticalAlignment="Center"/>

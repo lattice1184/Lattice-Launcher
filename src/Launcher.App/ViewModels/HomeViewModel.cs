@@ -297,13 +297,14 @@ public partial class HomeViewModel : ViewModelBase
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None));
 
-            // 游戏进程已启动
+            // 游戏进程已启动（窗口拉起）
             IsLaunching = false;
             IsRunning = true;
             LaunchState = "运行中";
             LaunchProgress = 100;
             LaunchStatus = $"游戏运行中（{account.Name}）· 点击停止可结束";
             SetStage("运行中");
+            NotificationService.Success("游戏窗口已拉起");
 
             // 等待退出
             await Task.Run(() => _running.Process.WaitForExit());
@@ -326,6 +327,13 @@ public partial class HomeViewModel : ViewModelBase
                 LaunchState = $"异常退出（{code}）";
                 LaunchStatus = "游戏异常退出，请查看日志";
                 LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0);
+                // 崩溃弹窗（PCL 式）：游戏日志尾部 + 导出报告
+                var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    Views.CrashReportWindow.Show($"游戏崩溃退出（退出码 {code}）",
+                        $"版本 {version.Name} 异常退出，退出码 {code}。" + Environment.NewLine
+                        + Environment.NewLine + "最近日志：" + Environment.NewLine + logTail,
+                        logTail));
             }
             IsRunning = false;
             _running = null;
