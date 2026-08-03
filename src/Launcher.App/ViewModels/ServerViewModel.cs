@@ -208,8 +208,26 @@ public partial class ServerViewModel : ViewModelBase
         s.MemoryMb = (int)xmxMb;
         s.Save();
 
+        // 刷新表单显示已应用值 + 建议区同步（改前可能是旧值，不刷则表单与建议区不同步）
+        LoadProperties();
+        RefreshSuggestionDiff();
+
         Status = $"已应用建议：内存 {xmxMb}MB · 视距 {view} · 玩家 {players}";
         NotificationService.Success("已应用建议配置");
+    }
+
+    /// <summary>建议 diff：对比当前参数与建议值写入机器状态区（手动改参数/应用建议后联动刷新）</summary>
+    private void RefreshSuggestionDiff()
+    {
+        var (_, view, players) = BuildSuggestion();
+        var diffs = new List<string>();
+        if (int.TryParse(PropRows.FirstOrDefault(r => r.Key == "view-distance")?.Value, out var cv) && cv != view)
+            diffs.Add($"视距 {view}（当前 {cv}）");
+        if (int.TryParse(PropRows.FirstOrDefault(r => r.Key == "max-players")?.Value, out var cp) && cp != players)
+            diffs.Add($"最大玩家 {players}（当前 {cp}）");
+        MachineStatusText = diffs.Count == 0
+            ? $"建议配置已与当前参数一致 ✓（视距 {view} · 最大玩家 {players}）"
+            : $"建议调整：{string.Join("、", diffs)}（可在下方参数区修改后保存）";
     }
 
     /// <summary>物理内存总量（GlobalMemoryStatusEx P/Invoke）</summary>
@@ -380,6 +398,7 @@ public partial class ServerViewModel : ViewModelBase
         props.Save(Path.Combine(dir, "server.properties"));
         Status = "server.properties 已保存";
         NotificationService.Success("server.properties 已保存");
+        RefreshSuggestionDiff(); // 手动改参数后建议区联动（与建议不一致时提示差异）
     }
 
     private void AppendLog(string line)
