@@ -55,9 +55,6 @@
                                 </Border>
                             </StackPanel>
                         </Button>
-                        <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
-                                Command="{Binding NavigateCommand}" CommandParameter="account"
-                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
                         <Button Content="开服" Classes="nav" Classes.active="{Binding IsServerActive}"
                                 Command="{Binding NavigateCommand}" CommandParameter="server"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>

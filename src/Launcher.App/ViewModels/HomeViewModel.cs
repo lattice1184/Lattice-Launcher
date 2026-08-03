@@ -100,6 +100,13 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial string PlayerName { get; set; } = "未登录";
 
+    /// <summary>账号类型徽章（正版/离线/未登录）——账号页已融合进主页，头像 Popup 承载管理</summary>
+    [ObservableProperty]
+    public partial string AccountTypeText { get; set; } = "未登录";
+
+    /// <summary>账号管理（登录/切换/删除，头像 Popup 面板承载）</summary>
+    public AccountViewModel Account { get; } = new();
+
     public ObservableCollection<string> GameLogs { get; } = [];
 
     /// <summary>启动记录（跨会话，可回看失败原因）</summary>
@@ -209,6 +216,7 @@ public partial class HomeViewModel : ViewModelBase
     {
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
+        AccountTypeText = acc?.Type == "microsoft" ? "正版" : acc?.Type == "offline" ? "离线" : "未登录";
         PlayerAvatar = null;
         if (acc is null) return;
 

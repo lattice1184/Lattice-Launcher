@@ -47,8 +47,34 @@ public partial class HomeView : UserControl
         }
     }
 
-    /// <summary>点击头像 → 选择皮肤图片（png/jpg → 复制为本地头像）</summary>
-    private async void OnAvatarClick(object? sender, RoutedEventArgs e)
+    /// <summary>点击头像 → 切换账号面板（Popup）</summary>
+    private void OnAvatarClick(object? sender, RoutedEventArgs e)
+    {
+        AccountPopup.IsOpen = !AccountPopup.IsOpen;
+    }
+
+    /// <summary>账号面板弹出 → 弹性放大进入（BackEase overshoot）</summary>
+    private void OnAccountPopupOpened(object? sender, EventArgs e)
+    {
+        Animations.UiAnim.SpringIn(AccountPanel);
+    }
+
+    /// <summary>账号列表"切换"（Popup 内 $parent 绑定不可靠，走 code-behind 转发）</summary>
+    private void OnSwitchAccount(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not HomeViewModel vm || (sender as Button)?.DataContext is not AccountRowVM row) return;
+        vm.Account.SwitchAccountCommand.Execute(row);
+    }
+
+    /// <summary>账号列表"删除"（确认对话框在命令内）</summary>
+    private async void OnDeleteAccount(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not HomeViewModel vm || (sender as Button)?.DataContext is not AccountRowVM row) return;
+        await vm.Account.DeleteAccountCommand.ExecuteAsync(row);
+    }
+
+    /// <summary>更换皮肤 → 选择图片（png/jpg → 复制为本地头像）</summary>
+    private async void OnPickSkin(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not HomeViewModel vm) return;
         var top = TopLevel.GetTopLevel(this);
