@@ -165,10 +165,23 @@ public partial class VersionManageViewModel : ViewModelBase
 
     // ---------- 存档（借用 PCL.Core SaveManager 解析 level.dat） ----------
 
+    /// <summary>存档目录（读侧放宽）：隔离位存在读隔离位，否则回退共享目录——PCL 版本存档实际在 PCL/.minecraft/saves（PCL 不做隔离）；
+    /// 写侧（导出/备份/删除）仍走 RootDir，防误改 PCL 共享数据</summary>
+    private string SavesDir
+    {
+        get
+        {
+            var isolated = Path.Combine(RootDir, "saves");
+            if (Directory.Exists(isolated)) return isolated;
+            var shared = Path.Combine(_gameDir, "saves");
+            return Directory.Exists(shared) ? shared : isolated;
+        }
+    }
+
     private List<SaveItemVM> CollectSaves()
     {
         var list = new List<SaveItemVM>();
-        var savesDir = Path.Combine(RootDir, "saves");
+        var savesDir = SavesDir;
         if (!Directory.Exists(savesDir)) return list;
         try
         {
@@ -191,7 +204,7 @@ public partial class VersionManageViewModel : ViewModelBase
     private void OpenSaveFolder(SaveItemVM save) => OpenFolder(save.FolderPath);
 
     [RelayCommand]
-    private void OpenSavesFolder() => OpenFolder(Path.Combine(RootDir, "saves"));
+    private void OpenSavesFolder() => OpenFolder(SavesDir);
 
     // ---------- 删除 / 备份 / 导出 / 打开 ----------
 
