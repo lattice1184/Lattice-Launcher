@@ -19,6 +19,7 @@ public partial class LoaderChoiceDialog : Window
     private readonly LoaderService _service = new();
     private TaskCompletionSource<LoaderChoice?>? _result;
     private LoaderKind? _kind;
+    private string _versionId = "";
 
     public LoaderChoiceDialog()
     {
@@ -28,7 +29,7 @@ public partial class LoaderChoiceDialog : Window
     /// <summary>展示加载器选择（versionId 为要下载的版本）；取消返回 null</summary>
     public static async Task<LoaderChoice?> ShowAsync(Window? owner, string versionId)
     {
-        var win = new LoaderChoiceDialog();
+        var win = new LoaderChoiceDialog { _versionId = versionId };
         win.VersionTitle.Text = $"下载 {versionId}";
         var tcs = new TaskCompletionSource<LoaderChoice?>();
         win._result = tcs;
@@ -62,7 +63,7 @@ public partial class LoaderChoiceDialog : Window
         VersionBox.ItemsSource = null;
         try
         {
-            var list = await _service.GetLoaderVersionsAsync(_kind.Value, "", CancellationToken.None);
+            var list = await _service.GetLoaderVersionsAsync(_kind.Value, _versionId, CancellationToken.None);
             var versions = list.Select(v => v.Version).ToList();
             VersionBox.ItemsSource = versions;
             if (versions.Count > 0)

@@ -10,8 +10,9 @@
             <TextBlock Text="下载服务端 → 配置 → 启动，控制台实时查看" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <ScrollViewer>
-            <StackPanel Spacing="8" MaxWidth="760" HorizontalAlignment="Left">
+        <Grid ColumnDefinitions="1.1*,2*" ColumnSpacing="12">
+        <ScrollViewer Grid.Column="0">
+            <StackPanel Spacing="8">
 
                 <!-- 版本选择 + 操作 -->
                 <Border Classes="card" Padding="12">
@@ -55,31 +56,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 控制台 + 命令输入 -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="控制台" FontWeight="SemiBold"/>
-                        <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="10" Height="220">
-                            <ScrollViewer>
-                                <ItemsControl ItemsSource="{Binding Logs}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                                       Foreground="{StaticResource TextLog}" TextWrapping="Wrap"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBox Grid.Column="0" x:Name="CommandBox" Watermark="输入命令（如 say hello / list / op Steve）"
-                                     KeyDown="OnCommandKeyDown"/>
-                            <Button Grid.Column="1" Content="发送" Classes="ghost" Padding="16,6"
-                                    Click="OnSendClick" IsEnabled="{Binding IsRunning}"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
                 <!-- server.properties 图形化 -->
                 <Border Classes="card" Padding="12">
                     <StackPanel Spacing="8">
@@ -110,7 +86,40 @@
                     </StackPanel>
                 </Border>
 
+
+        <!-- 右：控制台（占满） -->
+        <Border Grid.Column="1" Classes="card" Padding="0">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Padding="12,8"
+                      Background="{StaticResource BgSurface}"
+                      BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1">
+                    <TextBlock Text="控制台" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="导出日志" Classes="ghost" FontSize="11" Padding="10,3"
+                            Click="OnExportLogs"/>
+                </Grid>
+                <StackPanel Spacing="6" Margin="12,10">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <TextBox Grid.Column="0" x:Name="CommandBox" Watermark="输入命令（如 say hello / list / op Steve）"
+                                 KeyDown="OnCommandKeyDown"/>
+                        <Button Grid.Column="1" Content="发送" Classes="ghost" Padding="16,6"
+                                Click="OnSendClick" IsEnabled="{Binding IsRunning}"/>
+                    </Grid>
+                </StackPanel>
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding Logs}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
+                                           Foreground="{StaticResource TextLog}" TextWrapping="Wrap"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
             </StackPanel>
         </ScrollViewer>
+        </Grid>
     </DockPanel>
 </UserControl>
