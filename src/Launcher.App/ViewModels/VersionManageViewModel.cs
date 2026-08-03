@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
+using Launcher.App.Services;
 using Launcher.Core.Download;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
