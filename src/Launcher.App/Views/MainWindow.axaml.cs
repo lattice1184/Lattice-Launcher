@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Launcher.App.ViewModels;
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
         // 窗口显示后 ActualTransparencyLevel 才为最终值；亚克力合成失败时切不透明，保证窗口永远可见
         Opened += (_, _) =>
         {
+            RestoreWindowSize();
             ApplyOpacityFallback();
             ApplyAppearance();
             // 外观实时跟随设置页改动（保存应用 + 预览）
@@ -22,6 +24,31 @@ public partial class MainWindow : Window
                 main.Settings.PreviewChanged += ApplyAppearance;
             }
         };
+        Closing += (_, _) => SaveWindowSize();
+    }
+
+    /// <summary>恢复上次窗口尺寸（设置记录；夹取到主屏工作区内并居中，防副屏关闭后不可见）</summary>
+    private void RestoreWindowSize()
+    {
+        var s = LauncherSettings.Current;
+        if (s.WindowWidth < MinWidth || s.WindowHeight < MinHeight) return;
+        if (Screens.Primary?.WorkingArea is not { } wa) return;
+        var w = Math.Min(s.WindowWidth, wa.Width);
+        var h = Math.Min(s.WindowHeight, wa.Height);
+        Width = w;
+        Height = h;
+        Position = new PixelPoint(
+            wa.X + Math.Max((int)((wa.Width - w) / 2), 0),
+            wa.Y + Math.Max((int)((wa.Height - h) / 2), 0));
+    }
+
+    /// <summary>关闭时记住窗口尺寸（下次启动恢复）</summary>
+    private void SaveWindowSize()
+    {
+        var s = LauncherSettings.Current;
+        s.WindowWidth = Width;
+        s.WindowHeight = Height;
+        s.Save();
     }
 
     private void ApplyOpacityFallback()

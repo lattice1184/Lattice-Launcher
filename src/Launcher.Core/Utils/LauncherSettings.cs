@@ -69,6 +69,12 @@ public sealed class LauncherSettings
     /// <summary>界面密度（紧凑/标准/舒适 → 整 UI 缩放）</summary>
     public DensityMode Density { get; set; } = DensityMode.Normal;
 
+    /// <summary>窗口宽度（0 = 未设置，用默认 860）</summary>
+    public double WindowWidth { get; set; }
+
+    /// <summary>窗口高度（0 = 未设置，用默认 560）</summary>
+    public double WindowHeight { get; set; }
+
     public static LauncherSettings Current { get; } = Load();
 
     public static LauncherSettings Load(string? path = null)
