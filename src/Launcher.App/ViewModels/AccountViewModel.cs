@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -6,7 +7,12 @@ using Launcher.Core.Account;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>账号页：离线登录 / 显示当前账号 / 退出。微软正版登录入口预留。</summary>
+/// <summary>账号行（列表展示 + 切换/删除）</summary>
+public sealed record AccountRowVM(string Name, string TypeText, bool IsCurrent);
+
+/// <summary>
+/// 账号页：离线登录 + 多账号列表（切换/删除）+ 当前账号卡片。微软正版登录入口预留。
+/// </summary>
 public partial class AccountViewModel : ViewModelBase
 {
     private readonly AccountService _accounts = new();
@@ -32,6 +38,9 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial Bitmap? Avatar { get; set; }
 
+    /// <summary>已保存账号列表（当前账号标记）</summary>
+    public ObservableCollection<AccountRowVM> Accounts { get; } = [];
+
     public AccountViewModel()
     {
         _accounts.Load();
@@ -47,6 +56,12 @@ public partial class AccountViewModel : ViewModelBase
         AccountType = acc?.Type == "microsoft" ? "正版账号" : acc?.Type == "offline" ? "离线账号" : "";
         if (acc is not null) NameInput = acc.Name;
 
+        Accounts.Clear();
+        foreach (var a in _accounts.Accounts)
+            Accounts.Add(new AccountRowVM(a.Name,
+                a.Type == "microsoft" ? "正版" : "离线",
+                a.Name == acc?.Name));
+
         // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）
         Avatar = null;
         if (acc is not null)
@@ -59,14 +74,50 @@ public partial class AccountViewModel : ViewModelBase
     {
         var name = NameInput.Trim();
         if (string.IsNullOrEmpty(name)) { Status = "请输入用户名"; return; }
-        var acc = _accounts.LoginOffline(name);
-        Status = $"已以离线账号 {acc.Name} 登录";
+        _accounts.LoginOffline(name);
+        Status = $"已以离线账号 {name} 登录";
         Refresh();
     }
 
+    /// <summary>切换账号（点击列表行）</summary>
     [RelayCommand]
-    private void Logout()
+    private void SwitchAccount(AccountRowVM row)
     {
+        if (_accounts.SwitchTo(row.Name))
+        {
+            Status = $"已切换到 {row.Name}";
+            Refresh();
+        }
+    }
+
+    /// <summary>删除账号（DialogService 确认；当前账号被删则退出）</summary>
+    [RelayCommand]
+    private async Task DeleteAccount(AccountRowVM row)
+    {
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                $"删除账号「{row.Name}」？此操作不可恢复。", "删除账号", "删除", "取消"))
+        {
+            return;
+        }
+        if (_accounts.Delete(row.Name))
+        {
+            Status = $"已删除 {row.Name}";
+            Refresh();
+        }
+    }
+
+    [RelayCommand]
+    private async Task Logout()
+    {
+        if (IsLoggedIn && DialogService.MainWindow() is { } owner)
+        {
+            if (!await DialogService.Confirm(owner,
+                    "退出当前账号？", "退出登录", "退出", "取消"))
+            {
+                return;
+            }
+        }
         _accounts.Logout();
         Status = "已退出登录";
         Refresh();

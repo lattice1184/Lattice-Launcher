@@ -5,13 +5,19 @@ using System.Text.Json;
 namespace Launcher.Core.Account;
 
 /// <summary>
-/// 账号服务：离线账号（UUID v3）+ 账号持久化。微软正版登录为后续扩展（F4b，需 ClientId）。
+/// 账号服务：离线账号（UUID v3）+ 多账号持久化 + 当前账号切换。
+/// 微软正版登录为后续扩展（F4b，需 ClientId）。
 /// </summary>
 public sealed class AccountService
 {
     private readonly string _storePath;
 
     public AccountInfo? Current { get; private set; }
+
+    /// <summary>全部已保存账号（离线多账号；正版接入后并入）</summary>
+    public IReadOnlyList<AccountInfo> Accounts => _accounts;
+
+    private List<AccountInfo> _accounts = [];
 
     public AccountService(string? storePath = null)
     {
@@ -23,9 +29,34 @@ public sealed class AccountService
     public AccountInfo LoginOffline(string name)
     {
         var uuid = OfflineUuid(name);
-        Current = new AccountInfo(name, uuid, "offline");
+        var acc = new AccountInfo(name, uuid, "offline");
+        // 重名覆盖（同账号不重复存）；新名追加
+        var existing = _accounts.FindIndex(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0) _accounts[existing] = acc;
+        else _accounts.Add(acc);
+        Current = acc;
         Save();
-        return Current;
+        return acc;
+    }
+
+    /// <summary>切换当前账号（按名称；不存在则忽略）</summary>
+    public bool SwitchTo(string name)
+    {
+        var acc = _accounts.FirstOrDefault(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (acc is null) return false;
+        Current = acc;
+        Save();
+        return true;
+    }
+
+    /// <summary>删除账号（当前账号被删则退出登录）</summary>
+    public bool Delete(string name)
+    {
+        var removed = _accounts.RemoveAll(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) > 0;
+        if (removed && Current?.Name.Equals(name, StringComparison.OrdinalIgnoreCase) == true)
+            Current = null;
+        if (removed) Save();
+        return removed;
     }
 
     public void Load()
@@ -34,9 +65,14 @@ public sealed class AccountService
         {
             if (!File.Exists(_storePath)) return;
             var json = File.ReadAllText(_storePath);
-            var saved = JsonSerializer.Deserialize<StoredAccount>(json);
-            if (saved is not null && !string.IsNullOrEmpty(saved.Name))
-                Current = new AccountInfo(saved.Name, saved.Uuid, saved.Type);
+            var saved = JsonSerializer.Deserialize<StoredState>(json);
+            if (saved is null) return;
+            _accounts = (saved.Accounts ?? [])
+                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type))
+                .ToList();
+            Current = saved.CurrentName is { } cur
+                ? _accounts.FirstOrDefault(a => a.Name == cur)
+                : null;
         }
         catch (Exception) { /* 存储损坏则忽略 */ }
     }
@@ -48,7 +84,9 @@ public sealed class AccountService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_storePath)!);
-            var stored = Current is null ? null : new StoredAccount(Current.Name, Current.Uuid, Current.Type);
+            var stored = new StoredState(
+                Current?.Name,
+                _accounts.Select(a => new StoredAccount(a.Name, a.Uuid, a.Type)).ToList());
             File.WriteAllText(_storePath, JsonSerializer.Serialize(stored));
         }
         catch (Exception) { /* 存储失败不阻塞登录 */ }
@@ -66,5 +104,6 @@ public sealed class AccountService
 
     public sealed record AccountInfo(string Name, string Uuid, string Type);
 
+    private sealed record StoredState(string? CurrentName, List<StoredAccount> Accounts);
     private sealed record StoredAccount(string Name, string Uuid, string Type);
 }
