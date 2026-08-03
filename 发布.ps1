@@ -11,8 +11,8 @@ Write-Host ""
 Write-Host "=== YanKa Launcher 发布 ===" -ForegroundColor Cyan
 
 # 1) 清空旧产物
-if (Test-Path $out) { Remove-Item $out -Recurse -Force }
-New-Item -ItemType Directory -Path $out | Out-Null
+if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $out -Force | Out-Null
 
 # 2) 单文件自包含发布（win-x64，含 native 运行库）
 Write-Host "[1/3] dotnet publish（单文件自包含，约 2-4 分钟）..."
