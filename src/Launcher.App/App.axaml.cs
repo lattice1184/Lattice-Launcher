@@ -61,6 +61,13 @@ public partial class App : Application
             // UI 线程未捕获异常兜底（弹崩溃窗口 + 防崩溃）
             Avalonia.Threading.Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
+                var msg = e.Exception?.Message ?? "";
+                // 布局/渲染阶段异常不置 Handled：半坏状态继续会连环出错，交给进程崩溃兜底并保留堆栈
+                if (msg.Contains("Layout") || msg.Contains("Arrange") || msg.Contains("Measure") || msg.Contains("Render"))
+                {
+                    ShowFatalError($"界面异常：{e.Exception}");
+                    return;
+                }
                 e.Handled = true;
                 ShowFatalError($"未捕获异常：{e.Exception}");
             };
@@ -85,12 +92,18 @@ public partial class App : Application
         }
         catch { /* 日志写入失败不阻塞 */ }
 
-        if (Interlocked.Exchange(ref _fatalShown, 1) == 1) return; // 只弹一次
         try
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                try { Views.CrashReportWindow.Show(message); }
+                if (Interlocked.Exchange(ref _fatalShown, 1) == 1) return; // 只弹一次（展示时才置位）
+                try
+                {
+                    if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+                        Views.CrashReportWindow.Show(message);
+                    else
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => Views.CrashReportWindow.Show(message));
+                }
                 catch { /* 弹窗失败不递归 */ }
             });
         }

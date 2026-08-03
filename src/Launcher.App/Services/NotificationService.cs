@@ -47,14 +47,15 @@ public static class NotificationService
 {
     public static ObservableCollection<ToastItem> Toasts { get; } = [];
 
-    /// <summary>弹一条 Toast（淡入 + 停留 + 淡出，自动移除）</summary>
+    /// <summary>弹一条 Toast（淡入 + 停留 + 淡出，自动移除；全流程封送 UI 线程）</summary>
     public static void Show(string message, ToastType type = ToastType.Info, int durationMs = 3200)
     {
         var toast = new ToastItem(message, type);
-        if (Dispatcher.UIThread.CheckAccess()) Toasts.Add(toast);
-        else Dispatcher.UIThread.Post(() => Toasts.Add(toast));
-        // 淡入（DoubleTransition 平滑；先排队到集合添加之后）
-        Dispatcher.UIThread.Post(() => toast.Opacity = 1);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Toasts.Add(toast);
+            toast.Opacity = 1; // 淡入（容器 realize 后触发 0→1 过渡）
+        });
         _ = FadeOutAsync(toast, durationMs);
     }
 
@@ -70,9 +71,8 @@ public static class NotificationService
     private static async Task FadeOutAsync(ToastItem toast, int durationMs)
     {
         await Task.Delay(durationMs);
-        toast.Opacity = 0; // 淡出
+        await Dispatcher.UIThread.InvokeAsync(() => toast.Opacity = 0); // 淡出（UI 线程触发过渡）
         await Task.Delay(260);
-        if (Dispatcher.UIThread.CheckAccess()) Toasts.Remove(toast);
-        else Dispatcher.UIThread.Post(() => Toasts.Remove(toast));
+        await Dispatcher.UIThread.InvokeAsync(() => Toasts.Remove(toast));
     }
 }
