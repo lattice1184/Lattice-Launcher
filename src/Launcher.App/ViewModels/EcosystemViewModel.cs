@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
+using Launcher.Core.Download;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
 
@@ -22,6 +24,7 @@ public partial class EcosystemViewModel : ViewModelBase
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
         _type = type;
+        SelectedSort = SortOptions[0];
     }
 
     /// <summary>tab 显示名（MOD/整合包/材质包/光影包）</summary>
@@ -44,6 +47,18 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>游戏版本下拉（"跟随实例"=null + 常用版本）</summary>
     public static IReadOnlyList<string> GameVersionOptions { get; } =
         ["跟随实例", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1", "1.20.4", "1.20.1", "1.19.4", "1.18.2"];
+
+    /// <summary>排序选项（下载量/更新时间/关注/最新）</summary>
+    public static IReadOnlyList<SortOption> SortOptions { get; } =
+    [
+        new SortOption("相关度", EcosystemService.SortIndex.Relevance),
+        new SortOption("下载量", EcosystemService.SortIndex.Downloads),
+        new SortOption("最近更新", EcosystemService.SortIndex.Updated),
+        new SortOption("关注数", EcosystemService.SortIndex.Follows),
+        new SortOption("最新发布", EcosystemService.SortIndex.Newest),
+    ];
+
+    public sealed record SortOption(string Display, EcosystemService.SortIndex Index);
 
     /// <summary>功能分类（Modrinth categories，中文显示；"全部"=null）</summary>
     public static IReadOnlyList<CategoryOption> CategoryOptions { get; } =
@@ -76,6 +91,19 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>功能分类筛选（null=全部）</summary>
     [ObservableProperty]
     public partial CategoryOption? SelectedCategory { get; set; }
+
+    /// <summary>排序（默认相关度）</summary>
+    [ObservableProperty]
+    public partial SortOption SelectedSort { get; set; }
+
+    /// <summary>只看收藏（星标项目；从 FavoritesService 拉取）</summary>
+    [ObservableProperty]
+    public partial bool FavoritesOnly { get; set; }
+
+    partial void OnFavoritesOnlyChanged(bool value) => _ = RunSearchAsync(reset: true);
+
+    [RelayCommand]
+    private void ToggleFavorites() => FavoritesOnly = !FavoritesOnly;
 
     public ObservableCollection<ProjectCardVM> Cards { get; } = [];
     public ObservableCollection<VersionInstanceVM> Instances { get; } = [];
@@ -128,6 +156,7 @@ public partial class EcosystemViewModel : ViewModelBase
     partial void OnSelectedLoaderChanged(string? value) => DebouncedSearch();
     partial void OnSelectedGameVersionChanged(string? value) => DebouncedSearch();
     partial void OnSelectedCategoryChanged(CategoryOption? value) => DebouncedSearch();
+    partial void OnSelectedSortChanged(SortOption value) => DebouncedSearch();
 
     /// <summary>加载器 chips 选择（"全部"=null；值转小写——Modrinth facets 要求 fabric/forge/neoforge/quilt）</summary>
     [RelayCommand]
@@ -175,6 +204,11 @@ public partial class EcosystemViewModel : ViewModelBase
         IsEmpty = false;
         try
         {
+            if (FavoritesOnly)
+            {
+                await LoadFavoritesAsync(seq, ct);
+                return;
+            }
             var instance = SelectedInstance;
             // 三级筛选：显式选择优先，否则跟随实例（加载器猜测/版本解析）
             var loader = SelectedLoader
@@ -184,6 +218,7 @@ public partial class EcosystemViewModel : ViewModelBase
             var category = SelectedCategory?.Key;
 
             var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+                index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
                 limit: PageSize, offset: CurrentPage * PageSize, ct);
             if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
 
@@ -233,6 +268,80 @@ public partial class EcosystemViewModel : ViewModelBase
         CurrentPage++;
         _ = RunSearchAsync(reset: false);
     }
+
+    /// <summary>收藏模式：逐项目拉详情组装卡片（收藏数小，直拉可接受）</summary>
+    private async Task LoadFavoritesAsync(int seq, CancellationToken ct)
+    {
+        var ids = FavoritesService.All;
+        Cards.Clear();
+        foreach (var id in ids)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var detail = await _eco.GetProjectAsync(id, ct);
+                if (detail is not null && detail.ProjectType == (_type == ProjectType.Mod ? null : _type.ToString()))
+                    Cards.Add(new ProjectCardVM(detail));
+            }
+            catch { /* 单个拉取失败跳过 */ }
+        }
+        if (seq != _requestSeq) return;
+        TotalPages = 1;
+        HasPrev = false;
+        HasNext = false;
+        PageText = "1/1";
+        IsEmpty = Cards.Count == 0;
+        Status = $"收藏 {Cards.Count} 个项目";
+        if (seq == _requestSeq) IsLoading = false;
+    }
+
+    /// <summary>卡片一键安装：匹配版本 → 依赖确认（全部/仅主文件）→ 全局下载中心执行 → Toast</summary>
+    [RelayCommand]
+    private async Task InstallCard(ProjectCardVM card)
+    {
+        var instance = SelectedInstance;
+        var gameVersion = instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null;
+        var loader = instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
+        try
+        {
+            var version = await _eco.FindBestVersionAsync(card.Id, gameVersion, loader, CancellationToken.None);
+            if (version is null)
+            {
+                NotificationService.Error($"{card.Title} 没有适配当前实例的版本");
+                return;
+            }
+
+            var deps = await _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None);
+            var includeDeps = true;
+            if (deps.Count > 0 && DialogService.MainWindow() is { } owner)
+            {
+                var list = string.Join("、", deps.Take(6)) + (deps.Count > 6 ? "…" : "");
+                includeDeps = await DialogService.Confirm(owner,
+                    $"将安装 {deps.Count} 个前置：{list}", $"安装 {card.Title}", "全部安装", "仅主文件");
+            }
+
+            var instanceName = instance?.Name ?? "modpack";
+            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", (p, ct) =>
+                includeDeps
+                    ? _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,
+                        gameVersion, loader, dp => p(dp), ct)
+                    : InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, p, ct));
+            await task.Completion;
+            if (task.State == DownloadTaskState.Completed)
+                NotificationService.Success($"{card.Title} 安装完成");
+            else if (task.Error is { } err)
+                NotificationService.Error(err);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"安装失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>仅安装主文件（依赖可选跳过路径）</summary>
+    private Task InstallMainOnlyAsync(string projectId, ModrinthVersion version, string instanceName,
+        ProjectType type, DownloadProgressHandler progress, CancellationToken ct)
+        => _eco.InstallAsync(projectId, version, instanceName, type, dp => progress(dp), ct);
 
     [RelayCommand]
     private void OpenDetail(ProjectCardVM card) =>

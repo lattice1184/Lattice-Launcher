@@ -51,6 +51,17 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
+                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.SortOptions}"
+                          SelectedItem="{Binding SelectedSort}" Width="110">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+SortOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="★ 收藏" Classes="ghost" FontSize="11" Padding="10,3"
+                        Classes.active="{Binding FavoritesOnly}"
+                        Command="{Binding ToggleFavoritesCommand}"/>
             </StackPanel>
 
             <TextBlock Text="{Binding Status}" Foreground="#8A93A6" FontSize="12"/>
@@ -101,7 +112,7 @@
                                     <Border Classes="modcard" Background="Transparent"
                                             Padding="10,8" BorderBrush="{StaticResource BorderColor}"
                                             BorderThickness="0,0,0,1">
-                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
                                             <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
                                                     ClipToBounds="True" Background="{StaticResource BgActive}"
                                                     VerticalAlignment="Center">
@@ -125,6 +136,15 @@
                                                 </TextBlock>
                                                 <TextBlock Text="{Binding UpdatedText}" Foreground="{StaticResource TextDim}"
                                                            FontSize="10" TextAlignment="Right"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3" Spacing="4" VerticalAlignment="Center">
+                                                <Button Content="安装" Classes="primary" FontSize="11" Padding="14,4"
+                                                        Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).InstallCardCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Classes="ghost" FontSize="14" Padding="4,0"
+                                                        Content="{Binding StarText}"
+                                                        Command="{Binding ToggleFavoriteCommand}"
+                                                        Foreground="{Binding StarColor}"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>

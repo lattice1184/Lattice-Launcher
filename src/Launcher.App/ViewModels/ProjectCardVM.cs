@@ -1,7 +1,10 @@
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Model.Modrinth;
+using Launcher.Core.Services;
 
 namespace Launcher.App.ViewModels;
 
@@ -22,6 +25,31 @@ public partial class ProjectCardVM : ObservableObject
     [ObservableProperty]
     public partial Bitmap? Icon { get; set; }
 
+    /// <summary>收藏星标（FavoritesService 持久化）</summary>
+    [ObservableProperty]
+    public partial bool IsFavorite { get; set; }
+
+    /// <summary>星标字符（★已收藏/☆未收藏）</summary>
+    public string StarText => IsFavorite ? "★" : "☆";
+
+    /// <summary>星标颜色（收藏=强调青，未收藏=弱灰）</summary>
+    public IBrush StarColor => IsFavorite
+        ? new SolidColorBrush(Color.Parse("#2DD4BF"))
+        : new SolidColorBrush(Color.Parse("#6F7B90"));
+
+    partial void OnIsFavoriteChanged(bool value)
+    {
+        OnPropertyChanged(nameof(StarText));
+        OnPropertyChanged(nameof(StarColor));
+    }
+
+    [RelayCommand]
+    private void ToggleFavorite()
+    {
+        FavoritesService.Toggle(Id);
+        IsFavorite = !IsFavorite;
+    }
+
     public ProjectCardVM(ModrinthSearchHit hit)
     {
         Id = hit.ProjectId;
@@ -39,6 +67,29 @@ public partial class ProjectCardVM : ObservableObject
             "shader" => ProjectType.Shader,
             _ => ProjectType.Mod,
         };
+        IsFavorite = FavoritesService.IsFavorite(Id);
+        _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
+    }
+
+    /// <summary>收藏列表构造（用项目详情；无描述/作者时取字段）</summary>
+    public ProjectCardVM(ModrinthProjectDetail d)
+    {
+        Id = d.Id;
+        Title = d.Title;
+        Author = "";
+        Description = d.Description;
+        DownloadsText = FormatCount(d.Downloads);
+        FollowsText = FormatCount(d.Follows);
+        UpdatedText = FormatDate(d.DateModified);
+        IconUrl = d.IconUrl ?? "";
+        Type = d.ProjectType switch
+        {
+            "modpack" => ProjectType.Modpack,
+            "resourcepack" => ProjectType.Resourcepack,
+            "shader" => ProjectType.Shader,
+            _ => ProjectType.Mod,
+        };
+        IsFavorite = FavoritesService.IsFavorite(Id);
         _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
     }
 

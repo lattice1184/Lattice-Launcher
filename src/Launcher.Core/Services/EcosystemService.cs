@@ -29,14 +29,26 @@ public sealed class EcosystemService
     }
 
     /// <summary>搜索（facets 按 类型|游戏版本|加载器|功能分类 过滤，offset 分页）</summary>
+    /// <summary>排序方式（Modrinth search index 参数）</summary>
+    public enum SortIndex { Relevance, Downloads, Follows, Newest, Updated }
+
     public async Task<ModrinthSearchResponse?> SearchAsync(
         ProjectType type, string? query = null, string? gameVersion = null,
         string? loader = null, string? category = null,
+        SortIndex index = SortIndex.Relevance,
         int limit = 20, int offset = 0, CancellationToken ct = default)
     {
         var facets = BuildFacets(type, gameVersion, loader, category);
+        var indexName = index switch
+        {
+            SortIndex.Downloads => "downloads",
+            SortIndex.Follows => "follows",
+            SortIndex.Newest => "newest",
+            SortIndex.Updated => "updated",
+            _ => "relevance",
+        };
         var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query ?? "")}"
-                  + $"&facets={Uri.EscapeDataString(facets)}&limit={limit}&offset={offset}";
+                  + $"&facets={Uri.EscapeDataString(facets)}&index={indexName}&limit={limit}&offset={offset}";
         return await GetJsonAsync<ModrinthSearchResponse>(url, ct);
     }
 

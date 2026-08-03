@@ -18,12 +18,27 @@
                     <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
                     <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
+                    <Button Content="打开主页 ↗" Classes="ghost" FontSize="11" Padding="10,2"
+                            HorizontalAlignment="Left" IsVisible="{Binding ProjectPageUrl.Length}"
+                            Click="OnOpenPage"/>
                 </StackPanel>
             </Grid>
 
-            <!-- 截图 -->
+            <!-- 截图画廊（多图左右切换） -->
             <Border Classes="card" Padding="12" IsVisible="{Binding Screenshot, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Image Source="{Binding Screenshot}" Stretch="Uniform" MaxHeight="220"/>
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Button Grid.Column="0" Content="◀" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
+                                Command="{Binding PrevScreenshotCommand}" IsEnabled="{Binding HasPrevScreenshot}"
+                                IsVisible="{Binding HasGallery}"/>
+                        <Image Grid.Column="1" Source="{Binding Screenshot}" Stretch="Uniform" MaxHeight="220"/>
+                        <Button Grid.Column="2" Content="▶" Classes="ghost" Padding="8,14" VerticalAlignment="Center"
+                                Command="{Binding NextScreenshotCommand}" IsEnabled="{Binding HasNextScreenshot}"
+                                IsVisible="{Binding HasGallery}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding GalleryCountText}" Classes="dim" FontSize="10"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
             </Border>
 
             <Border Classes="card" Padding="12">
@@ -53,6 +68,22 @@
                                     HorizontalAlignment="Left" Padding="10,4"
                                     IsVisible="{Binding AllVersions.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
                         </StackPanel>
+                    </Expander>
+
+                    <!-- 文件列表（当前所选版本的安装文件） -->
+                    <Expander Header="{Binding FilesHeaderText}" IsExpanded="True"
+                              IsVisible="{Binding HasFiles}">
+                        <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:VersionFileVM">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
+                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="11"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Expander>
 
                     <!-- 更新日志 -->

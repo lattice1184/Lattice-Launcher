@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -50,6 +51,74 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string Changelog { get; set; } = "";
+
+    // ---------- 截图画廊（左右切换） ----------
+
+    private List<string> _galleryUrls = [];
+
+    [ObservableProperty]
+    public partial int GalleryIndex { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasGallery { get; set; }
+
+    [ObservableProperty]
+    public partial string GalleryCountText { get; set; } = "";
+
+    public bool HasPrevScreenshot => GalleryIndex > 0;
+    public bool HasNextScreenshot => GalleryIndex < _galleryUrls.Count - 1;
+
+    [RelayCommand]
+    private void PrevScreenshot()
+    {
+        if (GalleryIndex <= 0) return;
+        GalleryIndex--;
+        LoadScreenshot(GalleryIndex);
+    }
+
+    [RelayCommand]
+    private void NextScreenshot()
+    {
+        if (GalleryIndex >= _galleryUrls.Count - 1) return;
+        GalleryIndex++;
+        LoadScreenshot(GalleryIndex);
+    }
+
+    partial void OnGalleryIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasPrevScreenshot));
+        OnPropertyChanged(nameof(HasNextScreenshot));
+    }
+
+    /// <summary>载入第 index 张截图（去重防闪烁：先清再载）</summary>
+    private void LoadScreenshot(int index)
+    {
+        Screenshot = null;
+        if (index < 0 || index >= _galleryUrls.Count) return;
+        _ = ImageLoader.LoadAsync(_galleryUrls[index], bmp => Screenshot = bmp, 640);
+    }
+
+    // ---------- 文件列表（当前所选版本的安装文件） ----------
+
+    public ObservableCollection<VersionFileVM> Files { get; } = [];
+
+    [ObservableProperty]
+    public partial string FilesHeaderText { get; set; } = "";
+
+    /// <summary>文件区显示条件（有文件才展开）</summary>
+    public bool HasFiles => Files.Count > 0;
+
+    /// <summary>项目主页 URL（详情页"打开主页"）</summary>
+    [ObservableProperty]
+    public partial string ProjectPageUrl { get; set; } = "";
+
+    /// <summary>浏览器打开项目主页（source_url 或 Modrinth 页面）</summary>
+    public void OpenProjectPage()
+    {
+        if (string.IsNullOrEmpty(ProjectPageUrl)) return;
+        try { Process.Start(new ProcessStartInfo(ProjectPageUrl) { UseShellExecute = true }); }
+        catch { }
+    }
 
     public ObservableCollection<VersionOptionVM> AllVersions { get; } = [];
 
@@ -140,8 +209,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 if (detail is not null)
                 {
                     License = detail.License?.Name is { } ln ? $"许可: {ln}" : "";
-                    if (detail.Gallery is { Count: > 0 })
-                        _ = ImageLoader.LoadAsync(detail.Gallery[0], bmp => Screenshot = bmp, 640);
+                    ProjectPageUrl = detail.SourceUrl ?? $"https://modrinth.com/project/{detail.Slug}";
+                    _galleryUrls = detail.Gallery ?? [];
+                    HasGallery = _galleryUrls.Count > 1;
+                    GalleryCountText = _galleryUrls.Count > 1 ? $"1/{_galleryUrls.Count}" : "";
+                    GalleryIndex = 0;
+                    if (_galleryUrls.Count > 0) LoadScreenshot(0);
                 }
             }
             catch { /* 详情拉取失败不阻塞 */ }
@@ -198,6 +271,18 @@ public partial class ProjectDetailViewModel : ViewModelBase
         Changelog = value.Source.Changelog ?? "";
         VersionHint = $"已选择: {value.Source.Name} ({value.Source.VersionNumber})";
         CanInstall = true;
+        RefreshFiles(value.Source);
+    }
+
+    /// <summary>文件列表：主文件 + 附带文件（名称/大小）</summary>
+    private void RefreshFiles(ModrinthVersion version)
+    {
+        Files.Clear();
+        if (version.Files is null) return;
+        foreach (var f in version.Files)
+            Files.Add(new VersionFileVM(f.FileName, f.Size));
+        FilesHeaderText = Files.Count > 0 ? $"文件（{Files.Count}）" : "";
+        OnPropertyChanged(nameof(HasFiles));
     }
 
     [RelayCommand(IncludeCancelCommand = true)]
@@ -225,13 +310,31 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
             var instanceName = _instance?.Name ?? "modpack";
 
+            // 依赖可选跳过：全部安装 / 仅主文件（依赖数来自安装前的解析提示）
+            var includeDeps = true;
+            if (DependencyHint.Length > 0 && DialogService.MainWindow() is { } owner)
+            {
+                includeDeps = await DialogService.Confirm(owner,
+                    DependencyHint, $"安装 {_card.Title}", "全部安装", "仅主文件");
+            }
+
             // 经全局下载中心执行（后台线程 + 队列 UI + 内联进度双显示，一处真相）
             DependencyInstallReport? report = null;
             var task = DownloadManager.Instance.Enqueue($"安装 {_card.Title}", async (p, t) =>
             {
-                report = await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
-                    gameVersion, loader,
-                    dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+                if (includeDeps)
+                {
+                    report = await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
+                        gameVersion, loader,
+                        dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+                }
+                else
+                {
+                    var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type,
+                        dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+                    report = new DependencyInstallReport();
+                    report.Installed.Add(new InstalledDependency(_card.Id, version.Id, path));
+                }
             });
             if (ct.CanBeCanceled) ct.Register(() => task.Cancel());
 
@@ -317,4 +420,12 @@ public sealed record VersionOptionVM(ModrinthVersion Source)
     public bool IsRecommended => Source.Featured == true;
 
     public string PublishedText => Source.DatePublished.Year > 2000 ? Source.DatePublished.ToString("yyyy-MM-dd") : "";
+}
+
+/// <summary>版本文件行（文件名/大小）</summary>
+public sealed record VersionFileVM(string Name, long SizeBytes)
+{
+    public string SizeText => SizeBytes >= 1024 * 1024
+        ? $"{SizeBytes / 1024.0 / 1024:0.#} MB"
+        : SizeBytes >= 1024 ? $"{SizeBytes / 1024:0} KB" : $"{SizeBytes} B";
 }
