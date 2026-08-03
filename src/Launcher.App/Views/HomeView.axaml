@@ -10,16 +10,22 @@
         <!-- ① 启动控制卡（顶部一行高密度操作 + 阶段条） -->
         <Border Classes="card" Padding="12">
             <StackPanel Spacing="8">
-                <!-- 行1：头像 + 版本 + 启动/停止 + 状态（一行） -->
+                <!-- 行1：头像（点击弹账号面板）+ 版本 + 启动/停止 + 状态（一行） -->
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
-                    <Button Padding="0" Background="Transparent" BorderThickness="0"
-                            Click="OnAvatarClick" ToolTip.Tip="点击更换皮肤">
+                    <Button x:Name="AvatarButton" Padding="0" Background="Transparent" BorderThickness="0"
+                            Click="OnAvatarClick" ToolTip.Tip="账号管理（登录/切换/皮肤）">
                         <Border Width="44" Height="44" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
                             <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"/>
                         </Border>
                     </Button>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                        <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"/>
+                            <Border CornerRadius="3" Padding="6,1" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                                    VerticalAlignment="Center" IsVisible="{Binding Account.IsLoggedIn}">
+                                <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{StaticResource Accent}"/>
+                            </Border>
+                        </StackPanel>
                         <TextBlock Text="YanKa Launcher" FontSize="11" Classes="dim"/>
                     </StackPanel>
                     <ComboBox Grid.Column="2" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
@@ -43,8 +49,9 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- 行2：阶段指示条 + 状态文字（右对齐） -->
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                <!-- 行2：阶段指示条 + 状态文字（仅启动时显示，平时保持卡矮小） -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0"
+                      IsVisible="{Binding IsLaunching}">
                     <ItemsControl ItemsSource="{Binding Stages}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -151,5 +158,74 @@
                 </Grid>
             </DockPanel>
         </Border>
+
+        <!-- ③ 账号面板（头像点击弹出：当前账号 / 已保存列表 / 登录） -->
+        <Popup x:Name="AccountPopup" Placement="Bottom" PlacementTarget="{Binding #AvatarButton}"
+               IsLightDismissEnabled="True"
+               Opened="OnAccountPopupOpened">
+            <Border x:Name="AccountPanel" Classes="card" Padding="12" Width="320">
+                <StackPanel Spacing="10">
+                    <!-- 当前账号行 -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                            <Image Source="{Binding Account.Avatar}" Width="40" Height="40" Stretch="Uniform"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Account.CurrentName}" FontSize="14" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding Account.AccountType}" Classes="dim" FontSize="11"
+                                       IsVisible="{Binding Account.IsLoggedIn}"/>
+                        </StackPanel>
+                        <Button Grid.Column="2" Content="退出" Classes="ghost" FontSize="11" Padding="10,4"
+                                VerticalAlignment="Center" Command="{Binding Account.LogoutCommand}"
+                                IsVisible="{Binding Account.IsLoggedIn}"/>
+                    </Grid>
+
+                    <!-- 已保存账号列表（切换/删除） -->
+                    <Border CornerRadius="6" Background="{StaticResource BgBase}" Padding="8"
+                            IsVisible="{Binding Account.Accounts.Count}">
+                        <ItemsControl ItemsSource="{Binding Account.Accounts}" MaxHeight="160">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:AccountRowVM">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontSize="12"/>
+                                            <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                    VerticalAlignment="Center" IsVisible="{Binding IsCurrent}">
+                                                <TextBlock Text="当前" FontSize="9" Foreground="#B5F4E9"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding TypeText}" Classes="dim" FontSize="10"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="切换" Classes="ghost" FontSize="10" Padding="8,2"
+                                                Click="OnSwitchAccount" CommandParameter="{Binding}"
+                                                IsVisible="{Binding !IsCurrent}"/>
+                                        <Button Grid.Column="2" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
+                                                Click="OnDeleteAccount" CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <!-- 登录表单 -->
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                        <TextBox Grid.Column="0" Text="{Binding Account.NameInput}" Watermark="用户名（离线登录）" FontSize="12"/>
+                        <Button Grid.Column="1" Content="离线登录" Classes="primary" FontSize="11" Padding="12,6"
+                                Command="{Binding Account.LoginOfflineCommand}"/>
+                        <Button Grid.Column="2" Content="正版登录" FontSize="11" Padding="12,6"
+                                Command="{Binding Account.LoginMicrosoftCommand}"
+                                IsEnabled="{Binding !Account.IsMsAuthBusy}"/>
+                    </Grid>
+                    <Button Content="更换皮肤…" Classes="ghost" FontSize="11" Padding="8,3"
+                            HorizontalAlignment="Left" Click="OnPickSkin"/>
+
+                    <!-- 正版授权进度 / 操作状态 -->
+                    <Border CornerRadius="6" Padding="8,6" Background="#12332F" IsVisible="{Binding Account.IsMsAuthBusy}">
+                        <TextBlock Text="{Binding Account.MsAuthStatus}" FontSize="11" Foreground="#B5F4E9"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+                    <TextBlock Text="{Binding Account.Status}" Classes="dim" FontSize="11" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

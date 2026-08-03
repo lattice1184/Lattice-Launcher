@@ -22,9 +22,6 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsDownloadsActive { get; set; }
 
     [ObservableProperty]
-    public partial bool IsAccountActive { get; set; }
-
-    [ObservableProperty]
     public partial bool IsSettingsActive { get; set; }
 
     [ObservableProperty]
@@ -33,7 +30,6 @@ public partial class MainViewModel : ViewModelBase
     public HomeViewModel Home { get; } = new();
     public VersionBrowseViewModel Versions { get; } = new();
     public DownloadViewModel Downloads { get; } = new();
-    public AccountViewModel Account { get; } = new();
     public SettingsViewModel Settings { get; } = new();
     public ServerViewModel Server { get; } = new();
 
@@ -74,7 +70,6 @@ public partial class MainViewModel : ViewModelBase
         IsHomeActive = page == "home";
         IsVersionsActive = page == "version";
         IsDownloadsActive = page == "download";
-        IsAccountActive = page == "account";
         IsSettingsActive = page == "settings";
         IsServerActive = page == "server";
         if (page == "download") Downloads.ActivateDefault();
@@ -85,7 +80,6 @@ public partial class MainViewModel : ViewModelBase
         {
             "version" => Versions,
             "download" => Downloads,
-            "account" => Account,
             "settings" => Settings,
             "server" => Server,
             _ => Home,
