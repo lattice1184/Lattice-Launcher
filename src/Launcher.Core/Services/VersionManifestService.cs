@@ -13,7 +13,6 @@ public sealed class VersionManifestService
     private const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
     private readonly HttpClient _http;
-    private readonly string _gameDirectory;
     private readonly string _cacheDirectory;
 
     /// <summary>解析后的版本条目（已安装标记 + 官方清单合并）</summary>
@@ -23,13 +22,13 @@ public sealed class VersionManifestService
     public VersionManifestService(HttpClient? http = null, string? gameDirectory = null)
     {
         _http = http ?? new HttpClient();
-        _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _cacheDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
     }
 
     /// <summary>
     /// 拉取并合并版本清单。force=true 时忽略磁盘缓存强制刷新。
+    /// 已安装判定跨所有扫描源（自建目录 + PCL/官方等已有环境），条目记录版本所在目录。
     /// </summary>
     public async Task RefreshAsync(bool force = false, CancellationToken ct = default)
     {
@@ -37,7 +36,8 @@ public sealed class VersionManifestService
         var installed = ScanInstalledVersions();
         _entries = manifest.Versions
             .Select(v => new GameVersionEntry(
-                v.Id, v.Type, installed.Contains(v.Id), v.ReleaseTime, v.Url))
+                v.Id, v.Type, installed.TryGetValue(v.Id, out var dir), v.ReleaseTime, v.Url,
+                installed.TryGetValue(v.Id, out var gd) ? gd : ""))
             .OrderByDescending(v => v.ReleaseTime)
             .ToList();
     }
@@ -62,31 +62,40 @@ public sealed class VersionManifestService
         return JsonSerializer.Deserialize<VersionManifest>(json)!;
     }
 
-    /// <summary>磁盘重扫，就地更新 Installed 标记（版本/加载器安装完成后调用）</summary>
+    /// <summary>磁盘重扫，就地更新 Installed 标记与所在目录（版本/加载器安装完成后调用）</summary>
     public void RescanInstalled()
     {
         var installed = ScanInstalledVersions();
-        _entries = _entries.Select(e => e with { Installed = installed.Contains(e.Id) }).ToList();
+        _entries = _entries.Select(e => e with
+        {
+            Installed = installed.TryGetValue(e.Id, out var dir),
+            GameDirectory = installed.TryGetValue(e.Id, out var gd) ? gd : "",
+        }).ToList();
     }
 
-    private HashSet<string> ScanInstalledVersions()
+    /// <summary>跨所有扫描源枚举已安装版本（id → 所在目录）</summary>
+    private Dictionary<string, string> ScanInstalledVersions()
     {
-        var versionsDir = Path.Combine(_gameDirectory, "versions");
-        var installed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!Directory.Exists(versionsDir)) return installed;
-        foreach (var dir in Directory.EnumerateDirectories(versionsDir))
+        var installed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
         {
-            var id = Path.GetFileName(dir);
-            if (File.Exists(Path.Combine(dir, $"{id}.json"))) installed.Add(id);
+            var versionsDir = Path.Combine(dir, "versions");
+            if (!Directory.Exists(versionsDir)) continue;
+            foreach (var d in Directory.EnumerateDirectories(versionsDir))
+            {
+                var id = Path.GetFileName(d);
+                if (File.Exists(Path.Combine(d, $"{id}.json"))) installed.TryAdd(id, dir);
+            }
         }
         return installed;
     }
 
-    /// <summary>合并后的条目（含已安装标记）</summary>
+    /// <summary>合并后的条目（含已安装标记 + 所在目录，未安装为 ""）</summary>
     public sealed record GameVersionEntry(
         string Id,
         string Type,
         bool Installed,
         DateTime ReleaseTime,
-        string? ManifestUrl);
+        string? ManifestUrl,
+        string GameDirectory);
 }

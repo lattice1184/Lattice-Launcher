@@ -118,7 +118,7 @@ public partial class VersionSidebarViewModel : ObservableObject
         _itemsById.Clear();
         foreach (var e in all)
             _itemsById[e.Id] = new VersionListItemVM(e.Id, e.Type, e.Installed,
-                e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl);
+                e.ReleaseTime.ToString("yyyy-MM-dd"), e.ManifestUrl, e.GameDirectory);
     }
 
     [RelayCommand]
@@ -224,16 +224,21 @@ public partial class VersionListItemVM : ObservableObject
     public string ReleaseDate { get; }
     public string? ManifestUrl { get; }
 
+    /// <summary>版本所在游戏目录（安装/管理落点；空 = 未安装）</summary>
+    public string GameDirectory { get; }
+
     [ObservableProperty]
     public partial bool Installed { get; set; }
 
-    public VersionListItemVM(string id, string type, bool installed, string releaseDate, string? manifestUrl)
+    public VersionListItemVM(string id, string type, bool installed, string releaseDate, string? manifestUrl,
+        string gameDirectory = "")
     {
         Id = id;
         Type = type;
         Installed = installed;
         ReleaseDate = releaseDate;
         ManifestUrl = manifestUrl;
+        GameDirectory = gameDirectory;
     }
 }
 
@@ -306,9 +311,10 @@ public partial class VersionDetailViewModel : ViewModelBase
         DownloadProgressPercent = 0;
         SizeText = "预估体积：计算中…";
         HasSelection = true;
-        Loader = new LoaderPickerViewModel(item.Id, () => _onInstalled(item.Id));
+        var dir = item.GameDirectory.Length > 0 ? item.GameDirectory : GameDirectory.Detect();
+        Loader = new LoaderPickerViewModel(item.Id, dir, () => _onInstalled(item.Id));
         Manage = item.Installed
-            ? new VersionManageViewModel(GameDirectory.Detect(), item.Id, OnVersionDeleted)
+            ? new VersionManageViewModel(dir, item.Id, OnVersionDeleted)
             : null;
         _ = LoadSizeAsync(item);
     }

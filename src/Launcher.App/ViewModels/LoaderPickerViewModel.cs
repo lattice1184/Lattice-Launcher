@@ -11,7 +11,7 @@ namespace Launcher.App.ViewModels;
 /// </summary>
 public partial class LoaderPickerViewModel : ViewModelBase
 {
-    private readonly LoaderService _service = new();
+    private readonly LoaderService _service;
     private readonly string _mcVersion;
     private readonly Action _onInstalled;
     private LoaderKind _kind = LoaderKind.Fabric;
@@ -37,10 +37,11 @@ public partial class LoaderPickerViewModel : ViewModelBase
     [ObservableProperty]
     public partial double ProgressPercent { get; set; }
 
-    public LoaderPickerViewModel(string mcVersion, Action onInstalled)
+    public LoaderPickerViewModel(string mcVersion, string gameDirectory, Action onInstalled)
     {
         _mcVersion = mcVersion;
         _onInstalled = onInstalled;
+        _service = new LoaderService(gameDirectory: gameDirectory);
         Loaders.Add(new LoaderOptionVM("Fabric", LoaderKind.Fabric));
         Loaders.Add(new LoaderOptionVM("Quilt", LoaderKind.Quilt));
         Loaders.Add(new LoaderOptionVM("Forge", LoaderKind.Forge));

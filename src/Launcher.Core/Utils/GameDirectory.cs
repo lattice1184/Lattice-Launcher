@@ -4,8 +4,9 @@ namespace Launcher.Core.Utils;
 public enum GameDirectorySource { OwnDefault, Standard, Pcl, Custom }
 
 /// <summary>
-/// 游戏目录（.minecraft）解析，PCL2 式：优先启动器自建目录 Downloads\YanKa Launcher\.minecraft，
-/// 其次探测已有环境（PCL 启动器 / AppData 标准位），最后回退自建目录。
+/// 游戏目录（.minecraft）解析，PCL2 式：
+/// 安装目标（下载/安装落点）永远是启动器自建目录 Downloads\YanKa Launcher\.minecraft（或用户自配）；
+/// PCL / 官方等已有环境的目录只作为"扫描源"（版本可见可启动，但不接收新安装）。
 /// </summary>
 public static class GameDirectory
 {
@@ -19,42 +20,6 @@ public static class GameDirectory
         _ => "",
     };
 
-    /// <summary>判定 Detect() 当前命中的来源（与 Detect 同优先级顺序）</summary>
-    public static GameDirectorySource DetectSource()
-    {
-        if (LauncherSettings.Current.GameDirectory is { } custom
-            && Directory.Exists(Path.Combine(custom, "versions")))
-        {
-            return GameDirectorySource.Custom;
-        }
-
-        var own = OwnDefault();
-        if (Directory.Exists(Path.Combine(own, "versions"))
-            && Directory.EnumerateDirectories(Path.Combine(own, "versions")).Any())
-        {
-            return GameDirectorySource.OwnDefault;
-        }
-
-        var standard = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
-        if (Directory.Exists(Path.Combine(standard, "versions"))
-            && Directory.EnumerateDirectories(Path.Combine(standard, "versions")).Any())
-        {
-            return GameDirectorySource.Standard;
-        }
-
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        if (Directory.Exists(downloads))
-        {
-            foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
-            {
-                if (Directory.Exists(Path.Combine(dir, ".minecraft", "versions")))
-                    return GameDirectorySource.Pcl;
-            }
-        }
-
-        return GameDirectorySource.OwnDefault;
-    }
     /// <summary>启动器自建根（PCL2 式：Downloads\YanKa Launcher\.minecraft）</summary>
     public static string OwnDefault()
     {
@@ -63,46 +28,52 @@ public static class GameDirectory
         return Path.Combine(downloads, "YanKa Launcher", ".minecraft");
     }
 
-    public static string Detect()
+    /// <summary>安装目标目录（下载/安装落点）：用户自配 ?? 启动器自建。永不探测已有环境。</summary>
+    public static string InstallDir()
     {
-        // ① 设置文件指定路径（用户自配）
-        if (LauncherSettings.Current.GameDirectory is { } custom
-            && Directory.Exists(Path.Combine(custom, "versions")))
+        if (LauncherSettings.Current.GameDirectory is { } custom) return custom;
+        return OwnDefault();
+    }
+
+    /// <summary>安装目标来源（标签："本启动器"/"自配"）</summary>
+    public static GameDirectorySource DetectSource()
+        => LauncherSettings.Current.GameDirectory is null ? GameDirectorySource.OwnDefault : GameDirectorySource.Custom;
+
+    /// <summary>兼容入口：当前安装目标（历史调用点：下载/安装/默认启动目录）</summary>
+    public static string Detect() => InstallDir();
+
+    /// <summary>
+    /// 版本发现扫描源：安装目标 + 已有环境（AppData 标准位 / Downloads/PCL*），按序去重。
+    /// 已安装版本的显示与启动来自这些目录；新下载安装只进 InstallDir。
+    /// </summary>
+    public static List<(string Dir, GameDirectorySource Source)> ScanSourceDirs()
+    {
+        var list = new List<(string Dir, GameDirectorySource Source)>();
+        void Add(string dir, GameDirectorySource source)
         {
-            return custom;
+            if (string.IsNullOrEmpty(dir)) return;
+            if (list.Any(x => string.Equals(x.Dir, dir, StringComparison.OrdinalIgnoreCase))) return;
+            if (Directory.Exists(Path.Combine(dir, "versions"))) list.Add((dir, source));
         }
 
-        // ② 自建目录（已有版本下载）
-        var own = OwnDefault();
-        if (Directory.Exists(Path.Combine(own, "versions"))
-            && Directory.EnumerateDirectories(Path.Combine(own, "versions")).Any())
-        {
-            return own;
-        }
+        Add(InstallDir(), DetectSource());
 
-        // ③ 已有环境：AppData 标准位
         var standard = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
-        if (Directory.Exists(Path.Combine(standard, "versions"))
-            && Directory.EnumerateDirectories(Path.Combine(standard, "versions")).Any())
-        {
-            return standard;
-        }
+        Add(standard, GameDirectorySource.Standard);
 
-        // ④ PCL 启动器位置：Downloads/PCL*/.minecraft/versions
         var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         if (Directory.Exists(downloads))
         {
             foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
-            {
-                var candidate = Path.Combine(dir, ".minecraft");
-                if (Directory.Exists(Path.Combine(candidate, "versions"))) return candidate;
-            }
+                Add(Path.Combine(dir, ".minecraft"), GameDirectorySource.Pcl);
         }
-
-        // ⑤ 全新安装：自建目录
-        return own;
+        return list;
     }
+
+    /// <summary>由目录反查来源（标签用）</summary>
+    public static GameDirectorySource SourceOf(string dir)
+        => ScanSourceDirs().FirstOrDefault(x => string.Equals(x.Dir, dir, StringComparison.OrdinalIgnoreCase)).Source;
 
     /// <summary>确保自建目录结构存在（启动时调用一次；空目录也算已创建）</summary>
     public static void EnsureDefault()

@@ -55,8 +55,8 @@ public partial class ProjectCardVM : ObservableObject
         => d.Year > 2000 ? $"更新于 {d:yyyy-MM-dd}" : "";
 }
 
-/// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）</summary>
-public sealed record VersionInstanceVM(string Name, string SourceLabel = "")
+/// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）；GameDir 为版本所在游戏目录</summary>
+public sealed record VersionInstanceVM(string Name, string SourceLabel = "", string GameDir = "")
 {
     public string DisplayName => SourceLabel.Length > 0 ? $"{Name} · {SourceLabel}" : Name;
 }

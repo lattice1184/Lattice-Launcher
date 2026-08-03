@@ -6,7 +6,7 @@ namespace Launcher.Core.Tests;
 public class VersionClassifierTests
 {
     private static VersionManifestService.GameVersionEntry Entry(string id, string type, DateTime? release = null)
-        => new(id, type, false, release ?? new DateTime(2025, 6, 1), null);
+        => new(id, type, false, release ?? new DateTime(2025, 6, 1), null, "");
 
     [Theory]
     [InlineData("26w14a")]
