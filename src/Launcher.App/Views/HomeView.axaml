@@ -5,7 +5,11 @@
              x:Class="Launcher.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
-    <Grid ColumnDefinitions="340,1" ColumnSpacing="14">
+    <Grid ColumnSpacing="14">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1.1*" MinWidth="320"/>
+            <ColumnDefinition Width="2*"/>
+        </Grid.ColumnDefinitions>
         <!-- 左：启动控制（PCL 式集中左侧） -->
         <StackPanel Grid.Column="0" Spacing="10">
             <Button Padding="0" Background="Transparent" BorderThickness="0" HorizontalAlignment="Left"
@@ -100,15 +104,16 @@
                 <ItemsControl ItemsSource="{Binding LaunchHistory}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="svc:LaunchHistoryEntry">
-                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10" Margin="0,2">
-                                <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11"/>
-                                <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="12"
-                                           Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
+                            <Grid ColumnDefinitions="Auto,110,*,Auto" ColumnSpacing="10" Margin="0,2" MinHeight="24">
+                                <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="12" LineHeight="18"
+                                           Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="2" Text="{Binding Error}" FontSize="11"
-                                           Foreground="{StaticResource Danger}" TextTrimming="CharacterEllipsis"/>
+                                           Foreground="{StaticResource Danger}" VerticalAlignment="Center"/>
                                 <Border Grid.Column="3" CornerRadius="3" Padding="6,1" VerticalAlignment="Center"
                                         Background="#1E3A2E">
-                                    <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"/>
+                                    <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"
+                                               VerticalAlignment="Center"/>
                                 </Border>
                             </Grid>
                         </DataTemplate>

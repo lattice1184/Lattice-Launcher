@@ -162,16 +162,30 @@ public partial class AccountViewModel : ViewModelBase
             Refresh();
         }
         catch (OperationCanceledException) { MsAuthStatus = "已取消授权"; }
-        catch (TimeoutException ex) { MsAuthStatus = ex.Message; }
+        catch (TimeoutException ex) { MsAuthStatus = ex.Message; LogMsError(ex.Message); }
         catch (Exception ex)
         {
             MsAuthStatus = "";
             Status = $"登录失败: {ex.Message}";
             NotificationService.Error($"微软登录失败: {ex.Message}");
+            LogMsError(ex.ToString());
         }
         finally
         {
             IsMsAuthBusy = false;
         }
+    }
+
+    /// <summary>微软登录错误落盘（AppData\Launcher\logs\microsoft-auth.log）——下次失败可回看原因</summary>
+    private static void LogMsError(string detail)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "microsoft-auth.log"),
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {detail}{Environment.NewLine}");
+        }
+        catch { }
     }
 }

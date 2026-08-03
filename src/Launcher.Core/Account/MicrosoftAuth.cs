@@ -39,7 +39,19 @@ public static class MicrosoftAuth
             ["client_id"] = ClientId,
             ["scope"] = Scope,
         });
-        using var resp = await http.PostAsync(DeviceCodeUrl, form, ct);
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await http.PostAsync(DeviceCodeUrl, form, ct);
+        }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException("连接微软登录服务器超时——请检查网络/代理（国内直连微软端点可能不稳定）");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException($"无法连接微软登录服务器（{ex.Message}）——请检查网络或代理");
+        }
         var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
