@@ -18,11 +18,11 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
-    public override void OnFrameworkInitializationCompleted()
+    public override async void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // 启动时确保自建游戏目录结构（Downloads\YanKa Launcher\.minecraft）
+            // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
             // [生命周期引导] 注入 Avalonia 适配层
@@ -37,6 +37,14 @@ public partial class App : Application
             {
                 DataContext = new MainViewModel(),
             };
+            desktop.MainWindow.Show();
+
+            // 首次启动询问游戏目录（settings.json 未指定时），确认后写入，之后不再询问
+            if (LauncherSettings.Current.GameDirectory is null)
+            {
+                try { await new GameDirSetupWindow().ShowDialog(desktop.MainWindow); }
+                catch (Exception ex) { System.Console.Error.WriteLine($"[FATAL] GameDirSetupWindow: {ex}"); }
+            }
 
             Guard("Lifecycle.OnLoading", () => Lifecycle.OnLoading());
             Guard("Lifecycle.OnWindowCreated", () => Lifecycle.OnWindowCreated());

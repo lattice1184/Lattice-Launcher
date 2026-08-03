@@ -20,12 +20,20 @@ public static class GameDirectory
         _ => "",
     };
 
-    /// <summary>启动器自建根（PCL2 式：Downloads\YanKa Launcher\.minecraft）</summary>
+    /// <summary>自建目录候选（C 盘 Downloads 历史位 + D 盘位）——扫描源用，换盘后旧版本仍可见</summary>
+    private static IEnumerable<string> OwnCandidates()
+    {
+        yield return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "YanKa Launcher", ".minecraft");
+        if (Directory.Exists("D:\\")) yield return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+    }
+
+    /// <summary>启动器自建根（优先 D 盘 D:\YanKa Launcher\.minecraft；无 D 盘回退 C 盘 Downloads 历史位）</summary>
     public static string OwnDefault()
     {
-        var downloads = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        return Path.Combine(downloads, "YanKa Launcher", ".minecraft");
+        if (Directory.Exists("D:\\")) return Path.Combine("D:\\", "YanKa Launcher", ".minecraft");
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "YanKa Launcher", ".minecraft");
     }
 
     /// <summary>安装目标目录（下载/安装落点）：用户自配 ?? 启动器自建。永不探测已有环境。</summary>
@@ -57,6 +65,10 @@ public static class GameDirectory
         }
 
         Add(InstallDir(), DetectSource());
+
+        // 自建目录历史位置（跨盘扫描：C 盘旧位 / D 盘新位，换盘后旧版本仍可见）
+        foreach (var candidate in OwnCandidates())
+            Add(candidate, GameDirectorySource.OwnDefault);
 
         var standard = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft");
