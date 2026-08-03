@@ -5,10 +5,11 @@ using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
+using PCL.Core.Minecraft.ResourceProject.Curseforge;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>生态卡片 VM（图标异步加载，下载量格式化）</summary>
+/// <summary>生态卡片 VM（图标异步加载，下载量格式化；来源：modrinth/curseforge）</summary>
 public partial class ProjectCardVM : ObservableObject
 {
     public string Id { get; }
@@ -20,6 +21,12 @@ public partial class ProjectCardVM : ObservableObject
     public string UpdatedText { get; }
     public string IconUrl { get; }
     public ProjectType Type { get; }
+    /// <summary>来源键：modrinth / curseforge</summary>
+    public string Source { get; }
+    /// <summary>来源显示名（卡片角标）</summary>
+    public string SourceText { get; }
+    /// <summary>是否显示关注数（CF 无关注字段）</summary>
+    public bool ShowFollows => Source != "curseforge";
     public string Initial => Title.Length > 0 ? Title[..1] : "?";
 
     [ObservableProperty]
@@ -53,6 +60,8 @@ public partial class ProjectCardVM : ObservableObject
     public ProjectCardVM(ModrinthSearchHit hit)
     {
         Id = hit.ProjectId;
+        Source = "modrinth";
+        SourceText = "Modrinth";
         Title = hit.Title;
         Author = hit.Author;
         Description = hit.Description;
@@ -75,6 +84,8 @@ public partial class ProjectCardVM : ObservableObject
     public ProjectCardVM(ModrinthProjectDetail d)
     {
         Id = d.Id;
+        Source = "modrinth";
+        SourceText = "Modrinth";
         Title = d.Title;
         Author = "";
         Description = d.Description;
@@ -92,6 +103,36 @@ public partial class ProjectCardVM : ObservableObject
         IsFavorite = FavoritesService.IsFavorite(Id);
         _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
     }
+
+    /// <summary>CurseForge 搜索卡片（Id 带 cf- 前缀防收藏冲突；CF 无关注/更新日期字段）</summary>
+    public ProjectCardVM(CurseforgeProject p)
+    {
+        Id = $"cf-{p.id}";
+        Source = "curseforge";
+        SourceText = "CurseForge";
+        Title = p.name;
+        Author = p.authors is { Count: > 0 } ? string.Join("、", p.authors.Select(a => a.name)) : "";
+        Description = p.summary ?? "";
+        DownloadsText = FormatCount(p.downloadCount);
+        FollowsText = "";
+        UpdatedText = "";
+        IconUrl = p.logo?.thumbnailUrl ?? "";
+        Type = p.classId switch
+        {
+            4471 => ProjectType.Modpack,
+            12 => ProjectType.Resourcepack,
+            6552 => ProjectType.Shader,
+            _ => ProjectType.Mod,
+        };
+        IsFavorite = FavoritesService.IsFavorite(Id);
+        _ = ImageLoader.LoadAsync(IconUrl, bmp => Icon = bmp);
+    }
+
+    /// <summary>解析卡片 Id → (来源, 原始 id)：cf- 前缀 → curseforge；否则 modrinth</summary>
+    public static (string Source, string RawId) ParseId(string id)
+        => id.StartsWith("cf-", StringComparison.Ordinal)
+            ? ("curseforge", id[3..])
+            : ("modrinth", id);
 
     /// <summary>下载量格式化：1234567 → 1.2M，12345 → 12.3K</summary>
     public static string FormatCount(long n) => n switch

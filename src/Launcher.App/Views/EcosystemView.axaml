@@ -64,6 +64,14 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
+                <ComboBox ItemsSource="{x:Static vm:EcosystemViewModel.SourceOptions}"
+                          SelectedItem="{Binding SelectedSource}" Width="100">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+SourceOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Button Content="★ 收藏" Classes="ghost" FontSize="11" Padding="10,3"
                         Classes.active="{Binding FavoritesOnly}"
                         Command="{Binding ToggleFavoritesCommand}"/>
@@ -127,6 +135,10 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
                                                                MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                                    <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding SourceText}" FontSize="10" Foreground="#B5F4E9"/>
+                                                    </Border>
                                                     <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
                                                 </StackPanel>
                                                 <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
@@ -136,7 +148,8 @@
                                                 <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
                                                     <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
                                                 </TextBlock>
-                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
+                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right"
+                                                           IsVisible="{Binding ShowFollows}">
                                                     <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
                                                 </TextBlock>
                                                 <TextBlock Text="{Binding UpdatedText}" Foreground="{StaticResource TextDim}"
