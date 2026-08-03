@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Text.Json;
 using Launcher.Core.Download;
+using Launcher.Core.Ecosystem;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Utils;
 using PCL.Core.Minecraft.ResourceProject.Curseforge;
@@ -119,6 +120,75 @@ public sealed class CurseForgeService
         var sha1 = file.hashes?.algo == 1 ? file.hashes.value : null; // CF algo: 1=SHA1 2=MD5
         await _downloads.DownloadFileAsync(file.downloadUrl, destPath, sha1, file.fileLength, progress, ct);
         return destPath;
+    }
+
+    /// <summary>
+    /// 安装主文件 + 解析并递归安装全部必需依赖（PCL2 式一键安装体验）。
+    /// 依赖按解析器选定的文件安装；取不到时回退最佳文件。
+    /// </summary>
+    public async Task<DependencyInstallReport> InstallWithDependenciesAsync(
+        int projectId, CurseforgeFile file, string instanceId, ProjectType type,
+        string? gameVersion,
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
+    {
+        var report = new DependencyInstallReport();
+        var projectIdText = projectId.ToString();
+
+        // 1. 主文件
+        try
+        {
+            var mainPath = await InstallAsync(projectId, file, instanceId, type, progress, ct);
+            report.Installed.Add(new InstalledDependency(projectIdText, file.id.ToString(), mainPath));
+        }
+        catch (Exception ex)
+        {
+            report.Failed.Add(new FailedDependency(projectIdText, ex.Message));
+            return report;
+        }
+
+        // 2. 解析依赖树
+        var resolver = new ModDependencyResolver();
+        var request = new ModDependencyRequest
+        {
+            TargetMinecraftVersion = gameVersion ?? "",
+            RequiredDependencies = EcosystemDependencyAdapter.ToDependencyReferences(file),
+            ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion),
+        };
+        var result = resolver.Resolve(request);
+
+        // 3. 逐个安装依赖（依赖均为 MOD 类型，装到实例 mods 目录）
+        foreach (var dep in result.ToInstall)
+        {
+            if (ct.IsCancellationRequested) break;
+            try
+            {
+                if (!int.TryParse(dep.ProjectId, out var depModId))
+                {
+                    report.Failed.Add(new FailedDependency(dep.ProjectId, "无效项目 ID"));
+                    continue;
+                }
+                var files = await GetFilesAsync(depModId, gameVersion, ct);
+                var depFile = files.FirstOrDefault(f => f.id.ToString() == dep.File.Id)
+                              ?? SelectBestFile(files, gameVersion);
+                if (depFile is null)
+                {
+                    report.Failed.Add(new FailedDependency(dep.ProjectId, "未找到兼容文件"));
+                    continue;
+                }
+                var path = await InstallAsync(depModId, depFile, instanceId, ProjectType.Mod, progress, ct);
+                report.Installed.Add(new InstalledDependency(dep.ProjectId, depFile.id.ToString(), path));
+            }
+            catch (Exception ex)
+            {
+                report.Failed.Add(new FailedDependency(dep.ProjectId, ex.Message));
+            }
+        }
+
+        // 4. 未解析依赖
+        foreach (var un in result.Unresolved)
+            report.Failed.Add(new FailedDependency(un.ProjectId, un.Reason));
+
+        return report;
     }
 
     private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct)
