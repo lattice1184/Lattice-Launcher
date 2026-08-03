@@ -47,12 +47,17 @@ public sealed class VersionManifestService
         Directory.CreateDirectory(_cacheDirectory);
         var cachePath = Path.Combine(_cacheDirectory, "version_manifest_v2.json");
 
+        // TTL 24h：缓存超期后强制重新拉取（否则新发布版本永远不可见）
         if (!force && File.Exists(cachePath))
         {
             try
             {
-                var cached = JsonSerializer.Deserialize<VersionManifest>(await File.ReadAllTextAsync(cachePath, ct));
-                if (cached is not null && cached.Versions.Count > 0) return cached;
+                var info = new FileInfo(cachePath);
+                if (DateTime.UtcNow - info.LastWriteTimeUtc < TimeSpan.FromHours(24))
+                {
+                    var cached = JsonSerializer.Deserialize<VersionManifest>(await File.ReadAllTextAsync(cachePath, ct));
+                    if (cached is not null && cached.Versions.Count > 0) return cached;
+                }
             }
             catch (Exception) { /* 缓存损坏则重新拉取 */ }
         }

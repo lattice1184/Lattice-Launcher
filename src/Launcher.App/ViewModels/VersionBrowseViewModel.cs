@@ -307,6 +307,9 @@ public partial class VersionDetailViewModel : ViewModelBase
     private readonly Action<string> _onInstalled;
     private int _sizeGeneration;
 
+    /// <summary>当前选中版本所在目录（Repair 时用版本实际目录，不默认 InstallDir）</summary>
+    private string _currentDir = "";
+
     [ObservableProperty]
     public partial string Id { get; set; } = "";
 
@@ -383,6 +386,7 @@ public partial class VersionDetailViewModel : ViewModelBase
         SizeText = "预估体积：计算中…";
         HasSelection = true;
         var dir = item.GameDirectory.Length > 0 ? item.GameDirectory : GameDirectory.Detect();
+        _currentDir = dir;
         Loader = new LoaderPickerViewModel(item.Id, dir, () => _onInstalled(item.Id));
         Manage = item.Installed
             ? new VersionManageViewModel(dir, item.Id, OnVersionDeleted)
@@ -470,9 +474,13 @@ public partial class VersionDetailViewModel : ViewModelBase
         DownloadProgressPercent = 0;
         try
         {
-            var version = await _installer.GetOrFetchVersionJsonAsync(targetId, targetUrl, CancellationToken.None);
+            // 修复（已装版本）用版本所在目录；首次下载用默认安装目录
+            var installer = repair && _currentDir.Length > 0
+                ? new VersionInstaller(gameDirectory: _currentDir)
+                : _installer;
+            var version = await installer.GetOrFetchVersionJsonAsync(targetId, targetUrl, CancellationToken.None);
             var task = DownloadManager.Instance.EnqueueGroup($"下载 {targetId}", (ctx, ct) =>
-                _installer.InstallAsync(version, ctx, ct));
+                installer.InstallAsync(version, ctx, ct));
 
             void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
             {

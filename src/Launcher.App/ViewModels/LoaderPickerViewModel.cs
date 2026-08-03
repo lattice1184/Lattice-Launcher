@@ -64,15 +64,19 @@ public partial class LoaderPickerViewModel : ViewModelBase
     }
 
     /// <summary>加载该加载器可用版本（最新在前，最多展示 8 个）</summary>
+    private int _versionGen;
+
     public async Task LoadVersionsAsync()
     {
         if (IsLoadingVersions) return;
         IsLoadingVersions = true;
         StatusText = "查询版本中…";
+        var gen = ++_versionGen;
         try
         {
             Versions.Clear();
             var list = await _service.GetLoaderVersionsAsync(_kind, _mcVersion, CancellationToken.None);
+            if (gen != _versionGen) return; // 快速切换加载器：旧响应丢弃
             foreach (var v in list.Take(8)) Versions.Add(v.Version);
             if (Versions.Count == 0)
             {

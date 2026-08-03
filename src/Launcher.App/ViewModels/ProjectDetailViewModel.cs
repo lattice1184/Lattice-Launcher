@@ -367,6 +367,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 ProgressState = "安装完成";
                 Progress = 100;
                 InstallButtonText = "已安装";
+                if (_card.Type == ProjectType.Modpack)
+                    NotificationService.Info("整合包已下载到 downloads/modpacks——可到【版本】页点「导入整合包」创建实例");
             }
             else if (task.State == DownloadTaskState.Completed)
             {

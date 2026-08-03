@@ -63,6 +63,7 @@ public partial class MainViewModel : ViewModelBase
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.EnsureLoadedAsync(); // 首次进入版本页才拉清单
+        if (page == "server") _ = Server.RefreshVersionsAsync(); // 每次进开服页刷新已装版本（新装的立即可见）
         CurrentPage = page switch
         {
             "version" => Versions,

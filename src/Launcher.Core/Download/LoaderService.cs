@@ -86,7 +86,11 @@ public sealed class LoaderService
     /// </summary>
     private async Task<List<LoaderMetaVersion>> GetNeoForgeVersionsAsync(string mcVersion, CancellationToken ct)
     {
-        var prefix = mcVersion.StartsWith("1.", StringComparison.Ordinal) ? mcVersion[2..] + "." : mcVersion + ".";
+        // NeoForge 版本 = MC 去掉 "1." 且补全补丁号：1.21 → 21.0，1.21.1 → 21.1（防止 21. 前缀误匹配 21.1-21.8）
+        var parts = mcVersion.Split('.');
+        var prefix = mcVersion.StartsWith("1.", StringComparison.Ordinal)
+            ? (parts.Length >= 3 ? parts[1] + "." + parts[2] : parts[1] + ".0") + "."
+            : mcVersion + ".";
         var xml = await _http.GetStringAsync(NeoForgeMetadata, ct);
         var doc = XDocument.Parse(xml);
         return doc.Descendants("version").Select(v => v.Value)

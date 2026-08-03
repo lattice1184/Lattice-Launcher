@@ -58,11 +58,14 @@ public partial class VersionManageViewModel : ViewModelBase
         StatusText = "加载中…";
         try
         {
-            await Task.Run(() =>
-            {
-                ScanMods();
-                ScanSaves();
-            });
+            // 后台只收集 List；ObservableCollection 的写入统一在 UI 线程（避免跨线程集合异常）
+            var (mods, saves) = await Task.Run(() => (CollectMods(), CollectSaves()));
+            OnPropertyChanged(nameof(ModsCountText));
+            OnPropertyChanged(nameof(SavesCountText));
+            Mods.Clear();
+            foreach (var m in mods) Mods.Add(m);
+            Saves.Clear();
+            foreach (var sv in saves) Saves.Add(sv);
             OnPropertyChanged(nameof(ModsCountText));
             OnPropertyChanged(nameof(SavesCountText));
             StatusText = "";
@@ -79,18 +82,19 @@ public partial class VersionManageViewModel : ViewModelBase
 
     // ---------- MOD ----------
 
-    private void ScanMods()
+    private List<ModItemVM> CollectMods()
     {
-        Mods.Clear();
-        if (!Directory.Exists(Path.Combine(RootDir, "mods"))) return;
-        foreach (var f in Directory.EnumerateFiles(Path.Combine(RootDir, "mods"), "*.jar*"))
+        var list = new List<ModItemVM>();
+        var modsDir = Path.Combine(RootDir, "mods");
+        if (!Directory.Exists(modsDir)) return list;
+        foreach (var f in Directory.EnumerateFiles(modsDir, "*.jar*"))
         {
             var file = Path.GetFileName(f);
             var disabled = file.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
-            Mods.Add(new ModItemVM(f, disabled ? file[..^".disabled".Length] : file,
+            list.Add(new ModItemVM(f, disabled ? file[..^".disabled".Length] : file,
                 new FileInfo(f).Length));
         }
-        OnPropertyChanged(nameof(ModsCountText));
+        return list;
     }
 
     [RelayCommand]
@@ -98,27 +102,29 @@ public partial class VersionManageViewModel : ViewModelBase
     {
         try
         {
-            var disabled = Path.Combine(Path.GetDirectoryName(mod.Path)!, Path.GetFileName(mod.Path) + ".disabled");
-            var enabled = mod.Path;
-            File.Move(disabled, enabled); // 启
-        }
-        catch { /* 禁用路径不存在 → 尝试禁用 */ }
-        try
-        {
-            if (File.Exists(mod.Path))
-            {
-                File.Move(mod.Path, mod.Path + ".disabled"); // 禁
-            }
+            var path = mod.Path;
+            if (path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase))
+                File.Move(path, path[..^".disabled".Length]); // 启用：xxx.jar.disabled → xxx.jar
+            else
+                File.Move(path, path + ".disabled");           // 禁用：xxx.jar → xxx.jar.disabled
         }
         catch { }
-        ScanMods();
+        ReloadMods();
     }
 
     [RelayCommand]
     private void DeleteMod(ModItemVM mod)
     {
         try { File.Delete(mod.Path); } catch { }
-        ScanMods();
+        ReloadMods();
+    }
+
+    /// <summary>启停/删除后重扫 MOD（UI 线程收集+填充）</summary>
+    private void ReloadMods()
+    {
+        Mods.Clear();
+        foreach (var m in CollectMods()) Mods.Add(m);
+        OnPropertyChanged(nameof(ModsCountText));
     }
 
     [RelayCommand]
@@ -126,26 +132,26 @@ public partial class VersionManageViewModel : ViewModelBase
 
     // ---------- 存档（借用 PCL.Core SaveManager 解析 level.dat） ----------
 
-    private void ScanSaves()
+    private List<SaveItemVM> CollectSaves()
     {
-        Saves.Clear();
+        var list = new List<SaveItemVM>();
         var savesDir = Path.Combine(RootDir, "saves");
-        if (!Directory.Exists(savesDir)) return;
+        if (!Directory.Exists(savesDir)) return list;
         try
         {
             foreach (var info in new SaveManager().ScanSaveFoldersAsync(savesDir, CancellationToken.None)
                          .GetAwaiter().GetResult())
             {
-                Saves.Add(new SaveItemVM(info.LevelName, info.LastPlayedUtc, info.FolderPath));
+                list.Add(new SaveItemVM(info.LevelName, info.LastPlayedUtc, info.FolderPath));
             }
         }
         catch { /* level.dat 解析失败不阻塞（有文件夹就显示） */ }
-        if (Saves.Count == 0)
+        if (list.Count == 0)
         {
             foreach (var dir in Directory.EnumerateDirectories(savesDir))
-                Saves.Add(new SaveItemVM(Path.GetFileName(dir), DateTime.MinValue, dir));
+                list.Add(new SaveItemVM(Path.GetFileName(dir), DateTime.MinValue, dir));
         }
-        OnPropertyChanged(nameof(SavesCountText));
+        return list;
     }
 
     [RelayCommand]

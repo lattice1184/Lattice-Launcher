@@ -55,11 +55,25 @@ public sealed class ModpackImporter
         }
     }
 
+    /// <summary>版本 id 清洗：非法文件名字符替换为下划线（防路径注入/目录穿越/非法目录名）</summary>
+    public static string SafeId(string raw)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new System.Text.StringBuilder(raw.Length);
+        foreach (var ch in raw)
+        {
+            if (ch == '\\' || ch == '/' || invalid.Contains(ch)) sb.Append('_');
+            else sb.Append(ch);
+        }
+        var id = sb.ToString().Trim();
+        return string.IsNullOrEmpty(id) ? "modpack" : id;
+    }
+
     /// <summary>解压为隔离版本实例并写安装标记（zip 内 manifest.json 跳过；防目录穿越）</summary>
     public static void Import(string zipPath, string gameDir, CancellationToken ct)
     {
         var info = Parse(zipPath, out _) ?? throw new InvalidDataException("不支持的整合包格式");
-        var versionDir = Path.Combine(gameDir, "versions", info.VersionId);
+        var versionDir = Path.Combine(gameDir, "versions", SafeId(info.VersionId));
         Directory.CreateDirectory(versionDir);
 
         using var zip = ZipFile.OpenRead(zipPath);

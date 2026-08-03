@@ -14,6 +14,9 @@ namespace Launcher.Core.Download;
 /// </summary>
 public sealed class DownloadService
 {
+    /// <summary>同目标文件并发下载锁（同一 destPath 串行——避免并发写同一 jar 写坏）</summary>
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new();
+
     // 256KB 以上走 8 连接分片：国内直连 Modrinth CDN 单连接被限速（几十 KB/s），
     // 多连接分片可显著提速；弱网分片失败自动回退单连接（DownloadChunkedAsync catch）
     private const long ChunkThreshold = 256 * 1024;
@@ -96,6 +99,23 @@ public sealed class DownloadService
     /// 校验失败（InvalidDataException）与网络错误（HttpRequestException）都触发换源。
     /// </summary>
     public async Task DownloadFileAsync(
+        string url, string destPath, string? expectedSha1, long? expectedSize,
+        DownloadProgressHandler? progress = null, CancellationToken ct = default)
+    {
+        // 同目标串行（并发任务下载同一 jar 时避免互相覆盖/写坏）
+        var fileLock = FileLocks.GetOrAdd(destPath, _ => new SemaphoreSlim(1, 1));
+        await fileLock.WaitAsync(ct);
+        try
+        {
+            await DownloadFileCoreAsync(url, destPath, expectedSha1, expectedSize, progress, ct);
+        }
+        finally
+        {
+            fileLock.Release();
+        }
+    }
+
+    private async Task DownloadFileCoreAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {

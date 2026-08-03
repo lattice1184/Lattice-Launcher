@@ -96,7 +96,8 @@ public partial class ServerViewModel : ViewModelBase
         _ = RefreshVersionsAsync();
     }
 
-    private async Task RefreshVersionsAsync()
+    /// <summary>刷新已装版本（构造 + 每次进入开服页调用——新装的版本立即可见）</summary>
+    public async Task RefreshVersionsAsync()
     {
         try
         {
@@ -105,7 +106,20 @@ public partial class ServerViewModel : ViewModelBase
             InstalledVersions.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 InstalledVersions.Add(new VersionInstanceVM(e.Id));
-            if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];
+            // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ PCL/官方扫描源
+            foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
+            {
+                var versionsDir = Path.Combine(dir, "versions");
+                if (!Directory.Exists(versionsDir)) continue;
+                foreach (var d in Directory.EnumerateDirectories(versionsDir))
+                {
+                    var id = Path.GetFileName(d);
+                    if (InstalledVersions.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (File.Exists(Path.Combine(d, $"{id}.json")))
+                        InstalledVersions.Add(new VersionInstanceVM(id));
+                }
+            }
+            if (InstalledVersions.Count > 0 && SelectedVersion is null) SelectedVersion = InstalledVersions[0];
         }
         catch { }
     }
@@ -257,14 +271,14 @@ public partial class ServerViewModel : ViewModelBase
         }
     }
 
-    /// <summary>优雅停止（stop 命令 + 超时强杀）</summary>
+    /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
     [RelayCommand]
-    private void StopServer()
+    private async Task StopServer()
     {
         if (!IsRunning) return;
         Status = "正在停止…";
         AppendLog("§ 发送 stop 命令…");
-        _process.Stop();
+        await Task.Run(() => _process.Stop());
     }
 
     /// <summary>发送控制台命令（回车触发；输入框清空）</summary>

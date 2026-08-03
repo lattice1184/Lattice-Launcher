@@ -170,6 +170,9 @@ public partial class EcosystemViewModel : ViewModelBase
     // 筛选变化立即搜索（不走防抖——Modrinth facets 服务器筛选快，延迟全在防抖；竞态 seq 丢弃旧响应）
     partial void OnSelectedLoaderChanged(string? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedGameVersionChanged(GameVersionOption? value) => _ = RunSearchAsync(reset: true);
+
+    /// <summary>切换目标实例 → 立即按新实例重新搜索（列表与实例保持一致）</summary>
+    partial void OnSelectedInstanceChanged(VersionInstanceVM? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedCategoryChanged(CategoryOption? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedSortChanged(SortOption value) => _ = RunSearchAsync(reset: true);
 
@@ -178,7 +181,7 @@ public partial class EcosystemViewModel : ViewModelBase
     private void SelectLoader(string loader)
         => SelectedLoader = loader == "全部" ? null : loader.ToLowerInvariant();
 
-    /// <summary>初始化：扫描已装实例并触发首搜</summary>
+    /// <summary>初始化：扫描已装实例（跨扫描源补漏：加载器版本不在 Mojang manifest）并触发首搜</summary>
     public async Task InitializeAsync()
     {
         try
@@ -188,6 +191,19 @@ public partial class EcosystemViewModel : ViewModelBase
             Instances.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 Instances.Add(new VersionInstanceVM(e.Id));
+            // 目录补漏：fabric/forge/neoforge/quilt 等不在 manifest 的已装版本
+            foreach (var (dir, _) in Launcher.Core.Utils.GameDirectory.ScanSourceDirs())
+            {
+                var versionsDir = Path.Combine(dir, "versions");
+                if (!Directory.Exists(versionsDir)) continue;
+                foreach (var d in Directory.EnumerateDirectories(versionsDir))
+                {
+                    var id = Path.GetFileName(d);
+                    if (Instances.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (File.Exists(Path.Combine(d, $"{id}.json")))
+                        Instances.Add(new VersionInstanceVM(id));
+                }
+            }
         }
         catch { /* 实例扫描失败不阻塞搜索 */ }
 
@@ -284,6 +300,12 @@ public partial class EcosystemViewModel : ViewModelBase
         _ = RunSearchAsync(reset: false);
     }
 
+    /// <summary>项目类型匹配（大小写不敏感；MOD 匹配全部非特殊类型）</summary>
+    private bool TypeMatches(string? projectType)
+        => _type == ProjectType.Mod
+            ? projectType is not ("modpack" or "resourcepack" or "shader")
+            : string.Equals(projectType, _type.ToString(), StringComparison.OrdinalIgnoreCase);
+
     /// <summary>收藏模式：逐项目拉详情组装卡片（收藏数小，直拉可接受）</summary>
     private async Task LoadFavoritesAsync(int seq, CancellationToken ct)
     {
@@ -295,7 +317,7 @@ public partial class EcosystemViewModel : ViewModelBase
             try
             {
                 var detail = await _eco.GetProjectAsync(id, ct);
-                if (detail is not null && detail.ProjectType == (_type == ProjectType.Mod ? null : _type.ToString()))
+                if (detail is not null && TypeMatches(detail.ProjectType))
                     Cards.Add(new ProjectCardVM(detail));
             }
             catch { /* 单个拉取失败跳过 */ }
@@ -337,7 +359,12 @@ public partial class EcosystemViewModel : ViewModelBase
                     $"将安装 {deps.Count} 个前置：{list}", $"安装 {card.Title}", "全部安装", "仅主文件");
             }
 
-            var instanceName = instance?.Name ?? "modpack";
+            if (instance is null)
+            {
+                NotificationService.Error("请先在顶部选择目标实例");
+                return;
+            }
+            var instanceName = instance.Name;
             var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", (p, ct) =>
                 includeDeps
                     ? _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,

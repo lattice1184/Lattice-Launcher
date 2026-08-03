@@ -39,11 +39,12 @@ public sealed class GameLaunchService
         }
         if (LauncherSettings.Current.AutoChineseEnabled) AutoChinese.Apply(applyDir);
 
-        // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）
+        // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）。
+        //    版本 JSON 无 javaVersion 时按 MC 版本推断（<1.17 → Java 8；1.17+ → 17/21），避免旧版本误选 Java 21
         onStage?.Invoke("检测 Java");
         var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
             ? custom
-            : JavaSelector.Pick(version.JavaVersion?.MajorVersion);
+            : JavaSelector.Pick(version.JavaVersion?.MajorVersion ?? InferJavaMajor(version.Id));
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
         onStage?.Invoke("解压 natives");
@@ -78,6 +79,16 @@ public sealed class GameLaunchService
 
         onStage?.Invoke("启动 JVM");
         return LaunchProcess.Start(profile, onLog, ct);
+    }
+
+    /// <summary>按 MC 版本推断所需 Java 大版本（version.json 无 javaVersion 时）：1.17+ → 17；更旧 → 8</summary>
+    private static int InferJavaMajor(string versionId)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(versionId, @"^(\d+)\.(\d+)");
+        if (!m.Success) return 17;
+        var major = int.Parse(m.Groups[1].Value);
+        var minor = int.Parse(m.Groups[2].Value);
+        return major > 1 || (major == 1 && minor >= 17) ? 17 : 8;
     }
 
     /// <summary>log4j 配置文件缺失时写入 Minecraft 标准模板（防 log4j 无配置告警）</summary>
@@ -116,3 +127,4 @@ public sealed class GameLaunchService
         </Configuration>
         """;
 }
+

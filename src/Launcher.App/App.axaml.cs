@@ -27,7 +27,19 @@ public partial class App : Application
 
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
-            LogService.FatalErrorReporter = message => System.Console.Error.WriteLine($"[FATAL] {message}");
+            LogService.FatalErrorReporter = message =>
+            {
+                System.Console.Error.WriteLine($"[FATAL] {message}");
+                try
+                {
+                    var logDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+                    Directory.CreateDirectory(logDir);
+                    File.AppendAllText(Path.Combine(logDir, $"crash-{DateTime.Now:yyyyMMdd-HHmmss}.txt"),
+                        $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                }
+                catch { /* 日志写入失败不阻塞 */ }
+            };
 
             // 启动 PCL.Core 生命周期（Avalonia 驱动消息循环，不运行 WPF 容器）。
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
