@@ -11,13 +11,13 @@
         </StackPanel>
 
         <ScrollViewer>
-            <StackPanel Spacing="10" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel Spacing="8" MaxWidth="720" HorizontalAlignment="Left">
 
                 <!-- 游戏目录 -->
-                <Border Classes="card" Padding="16">
-                    <StackPanel Spacing="10">
+                <Border Classes="card" Padding="12">
+                    <StackPanel Spacing="8">
                         <TextBlock Text="游戏目录" FontSize="14" FontWeight="SemiBold"/>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                             <TextBox Grid.Column="0" Text="{Binding GameDirectoryText}" IsReadOnly="True"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                                 <Button Content="浏览…" Classes="ghost" Click="OnBrowseGameDir"/>
@@ -25,7 +25,7 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock Text="{Binding SourceLabelText}" Classes="dim" FontSize="11"/>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="版本隔离（各版本独立存档/模组，不串门）" Classes="sub" FontSize="12"
                                        VerticalAlignment="Center"/>
                             <ToggleSwitch IsChecked="{Binding VersionIsolation}"/>
@@ -34,11 +34,11 @@
                 </Border>
 
                 <!-- 启动 -->
-                <Border Classes="card" Padding="16">
-                    <StackPanel Spacing="10">
+                <Border Classes="card" Padding="12">
+                    <StackPanel Spacing="8">
                         <TextBlock Text="启动" FontSize="14" FontWeight="SemiBold"/>
 
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="内存分配" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <ComboBox Grid.Column="1" ItemsSource="{Binding MemoryPresets}"
                                       SelectedItem="{Binding SelectedMemoryPreset}" HorizontalAlignment="Left">
@@ -56,7 +56,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <TextBox Grid.Column="1" Text="{Binding JavaPathText}" Watermark="自动选配（PCL 运行库 / PATH）"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
@@ -65,13 +65,13 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                             <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"
                                      Watermark="-Dxxx=1 -Xss2m（空格分隔）"/>
                         </Grid>
 
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="启动时自动写入中文语言" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <ToggleSwitch IsChecked="{Binding AutoChineseEnabled}"/>
                         </StackPanel>
@@ -79,10 +79,10 @@
                 </Border>
 
                 <!-- 外观 -->
-                <Border Classes="card" Padding="16">
-                    <StackPanel Spacing="10">
+                <Border Classes="card" Padding="12">
+                    <StackPanel Spacing="8">
                         <TextBlock Text="外观" FontSize="14" FontWeight="SemiBold"/>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="窗口透明度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <Slider Grid.Column="1" Minimum="0.7" Maximum="1.0" TickFrequency="0.05"
                                     Value="{Binding WindowOpacity}"/>
@@ -90,7 +90,7 @@
                                        Classes="dim" FontSize="12" Width="36" TextAlignment="Center"
                                        VerticalAlignment="Center"/>
                         </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="强调色" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <ItemsControl ItemsSource="{x:Static vm:SettingsViewModel.AccentPresets}">
                                 <ItemsControl.ItemsPanel>
@@ -107,7 +107,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="界面密度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <Button Content="紧凑" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
                                     CommandParameter="0"/>
@@ -127,20 +127,20 @@
                 </Border>
 
                 <!-- 下载 -->
-                <Border Classes="card" Padding="16">
-                    <StackPanel Spacing="10">
+                <Border Classes="card" Padding="12">
+                    <StackPanel Spacing="8">
                         <TextBlock Text="下载" FontSize="14" FontWeight="SemiBold"/>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="官方源失败时回退镜像（BMCLAPI）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <ToggleSwitch IsChecked="{Binding MirrorFallbackEnabled}"/>
                         </StackPanel>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="最大并发下载数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <Slider Grid.Column="1" Minimum="1" Maximum="16" TickFrequency="1" Value="{Binding MaxConcurrentDownloads}"/>
                             <TextBlock Grid.Column="2" Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
                                        Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                             <TextBlock Text="下载限速（KB/s，0=不限）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                             <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
                             <TextBlock Grid.Column="2" Text="{Binding SpeedLimitKbps}" Classes="dim" FontSize="12"

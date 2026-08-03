@@ -9,9 +9,9 @@
     </Application.DataTemplates>
 
     <Application.Resources>
-        <!-- 页面切换动画（资源）：淡入（默认）+ 右滑入（内容区/详情区） -->
-        <CrossFade x:Key="PageFade" Duration="0:0:0.15"/>
-        <PageSlide x:Key="PageSlideRight" Orientation="Horizontal" Duration="0:0:0.18"/>
+        <!-- 页面切换动画（资源）：淡入+滑移（默认）+ 右滑入（内容区/详情区） -->
+        <CrossFade x:Key="PageFade" Duration="0:0:0.22"/>
+        <PageSlide x:Key="PageSlideRight" Orientation="Horizontal" Duration="0:0:0.22"/>
 
         <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
         <!-- 表面层 -->
@@ -36,6 +36,15 @@
         <CornerRadius x:Key="RadiusSmall">3</CornerRadius>
         <CornerRadius x:Key="RadiusMedium">4</CornerRadius>
         <CornerRadius x:Key="RadiusLarge">6</CornerRadius>
+        <!-- 间距基准（紧凑统一） -->
+        <x:Double x:Key="SpaceXXS">4</x:Double>
+        <x:Double x:Key="SpaceXS">6</x:Double>
+        <x:Double x:Key="SpaceS">8</x:Double>
+        <x:Double x:Key="SpaceM">10</x:Double>
+        <x:Double x:Key="SpaceL">12</x:Double>
+        <x:Double x:Key="SpaceXL">16</x:Double>
+        <Thickness x:Key="PagePadding">12</Thickness>
+        <Thickness x:Key="CardPad">12</Thickness>
     </Application.Resources>
 
     <Application.Styles>
@@ -46,7 +55,7 @@
             <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
         </Style>
 
-        <!-- 按钮过渡（去生硬感） -->
+        <!-- 按钮过渡（去生硬感；按压反馈用背景压暗——TransformOperations 字符串 XAML 不支持） -->
         <Style Selector="Button">
             <Setter Property="Transitions">
                 <Transitions>
@@ -54,6 +63,9 @@
                     <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
                 </Transitions>
             </Setter>
+        </Style>
+        <Style Selector="Button:pressed">
+            <Setter Property="Background" Value="{StaticResource BgActive}"/>
         </Style>
 
         <!-- 窗口与文本 -->
@@ -68,6 +80,14 @@
         </Style>
         <Style Selector="TextBlock.dim">
             <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+        </Style>
+        <Style Selector="TextBlock.page-title">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 
         <!-- 按钮 -->
@@ -165,6 +185,14 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
+        <!-- 玻璃卡片（液态玻璃点缀；日志/控制台保持实色 card 保证对比度） -->
+        <Style Selector="Border.glass-card">
+            <Setter Property="Background" Value="#E6242A36"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="#4D2F3745"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
         <!-- 卡片（圆角收敛；用于离散信息单元，不用于列表行） -->
         <Style Selector="Border.card">
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
@@ -184,11 +212,30 @@
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
-        <!-- 进度条 -->
+        <!-- 阶段指示点：当前激活呼吸脉冲（仅 Opacity） -->
+        <Style Selector="Border.stagedot.current">
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <!-- 进度条（值变化平滑过渡） -->
         <Style Selector="ProgressBar">
             <Setter Property="Foreground" Value="{StaticResource Accent}"/>
             <Setter Property="Background" Value="{StaticResource BorderColor}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Value" Duration="0:0:0.3"/>
+                </Transitions>
+            </Setter>
         </Style>
 
         <!-- ========== 动画组件库（区块/列表/详情过渡） ========== -->

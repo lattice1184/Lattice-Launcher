@@ -13,6 +13,7 @@ public partial class MessageDialogWindow : Window
     public MessageDialogWindow()
     {
         InitializeComponent();
+        Opened += (_, _) => global::Launcher.App.Animations.UiAnim.PopIn(Root);
     }
 
     /// <summary>展示确认框并等待用户决定（cancel 传 "" 隐藏取消按钮）</summary>

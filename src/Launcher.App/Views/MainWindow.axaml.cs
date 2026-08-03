@@ -28,7 +28,9 @@ public partial class MainWindow : Window
     {
         if (ActualTransparencyLevel != WindowTransparencyLevel.None) return;
         if (RootSurface is null || NavSurface is null) return;
-        RootSurface.Background = new SolidColorBrush(Color.Parse("#FF1A1C20"));
+        // 合成失败：亚克力材质回退纯色（Material.FallbackColor 已设；这里确保不透明）
+        if (RootSurface.Material is ExperimentalAcrylicMaterial m)
+            m.FallbackColor = Avalonia.Media.Color.Parse("#FF14181F");
         NavSurface.IsVisible = false;
     }
 
@@ -37,11 +39,10 @@ public partial class MainWindow : Window
     {
         var s = LauncherSettings.Current;
 
-        // 透明度：RootSurface 背景 alpha = opacity（保持 #14181F 底色）
-        if (RootSurface is not null)
+        // 透明度：亚克力 TintOpacity 随设置（0.7-1.0 → 0.40-1.0 映射）
+        if (RootSurface?.Material is ExperimentalAcrylicMaterial m)
         {
-            var alpha = (byte)(s.WindowOpacity * 255);
-            RootSurface.Background = new SolidColorBrush(Color.FromArgb(alpha, 0x14, 0x18, 0x1F));
+            m.TintOpacity = 0.40 + (s.WindowOpacity - 0.7) * 2.0; // 0.7→0.40，1.0→1.0
         }
 
         // 密度：整 UI 缩放（紧凑 0.9 / 标准 1.0 / 舒适 1.1）

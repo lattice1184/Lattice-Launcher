@@ -105,6 +105,33 @@ public partial class HomeViewModel : ViewModelBase
     /// <summary>启动记录（跨会话，可回看失败原因）</summary>
     public ObservableCollection<LaunchHistoryEntry> LaunchHistory { get; } = [];
 
+    // ---------- 日志卡 Tab（控制台 / 启动记录） ----------
+
+    [ObservableProperty]
+    public partial bool IsConsoleTabSelected { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsHistoryTabSelected { get; set; }
+
+    /// <summary>控制台是否有日志（空状态显示用）</summary>
+    [ObservableProperty]
+    public partial bool HasLogs { get; set; }
+
+    /// <summary>是否有启动记录（空状态显示用）</summary>
+    [ObservableProperty]
+    public partial bool HasHistory { get; set; }
+
+    /// <summary>启动记录条数（Tab 计数徽章）</summary>
+    [ObservableProperty]
+    public partial int HistoryCount { get; set; }
+
+    [RelayCommand]
+    private void SwitchLogTab(string tab)
+    {
+        IsConsoleTabSelected = tab == "console";
+        IsHistoryTabSelected = tab == "history";
+    }
+
     private System.Diagnostics.Stopwatch? _launchWatch;
 
     public HomeViewModel()
@@ -120,6 +147,8 @@ public partial class HomeViewModel : ViewModelBase
     {
         LaunchHistory.Clear();
         foreach (var h in LaunchHistoryService.All) LaunchHistory.Add(h);
+        HistoryCount = LaunchHistory.Count;
+        HasHistory = LaunchHistory.Count > 0;
     }
 
     [RelayCommand]
@@ -254,6 +283,7 @@ public partial class HomeViewModel : ViewModelBase
         if (account is null) { LaunchStatus = "请先在【账号】页登录"; return; }
 
         GameLogs.Clear();
+        HasLogs = false;
         IsLaunching = true;
         LaunchProgress = 0;
         CurrentStageIndex = -1;
@@ -339,6 +369,7 @@ public partial class HomeViewModel : ViewModelBase
             _running = null;
             CurrentStageIndex = -1;
             GameLogs.Clear(); // 退出后自动清空控制台（启动记录/日志文件保留本次错误）
+            HasLogs = false;
         }
         catch (Exception ex)
         {
@@ -369,6 +400,7 @@ public partial class HomeViewModel : ViewModelBase
         }
         if (GameLogs.Count >= MaxLogLines) GameLogs.RemoveAt(0);
         GameLogs.Add(line);
+        HasLogs = true;
         AppendToLaunchLog(line);
     }
 

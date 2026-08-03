@@ -5,122 +5,151 @@
              x:Class="Launcher.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
-    <Grid ColumnSpacing="14">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="1.1*" MinWidth="320"/>
-            <ColumnDefinition Width="2*"/>
-        </Grid.ColumnDefinitions>
-        <!-- 左：启动控制（PCL 式集中左侧） -->
-        <StackPanel Grid.Column="0" Spacing="10">
-            <Button Padding="0" Background="Transparent" BorderThickness="0" HorizontalAlignment="Left"
-                    Click="OnAvatarClick" ToolTip.Tip="点击更换皮肤">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                    <Border Width="56" Height="56" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
-                        <Image Source="{Binding PlayerAvatar}" Width="56" Height="56" Stretch="Uniform"/>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="{Binding PlayerName}" FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock Text="YanKa Launcher" FontSize="12" Classes="dim"/>
-                        <TextBlock Text="点击头像换皮肤" FontSize="10" Classes="dim"/>
+    <Grid RowDefinitions="Auto,*" RowSpacing="10">
+
+        <!-- ① 启动控制卡（顶部一行高密度操作 + 阶段条） -->
+        <Border Classes="card" Padding="12">
+            <StackPanel Spacing="8">
+                <!-- 行1：头像 + 版本 + 启动/停止 + 状态（一行） -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
+                    <Button Padding="0" Background="Transparent" BorderThickness="0"
+                            Click="OnAvatarClick" ToolTip.Tip="点击更换皮肤">
+                        <Border Width="44" Height="44" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                            <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"/>
+                        </Border>
+                    </Button>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"/>
+                        <TextBlock Text="YanKa Launcher" FontSize="11" Classes="dim"/>
                     </StackPanel>
-                </StackPanel>
-            </Button>
+                    <ComboBox Grid.Column="2" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
+                              PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:VersionInstanceVM">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="3" Content="启动游戏" Classes="primary" Padding="26,9" FontSize="13"
+                            Command="{Binding LaunchCommand}" VerticalAlignment="Center"
+                            IsVisible="{Binding !IsRunning}"/>
+                    <Button Grid.Column="3" Content="停止" Padding="26,9" FontSize="13"
+                            Command="{Binding StopGameCommand}" VerticalAlignment="Center"
+                            IsVisible="{Binding IsRunning}"/>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="84">
+                        <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
+                                VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                    </StackPanel>
+                </Grid>
 
-            <!-- 启动阶段指示条（颜色只在圆点上，文字统一灰阶） -->
-            <ItemsControl ItemsSource="{Binding Stages}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal" Spacing="16"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:LaunchStageVM">
-                        <StackPanel Orientation="Horizontal" Spacing="5">
-                            <Border Width="8" Height="8" CornerRadius="4"
-                                    Background="{Binding DotColor}" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                <!-- 行2：阶段指示条 + 状态文字（右对齐） -->
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="0,8,0,0">
+                    <ItemsControl ItemsSource="{Binding Stages}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="12"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LaunchStageVM">
+                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                    <Border Classes.stagedot="True" Classes.current="{Binding IsCurrent}"
+                                            Width="8" Height="8" CornerRadius="4"
+                                            Background="{Binding DotColor}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Grid.Column="1" Text="{Binding LaunchStatus}" Classes="sub" FontSize="11"
+                               VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+
+                <!-- 行3：配置摘要 -->
+                <TextBlock Text="{Binding LaunchConfigText}" Classes="dim" FontSize="10"/>
+                <!-- 进度条（卡内底部） -->
+                <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="4"
+                             IsVisible="{Binding IsLaunching}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ② 日志卡（全宽；Tab 双视图：控制台 / 启动记录） -->
+        <Border Classes="card" Grid.Row="1" Padding="0">
+            <DockPanel>
+                <!-- 头部 Tab -->
+                <Border DockPanel.Dock="Top" Background="{StaticResource BgSurface}" Padding="12,8"
+                        BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                    <Button Content="控制台" Classes="tab" Classes.active="{Binding IsConsoleTabSelected}"
+                            FontSize="12" Padding="12,5" Command="{Binding SwitchLogTabCommand}" CommandParameter="console"/>
+                    <Button Grid.Column="1" Classes="tab" Classes.active="{Binding IsHistoryTabSelected}"
+                            FontSize="12" Padding="12,5" Command="{Binding SwitchLogTabCommand}" CommandParameter="history">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="启动记录"/>
+                            <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding HistoryCount}" Foreground="{StaticResource Accent}" FontSize="10"/>
+                            </Border>
                         </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    </Button>
+                    <Button Grid.Column="3" Content="导出日志" Classes="ghost" FontSize="11" Padding="10,3"
+                            Click="OnExportLogs" IsVisible="{Binding IsConsoleTabSelected}"/>
+                    <Button Grid.Column="3" Content="清除记录" Classes="danger" FontSize="11" Padding="10,3"
+                            Command="{Binding ClearLaunchHistoryCommand}" IsVisible="{Binding IsHistoryTabSelected}"/>
+                </Grid>
+                </Border>
 
-            <TextBlock Text="{Binding LaunchStatus}" Classes="sub"/>
-            <TextBlock Text="{Binding LaunchConfigText}" Classes="dim" FontSize="11"/>
-
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-                <ComboBox ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
-                          PlaceholderText="选择版本">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:VersionInstanceVM">
-                            <TextBlock Text="{Binding DisplayName}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <Button Grid.Column="1" Content="启动游戏" Classes="primary" Padding="32,10" FontSize="14"
-                        Command="{Binding LaunchCommand}"
-                        IsVisible="{Binding !IsRunning}"/>
-                <Button Grid.Column="1" Content="停止" Padding="32,10" FontSize="14"
-                        Command="{Binding StopGameCommand}"
-                        IsVisible="{Binding IsRunning}"/>
-                <!-- 状态圆点 + 文字（替代 50% 透明度的禁用按钮） -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="90">
-                    <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
-                            VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                </StackPanel>
-            </Grid>
-
-            <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="5"
-                         IsVisible="{Binding IsLaunching}"/>
-        </StackPanel>
-
-        <!-- 右：游戏控制台（弹性大区）+ 启动记录 -->
-        <DockPanel Grid.Column="1">
-            <Border Classes="card" Padding="12">
-                <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
-                        <TextBlock Text="游戏控制台" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" Content="导出日志" Classes="ghost" FontSize="11" Padding="10,3"
-                                Click="OnExportLogs"/>
-                    </Grid>
-                    <ScrollViewer x:Name="LogScroll">
-                        <ItemsControl ItemsSource="{Binding GameLogs}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                               Foreground="#B8C2D4" TextWrapping="NoWrap"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                <!-- 主体：同格叠放两面板（可见者后声明收点击） -->
+                <Grid>
+                    <!-- 启动记录面板 -->
+                    <ScrollViewer IsVisible="{Binding IsHistoryTabSelected}">
+                        <StackPanel Spacing="4" Margin="12,10">
+                            <TextBlock Text="暂无启动记录" Classes="dim" FontSize="12" HorizontalAlignment="Center"
+                                       Margin="0,40,0,0" IsVisible="{Binding !HasHistory}"/>
+                            <ItemsControl ItemsSource="{Binding LaunchHistory}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="svc:LaunchHistoryEntry">
+                                        <Grid ColumnDefinitions="Auto,88,*,Auto" ColumnSpacing="8" Margin="0,2" MinHeight="22">
+                                            <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="11" LineHeight="16"
+                                                       Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Error}" FontSize="11"
+                                                       Foreground="{StaticResource Danger}" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Border Grid.Column="3" CornerRadius="3" Padding="6,1" VerticalAlignment="Center"
+                                                    Background="#1E3A2E">
+                                                <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
                     </ScrollViewer>
-                </DockPanel>
-            </Border>
 
-        <!-- 启动记录（跨会话，可回看失败原因） -->
-            <Expander DockPanel.Dock="Bottom" Header="启动记录" IsExpanded="False" Margin="0,10,0,0">
-                <StackPanel Spacing="6" Margin="0,6,0,0">
-                <Button Content="清除记录" Classes="danger" Padding="8,3" FontSize="11"
-                        HorizontalAlignment="Left" Command="{Binding ClearLaunchHistoryCommand}"/>
-                <ItemsControl ItemsSource="{Binding LaunchHistory}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="svc:LaunchHistoryEntry">
-                            <Grid ColumnDefinitions="Auto,110,*,Auto" ColumnSpacing="10" Margin="0,2" MinHeight="24">
-                                <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="12" LineHeight="18"
-                                           Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding Error}" FontSize="11"
-                                           Foreground="{StaticResource Danger}" VerticalAlignment="Center"/>
-                                <Border Grid.Column="3" CornerRadius="3" Padding="6,1" VerticalAlignment="Center"
-                                        Background="#1E3A2E">
-                                    <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"
-                                               VerticalAlignment="Center"/>
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                </StackPanel>
-            </Expander>
-        </DockPanel>
+                    <!-- 控制台面板（后声明=选中时在最上层） -->
+                    <Grid IsVisible="{Binding IsConsoleTabSelected}">
+                        <ScrollViewer x:Name="LogScroll">
+                            <ItemsControl ItemsSource="{Binding GameLogs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
+                                                   Foreground="#B8C2D4" TextWrapping="NoWrap"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <!-- 空状态 -->
+                        <StackPanel IsVisible="{Binding !HasLogs}" Spacing="6" VerticalAlignment="Center"
+                                    HorizontalAlignment="Center">
+                            <TextBlock Text="控制台空闲" Classes="sub" FontSize="15" HorizontalAlignment="Center"/>
+                            <TextBlock Text="选择版本并点击「启动游戏」，日志将实时显示在这里" Classes="dim" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </DockPanel>
+        </Border>
     </Grid>
 </UserControl>

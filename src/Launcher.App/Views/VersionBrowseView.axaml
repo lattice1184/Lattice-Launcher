@@ -18,7 +18,7 @@
             </Grid>
         </StackPanel>
 
-        <Grid ColumnDefinitions="2*,1,3*" ColumnSpacing="10">
+        <Grid ColumnDefinitions="2*,1,3*" ColumnSpacing="8">
             <!-- 左：已装版本列表（搜索 + 行启动 + 底部统计） -->
             <DockPanel Grid.Column="0">
                 <TextBox DockPanel.Dock="Top" Text="{Binding SearchText, Mode=TwoWay}"
@@ -67,7 +67,7 @@
                             <TextBlock Text="选择一个版本查看与设置：启动配置 / 加载器 / 模组 / 存档 / 备份导出"
                                        Classes="dim" FontSize="12" TextWrapping="Wrap" TextAlignment="Center"/>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                             <Button Content="去下载游戏" Classes="primary" Padding="20,9" Click="OnGoDownload"/>
                             <Button Content="导入整合包" Classes="ghost" Padding="20,9" Click="OnImportModpack"/>
                         </StackPanel>
@@ -75,12 +75,12 @@
 
                     <!-- 详情 -->
                     <ScrollViewer IsVisible="{Binding Detail.HasSelection}">
-                        <StackPanel Spacing="10" Margin="0,0,0,16">
+                        <StackPanel Spacing="8" Margin="0,0,0,16">
 
                             <!-- 1. 基本信息 + 启动/停止/修复 -->
-                            <Border Classes="card" Padding="14">
-                                <StackPanel Spacing="10">
-                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+                            <Border Classes="card" Padding="12">
+                                <StackPanel Spacing="8">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="{Binding Detail.Id}" FontSize="18" FontWeight="Bold"/>
                                             <TextBlock Text="{Binding Detail.ReleaseDate}" Classes="dim" FontSize="11"/>
@@ -103,7 +103,7 @@
                             </Border>
 
                             <!-- 2. 启动配置（版本级覆盖） -->
-                            <Border Classes="card" Padding="14">
+                            <Border Classes="card" Padding="12">
                                 <StackPanel Spacing="8">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                         <TextBlock Text="启动配置（版本级）" FontSize="13" FontWeight="SemiBold"
@@ -113,17 +113,17 @@
                                                 IsVisible="{Binding Detail.HasConfigOverrides}"/>
                                     </Grid>
                                     <TextBlock Text="留空 = 跟随全局设置" Classes="dim" FontSize="10"/>
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="内存 (MB)" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigMemoryText}"
                                                  Watermark="跟随全局（如 4096）"/>
                                     </Grid>
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigJavaText}"
                                                  Watermark="跟随全局（自动选配）"/>
                                     </Grid>
-                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigArgsText}"
                                                  Watermark="跟随全局（如 -Dxxx=1）"/>
@@ -134,7 +134,7 @@
                             </Border>
 
                             <!-- 4. 模组管理 -->
-                            <Border Classes="card" Padding="14" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.ModsCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
@@ -165,7 +165,7 @@
                             </Border>
 
                             <!-- 5. 存档管理 -->
-                            <Border Classes="card" Padding="14" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.SavesCountText}" FontSize="13" FontWeight="SemiBold"/>
                                     <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
@@ -190,7 +190,7 @@
                             </Border>
 
                             <!-- 6. 版本操作 -->
-                            <Border Classes="card" Padding="14" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="版本操作" FontSize="13" FontWeight="SemiBold"/>
                                     <StackPanel Orientation="Horizontal" Spacing="8">

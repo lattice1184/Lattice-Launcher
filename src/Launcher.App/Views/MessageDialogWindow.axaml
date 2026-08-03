@@ -5,7 +5,7 @@
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgSurface}">
 
-    <StackPanel Margin="26,22" Spacing="16">
+    <StackPanel x:Name="Root" Margin="26,22" Spacing="16">
         <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="14"
                    Foreground="{StaticResource TextPrimary}"/>
         <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
