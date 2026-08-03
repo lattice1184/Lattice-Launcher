@@ -124,6 +124,9 @@ public partial class ServerViewModel : ViewModelBase
         catch { }
     }
 
+    [RelayCommand]
+    private void RefreshVersions() => _ = RefreshVersionsAsync();
+
     partial void OnSelectedVersionChanged(VersionInstanceVM? value)
     {
         if (value is null) return;

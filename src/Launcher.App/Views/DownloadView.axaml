@@ -11,7 +11,7 @@
     <UserControl.Resources>
         <!-- 任务行内容（组任务的 Expander Header 与叶子任务共用） -->
         <DataTemplate x:Key="TaskRow" x:DataType="core:DownloadTask">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
                 <Border Grid.Column="1" CornerRadius="{StaticResource RadiusSmall}" Padding="7,2"
                         Background="{Binding State, Converter={x:Static app:StateBadgeConverter.Background}}"
@@ -21,7 +21,13 @@
                 </Border>
                 <TextBlock Grid.Column="2" Text="{Binding Error}" Foreground="{StaticResource Danger}" FontSize="11"
                            TextTrimming="CharacterEllipsis" IsVisible="{Binding HasError}"/>
-                <Button Grid.Column="3" Content="取消" Classes="ghost" Padding="8,3" FontSize="12"
+                <Button Grid.Column="3" Content="重试" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding RetryCommand}" IsVisible="{Binding IsFailed}"/>
+                <Button Grid.Column="3" Content="继续" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding ResumeCommand}" IsVisible="{Binding IsPaused}"/>
+                <Button Grid.Column="4" Content="暂停" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding PauseCommand}" IsVisible="{Binding IsActive}"/>
+                <Button Grid.Column="5" Content="取消" Classes="ghost" Padding="8,3" FontSize="12"
                         Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}"/>
             </Grid>
         </DataTemplate>

@@ -83,6 +83,8 @@ public partial class DownloadTask : ObservableObject
 
     public string StateText => StateTexts[State];
     public bool HasError => Error is not null;
+    public bool IsPaused => State == DownloadTaskState.Paused;
+    public bool IsFailed => State == DownloadTaskState.Failed;
     public bool HasProgress => ProgressPercent > 0;
 
     public string SpeedText => SpeedBps >= 1024 * 1024
@@ -105,6 +107,9 @@ public partial class DownloadTask : ObservableObject
     public string ChildProgressText => HasProgress ? $"{ProgressPercent:0}%" : "…";
 
     public IRelayCommand CancelCommand { get; }
+    public IRelayCommand PauseCommand { get; }
+    public IRelayCommand ResumeCommand { get; }
+    public IRelayCommand RetryCommand { get; }
 
     // ---------- 构造 ----------
 
@@ -130,6 +135,9 @@ public partial class DownloadTask : ObservableObject
         Name = name;
         _ui = ui;
         CancelCommand = new RelayCommand(Cancel);
+        PauseCommand = new RelayCommand(Suspend);
+        ResumeCommand = new RelayCommand(Resume);
+        RetryCommand = new RelayCommand(Retry);
     }
 
     // ---------- 叶子生命周期 ----------
@@ -231,6 +239,20 @@ public partial class DownloadTask : ObservableObject
         _suspendRequested = true;
         foreach (var child in Children) child.Suspend();
         _cts.Cancel();
+    }
+
+    /// <summary>失败重试：清错误重跑 work（断点续传已下载部分）</summary>
+    public void Retry()
+    {
+        if (State != DownloadTaskState.Failed) return;
+        _suspendRequested = false;
+        _cts = new CancellationTokenSource();
+        Post(() => Error = null);
+        if (IsGroup) Post(() => Children.Clear());
+        if (IsGroup && _groupWork is not null)
+            _ = RunGroupAsync(_groupWork);
+        else if (_work is not null)
+            _ = RunAsync(_work);
     }
 
     /// <summary>继续：重放 work（断点续传已下载部分）</summary>
@@ -384,6 +406,8 @@ public partial class DownloadTask : ObservableObject
             State = state;
             OnPropertyChanged(nameof(StateText));
             OnPropertyChanged(nameof(IsActive));
+            OnPropertyChanged(nameof(IsPaused));
+            OnPropertyChanged(nameof(IsFailed));
         });
     }
 
