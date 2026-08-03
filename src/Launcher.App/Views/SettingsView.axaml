@@ -1,0 +1,17 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+            <TextBlock Text="设置" FontSize="20" FontWeight="Bold"/>
+            <TextBlock Text="游戏目录 / 启动参数 / 下载选项" Classes="sub" FontSize="12"/>
+        </StackPanel>
+
+        <StackPanel Spacing="10" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock Text="设置页建设中…" Classes="sub" FontSize="14"/>
+        </StackPanel>
+    </DockPanel>
+</UserControl>

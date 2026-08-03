@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Launcher.App.ViewModels"
+        xmlns:svc="using:Launcher.App.Services"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="860" d:DesignHeight="560"
@@ -18,42 +19,79 @@
 
     <!-- 亚克力半透明背景层 -->
     <Border x:Name="RootSurface" Background="#E614181F" CornerRadius="8" BorderBrush="#332F3745" BorderThickness="1">
-        <DockPanel>
-            <!-- 左侧导航（液态玻璃；内角随窗口圆角） -->
-            <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="170" CornerRadius="8,0,0,8">
-                <ExperimentalAcrylicBorder.Material>
-                    <ExperimentalAcrylicMaterial BackgroundSource="Digger"
-                                                 TintColor="#14181F"
-                                                 TintOpacity="0.55"/>
-                </ExperimentalAcrylicBorder.Material>
-                <StackPanel Margin="14">
-                    <TextBlock Text="YanKa Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
-                               Margin="6,10,6,20"/>
-                    <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
-                            Command="{Binding NavigateCommand}" CommandParameter="home"
-                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
-                    <Button Classes="nav" Classes.active="{Binding IsDownloadsActive}"
-                            Command="{Binding NavigateCommand}" CommandParameter="download"
-                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="下载"/>
-                            <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
-                                    VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
-                                <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{StaticResource Accent}" FontSize="10"/>
-                            </Border>
-                        </StackPanel>
-                    </Button>
-                    <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
-                            Command="{Binding NavigateCommand}" CommandParameter="account"
-                            HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
-                </StackPanel>
-            </ExperimentalAcrylicBorder>
+        <Grid>
+            <DockPanel>
+                <!-- 左侧导航（液态玻璃；内角随窗口圆角） -->
+                <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="170" CornerRadius="8,0,0,8">
+                    <ExperimentalAcrylicBorder.Material>
+                        <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                                     TintColor="#14181F"
+                                                     TintOpacity="0.55"/>
+                    </ExperimentalAcrylicBorder.Material>
+                    <StackPanel Margin="14">
+                        <TextBlock Text="YanKa Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
+                                   Margin="6,10,6,20"/>
+                        <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="home"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                        <Button Content="版本" Classes="nav" Classes.active="{Binding IsVersionsActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="version"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                        <Button Classes="nav" Classes.active="{Binding IsDownloadsActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="download"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="下载"/>
+                                <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                                        VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
+                                    <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{StaticResource Accent}" FontSize="10"/>
+                                </Border>
+                            </StackPanel>
+                        </Button>
+                        <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="account"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                        <Button Content="设置" Classes="nav" Classes.active="{Binding IsSettingsActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="settings"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                    </StackPanel>
+                </ExperimentalAcrylicBorder>
 
-            <!-- 右侧内容区（页面切换动画） -->
-            <Border Background="#F01D222C" Padding="16">
-                <TransitioningContentControl Content="{Binding CurrentPage}"
-                                             PageTransition="{StaticResource PageFade}"/>
-            </Border>
-        </DockPanel>
+                <!-- 右侧内容区（页面切换动画） -->
+                <Border Background="#F01D222C" Padding="16">
+                    <TransitioningContentControl Content="{Binding CurrentPage}"
+                                                 PageTransition="{StaticResource PageFade}"/>
+                </Border>
+            </DockPanel>
+
+            <!-- Toast 覆盖层（右上角堆叠；不拦截点击） -->
+            <ItemsControl ItemsSource="{Binding Source={x:Static svc:NotificationService.Toasts}}"
+                          IsHitTestVisible="False"
+                          HorizontalAlignment="Right" VerticalAlignment="Top"
+                          Margin="0,10,14,0">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Vertical" Spacing="8"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="svc:ToastItem">
+                        <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
+                                CornerRadius="8" Padding="14,9" Opacity="{Binding Opacity}">
+                            <Border.Transitions>
+                                <Transitions>
+                                    <DoubleTransition Property="Opacity" Duration="0:0:0.24"/>
+                                </Transitions>
+                            </Border.Transitions>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Ellipse Width="8" Height="8" Fill="{Binding Dot}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Message}" Foreground="{StaticResource TextPrimary}"
+                                           FontSize="12" TextWrapping="Wrap" MaxWidth="360"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
     </Border>
 </Window>

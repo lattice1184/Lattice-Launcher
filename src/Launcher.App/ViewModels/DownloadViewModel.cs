@@ -7,12 +7,11 @@ using Launcher.Core.Model.Modrinth;
 namespace Launcher.App.ViewModels;
 
 /// <summary>
-/// 下载板块：下载游戏 / 下载记录（全局队列）/ MOD / 整合包 / 材质包 / 光影包。
-/// tab 懒实例化：首次激活才创建对应 VM 并触发加载（启动零网络请求，切页秒开）。
+/// 下载板块：MOD / 整合包 / 材质包 / 光影包 / 下载记录（全局队列）。
+/// 游戏版本下载已移至顶级"版本"导航页。tab 懒实例化：首次激活才创建对应 VM 并触发加载。
 /// </summary>
 public partial class DownloadViewModel : ViewModelBase
 {
-    private VersionBrowseViewModel? _versionBrowse;
     private EcosystemViewModel? _mods;
     private EcosystemViewModel? _modpacks;
     private EcosystemViewModel? _resourcepacks;
@@ -34,15 +33,12 @@ public partial class DownloadViewModel : ViewModelBase
     [ObservableProperty]
     public partial ViewModelBase? ActiveTab { get; set; }
 
-    // Tab 高亮状态（默认"下载游戏"）
+    // Tab 高亮状态（默认 MOD）
     [ObservableProperty]
-    public partial bool IsGameTabSelected { get; set; } = true;
+    public partial bool IsModTabSelected { get; set; } = true;
 
     [ObservableProperty]
     public partial bool IsQueueTabSelected { get; set; }
-
-    [ObservableProperty]
-    public partial bool IsModTabSelected { get; set; }
 
     [ObservableProperty]
     public partial bool IsModpackTabSelected { get; set; }
@@ -67,7 +63,7 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>切页进入时激活默认 tab（MainViewModel.Navigate 调用；首次进入下载页才触发加载）</summary>
     public void ActivateDefault()
     {
-        if (ActiveTab is null) SelectTab("game");
+        if (ActiveTab is null) SelectTab("mod");
         PreloadTabs();
     }
 
@@ -91,7 +87,6 @@ public partial class DownloadViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTab(string tab)
     {
-        IsGameTabSelected = tab == "game";
         IsQueueTabSelected = tab == "queue";
         IsModTabSelected = tab == "mod";
         IsModpackTabSelected = tab == "modpack";
@@ -103,7 +98,6 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>懒创建 tab VM：首次激活才 new 并触发加载（异步，列表区转圈）</summary>
     private ViewModelBase GetOrCreateTab(string tab) => tab switch
     {
-        "game" => _versionBrowse ??= CreateAndLoad(new VersionBrowseViewModel(), v => v.LoadAsync()),
         "mod" => _mods ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Mod), e => e.InitializeAsync()),
         "modpack" => _modpacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Modpack), e => e.InitializeAsync()),
         "resourcepack" => _resourcepacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Resourcepack), e => e.InitializeAsync()),

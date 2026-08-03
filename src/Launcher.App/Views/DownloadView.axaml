@@ -95,12 +95,8 @@
     </UserControl.Resources>
 
     <DockPanel>
-        <!-- 板块 tab 栏：下载游戏 / 下载记录 / MOD / 整合包 / 材质包 / 光影包 -->
+        <!-- 板块 tab 栏：MOD / 整合包 / 材质包 / 光影包 / 下载记录（下载游戏在"版本"页） -->
         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
-            <Button Content="下载游戏" Classes="tab" Classes.active="{Binding IsGameTabSelected}"
-                    Command="{Binding SelectTabCommand}" CommandParameter="game"/>
-            <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
-                    Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
             <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="mod"/>
             <Button Content="整合包" Classes="tab" Classes.active="{Binding IsModpackTabSelected}"
@@ -109,6 +105,8 @@
                     Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
             <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+            <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
         </StackPanel>
 
         <Grid>

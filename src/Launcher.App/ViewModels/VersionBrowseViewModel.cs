@@ -31,6 +31,16 @@ public partial class VersionBrowseViewModel : ViewModelBase
         Sidebar.SelectionChanged += item => Detail.Select(item);
     }
 
+    private int _loaded;
+
+    /// <summary>幂等加载（顶级导航多次进入只拉一次清单；失败后允许重试）</summary>
+    public async Task EnsureLoadedAsync()
+    {
+        if (Volatile.Read(ref _loaded) == 1) return;
+        await LoadAsync();
+        Volatile.Write(ref _loaded, 1);
+    }
+
     public async Task LoadAsync()
     {
         try

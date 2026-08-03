@@ -11,9 +11,12 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial ViewModelBase? CurrentPage { get; set; }
 
-    // 导航高亮
+    // 导航高亮（主页/版本/下载/账号/设置）
     [ObservableProperty]
     public partial bool IsHomeActive { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsVersionsActive { get; set; }
 
     [ObservableProperty]
     public partial bool IsDownloadsActive { get; set; }
@@ -21,9 +24,14 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsAccountActive { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsSettingsActive { get; set; }
+
     public HomeViewModel Home { get; } = new();
+    public VersionBrowseViewModel Versions { get; } = new();
     public DownloadViewModel Downloads { get; } = new();
     public AccountViewModel Account { get; } = new();
+    public SettingsViewModel Settings { get; } = new();
 
     public MainViewModel()
     {
@@ -43,14 +51,19 @@ public partial class MainViewModel : ViewModelBase
     private void Navigate(string page)
     {
         IsHomeActive = page == "home";
+        IsVersionsActive = page == "version";
         IsDownloadsActive = page == "download";
         IsAccountActive = page == "account";
+        IsSettingsActive = page == "settings";
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") _ = Home.RefreshVersionsAsync(); // 切回主页刷新已装版本（下载完成后可见）
+        if (page == "version") _ = Versions.EnsureLoadedAsync(); // 首次进入版本页才拉清单
         CurrentPage = page switch
         {
+            "version" => Versions,
             "download" => Downloads,
             "account" => Account,
+            "settings" => Settings,
             _ => Home,
         };
     }
