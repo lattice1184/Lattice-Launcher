@@ -5,7 +5,7 @@
              x:DataType="vm:ProjectDetailViewModel">
 
     <ScrollViewer>
-        <StackPanel Spacing="14" MaxWidth="720" HorizontalAlignment="Left">
+        <StackPanel Spacing="14" MaxWidth="760" HorizontalAlignment="Center">
             <Button Content="← 返回" Command="{Binding CloseCommand}" Classes="ghost"
                     HorizontalAlignment="Left"/>
 

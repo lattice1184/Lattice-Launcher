@@ -11,7 +11,7 @@
         </StackPanel>
 
         <ScrollViewer>
-            <StackPanel Spacing="8" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel Spacing="8" MaxWidth="760" HorizontalAlignment="Center">
 
                 <!-- 游戏目录 -->
                 <Border Classes="card" Padding="12">
