@@ -76,4 +76,10 @@ public partial class SettingsView : UserControl
         if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
             Vm!.DensityIndex = i;
     }
+
+    private void OnTierClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
+            Vm!.DownloadTierIndex = i;
+    }
 }
