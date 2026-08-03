@@ -7,6 +7,9 @@ namespace Launcher.Core.Utils;
 /// </summary>
 public enum DensityMode { Compact = 0, Normal = 1, Comfortable = 2 }
 
+/// <summary>下载并发档位（分片连接数：低 8 / 中 16 / 高 24）</summary>
+public enum DownloadTier { Low = 8, Medium = 16, High = 24 }
+
 public sealed class LauncherSettings
 {
     private static readonly string DefaultPath = Path.Combine(
@@ -42,6 +45,18 @@ public sealed class LauncherSettings
 
     /// <summary>下载限速（KB/s；0 = 不限速）</summary>
     public int DownloadSpeedLimitKbps { get; set; }
+
+    /// <summary>下载并发档位（分片数：低 8 / 中 16 / 高 24）</summary>
+    public DownloadTier DownloadTier { get; set; } = DownloadTier.Low;
+
+    /// <summary>分片连接数覆盖（0 = 用档位默认）</summary>
+    public int ChunkCount { get; set; }
+
+    /// <summary>分片缓冲区覆盖（字节；0 = 默认 81920）</summary>
+    public int BufferSize { get; set; }
+
+    /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
+    public string CurseForgeApiKey { get; set; } = "";
 
     // ---------- 外观 ----------
 

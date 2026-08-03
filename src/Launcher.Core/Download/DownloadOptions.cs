@@ -1,3 +1,5 @@
+using Launcher.Core.Utils;
+
 namespace Launcher.Core.Download;
 
 /// <summary>
@@ -14,6 +16,9 @@ public sealed class DownloadOptions
     /// <summary>大文件分片连接数</summary>
     public int ChunkCount { get; init; } = 8;
 
+    /// <summary>分片读取缓冲区（字节）</summary>
+    public int BufferSize { get; init; } = 81920;
+
     /// <summary>整轮尝试数（每轮遍历全部候选源）</summary>
     public int MaxSourceAttempts { get; init; } = 3;
 
@@ -27,4 +32,19 @@ public sealed class DownloadOptions
     public Func<int, TimeSpan>? BackoffProvider { get; init; }
 
     public static DownloadOptions Default { get; } = new();
+
+    /// <summary>按设置生成：并发档位 → 分片/库/资源并发；MaxConcurrentDownloads 优先于档位（改动即时生效）</summary>
+    public static DownloadOptions FromSettings(LauncherSettings s)
+    {
+        var tier = (int)s.DownloadTier;
+        return new DownloadOptions
+        {
+            ChunkCount = s.ChunkCount > 0 ? s.ChunkCount : tier,
+            BufferSize = s.BufferSize > 0 ? s.BufferSize : 81920,
+            LibraryConcurrency = s.MaxConcurrentDownloads > 0 ? s.MaxConcurrentDownloads : tier,
+            AssetConcurrency = s.MaxConcurrentDownloads > 0 ? Math.Max(s.MaxConcurrentDownloads * 2, 16) : tier * 2,
+            MirrorFallbackEnabled = s.MirrorFallbackEnabled,
+            BytesPerSecond = s.DownloadSpeedLimitKbps > 0 ? s.DownloadSpeedLimitKbps * 1024 : 0,
+        };
+    }
 }

@@ -90,4 +90,38 @@ public class LauncherSettingsTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    [Fact]
+    public void Defaults_DownloadTierFields()
+    {
+        var s = new LauncherSettings();
+        Assert.Equal(DownloadTier.Low, s.DownloadTier);
+        Assert.Equal(0, s.ChunkCount);
+        Assert.Equal(0, s.BufferSize);
+        Assert.Equal("", s.CurseForgeApiKey);
+    }
+
+    [Fact]
+    public void SaveAndLoad_DownloadTierFields_RoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            var s = new LauncherSettings
+            {
+                DownloadTier = DownloadTier.High,
+                ChunkCount = 12,
+                BufferSize = 163840,
+                CurseForgeApiKey = "cf-key-abc",
+            };
+            s.Save(path);
+
+            var loaded = LauncherSettings.Load(path);
+            Assert.Equal(DownloadTier.High, loaded.DownloadTier);
+            Assert.Equal(12, loaded.ChunkCount);
+            Assert.Equal(163840, loaded.BufferSize);
+            Assert.Equal("cf-key-abc", loaded.CurseForgeApiKey);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
 }
