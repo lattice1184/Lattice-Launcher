@@ -26,7 +26,18 @@ if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
 
 # 3) 取 exe → 移到 发布\ 并重命名为友好名，清掉 stage 残留
 $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
+if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
 $final = Join-Path $out "YanKa启动器.exe"
+# 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
+if (Test-Path $final) {
+    try {
+        $fs = [System.IO.File]::Open($final, 'Open', 'Read', 'None')
+        $fs.Close()
+    } catch {
+        Write-Host "[错误] 检测到启动器正在运行（exe 被占用）——请先关闭 YanKa启动器 再运行本脚本" -ForegroundColor Red
+        exit 1
+    }
+}
 Move-Item $exe.FullName $final -Force
 Remove-Item $stage -Recurse -Force
 
