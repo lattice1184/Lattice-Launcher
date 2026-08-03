@@ -95,11 +95,14 @@ public sealed class DownloadManager
         catch { /* 进程退出等 */ }
     }
 
-    /// <summary>清除已结束（完成/失败/取消）任务；需在 UI 线程调用</summary>
+    /// <summary>清除已结束（完成/失败/取消）任务；需在 UI 线程调用。已暂停任务保留（可继续）。</summary>
     public void ClearFinished()
     {
         for (var i = Tasks.Count - 1; i >= 0; i--)
-            if (!Tasks[i].IsActive) Tasks.RemoveAt(i);
+        {
+            var t = Tasks[i];
+            if (!t.IsActive && t.State != DownloadTaskState.Paused) Tasks.RemoveAt(i);
+        }
         SetActive(Tasks.Count(t => t.IsActive));
     }
 

@@ -131,8 +131,23 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnExtraJvmArgsTextChanged(string value) => Save();
     partial void OnAutoChineseEnabledChanged(bool value) => Save();
     partial void OnMirrorFallbackEnabledChanged(bool value) => Save();
-    partial void OnMaxConcurrentDownloadsChanged(int value) => Save();
-    partial void OnSpeedLimitKbpsChanged(int value) => Save();
+    // 滑块拖动连续触发——150ms 防抖写盘（避免每 tick 写 settings.json）
+    private CancellationTokenSource? _saveDebounce;
+
+    partial void OnMaxConcurrentDownloadsChanged(int value) => DebouncedSave();
+    partial void OnSpeedLimitKbpsChanged(int value) => DebouncedSave();
+
+    private async void DebouncedSave()
+    {
+        _saveDebounce?.Cancel();
+        var cts = _saveDebounce = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            Save();
+        }
+        catch (OperationCanceledException) { }
+    }
 
     /// <summary>游戏目录：浏览选择后应用（由 View code-behind 的 FolderPicker 回调）</summary>
     public void ApplyGameDirectory(string path)

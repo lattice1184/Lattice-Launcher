@@ -25,6 +25,7 @@ public partial class HomeViewModel : ViewModelBase
     private readonly AccountService _accounts = AccountService.Shared;
     private LaunchProcess.LaunchResult? _running;
     private const int MaxLogLines = 500;
+    private volatile bool _userStopped;
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
     public ObservableCollection<LaunchStageVM> Stages { get; } = [];
@@ -217,8 +218,16 @@ public partial class HomeViewModel : ViewModelBase
             await Task.Run(() => _running.Process.WaitForExit());
             var code = LaunchProcess.GetExitCode(_running);
             AppendLog($"§ 游戏进程已退出（exitStatus={code}）");
-            LaunchState = code == 0 ? "已退出" : $"异常退出（{code}）";
-            LaunchStatus = code == 0 ? "游戏正常退出" : "游戏异常退出，请查看日志";
+            if (_userStopped)
+            {
+                LaunchState = "已退出";
+                LaunchStatus = "已停止游戏";
+            }
+            else
+            {
+                LaunchState = code == 0 ? "已退出" : $"异常退出（{code}）";
+                LaunchStatus = code == 0 ? "游戏正常退出" : "游戏异常退出，请查看日志";
+            }
             IsRunning = false;
             _running = null;
             CurrentStageIndex = -1;
@@ -236,6 +245,7 @@ public partial class HomeViewModel : ViewModelBase
     [RelayCommand]
     private void StopGame()
     {
+        _userStopped = true;
         try { _running?.Process.Kill(); } catch { }
         AppendLog("§ 已请求停止游戏");
     }

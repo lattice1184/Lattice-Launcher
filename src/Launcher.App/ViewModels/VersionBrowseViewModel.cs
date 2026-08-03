@@ -35,12 +35,19 @@ public partial class VersionBrowseViewModel : ViewModelBase
 
     private int _loaded;
 
-    /// <summary>幂等加载（顶级导航多次进入只拉一次清单；失败后允许重试）</summary>
+    /// <summary>幂等加载（顶级导航多次进入只拉一次清单；失败不置位——下次进入可重试）</summary>
     public async Task EnsureLoadedAsync()
     {
         if (Volatile.Read(ref _loaded) == 1) return;
-        await LoadAsync();
-        Volatile.Write(ref _loaded, 1);
+        try
+        {
+            await LoadAsync();
+            Volatile.Write(ref _loaded, 1);
+        }
+        catch
+        {
+            // LoadAsync 内部已 catch 并写 Status；失败时 _loaded 保持 0，下次导航重试
+        }
     }
 
     public async Task LoadAsync()
