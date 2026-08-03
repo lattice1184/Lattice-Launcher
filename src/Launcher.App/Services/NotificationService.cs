@@ -62,6 +62,9 @@ public static class NotificationService
         _ = FadeOutAsync(toast, durationMs);
     }
 
+    /// <summary>信息提示快捷方式</summary>
+    public static void Info(string message, int durationMs = 3600) => Show(message, ToastType.Info, durationMs);
+
     /// <summary>成功提示快捷方式</summary>
     public static void Success(string message, int durationMs = 3200) => Show(message, ToastType.Success, durationMs);
 

@@ -12,7 +12,7 @@ public sealed class GameLaunchService
 {
     public async Task<LaunchProcess.LaunchResult> LaunchAsync(
         string versionId, string gameDirectory,
-        string accountName, string accountUuid,
+        string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs,
         Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default)
     {
@@ -50,7 +50,7 @@ public sealed class GameLaunchService
         onStage?.Invoke("解压 natives");
         var builder = new JavaArgumentsBuilder();
         var profile = builder.Build(version, gameDirectory, java,
-            accountName, accountUuid, "token", memoryMb, extraJvmArgs);
+            accountName, accountUuid, accessToken, memoryMb, extraJvmArgs);
 
         // log4j 配置兜底：version.json 指定的文件缺失时写入标准模板
         EnsureLog4jConfig(version, gameDirectory);

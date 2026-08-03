@@ -20,6 +20,9 @@ public sealed class AccountService
 
     public AccountInfo? Current { get; private set; }
 
+    /// <summary>微软会话（当前账号为正版时；含 access/refresh token）</summary>
+    public MicrosoftAuth.MicrosoftSession? MicrosoftSession { get; private set; }
+
     /// <summary>全部已保存账号（离线多账号；正版接入后并入）</summary>
     public IReadOnlyList<AccountInfo> Accounts => _accounts;
 
@@ -44,6 +47,39 @@ public sealed class AccountService
         Save();
         Changed?.Invoke();
         return acc;
+    }
+
+    /// <summary>正版登录：保存微软会话为当前账号（type=microsoft；refresh token 持久化供静默刷新）</summary>
+    public AccountInfo LoginMicrosoft(MicrosoftAuth.MicrosoftSession session)
+    {
+        var acc = new AccountInfo(session.MinecraftName, session.MinecraftUuid, "microsoft",
+            session.AccessToken, session.RefreshToken);
+        var existing = _accounts.FindIndex(a => a.Name.Equals(session.MinecraftName, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0) _accounts[existing] = acc;
+        else _accounts.Add(acc);
+        Current = acc;
+        MicrosoftSession = session;
+        Save();
+        Changed?.Invoke();
+        return acc;
+    }
+
+    /// <summary>静默刷新正版会话（access token 过期时调用；失败抛异常 → UI 引导重新登录）</summary>
+    public async Task<MicrosoftAuth.MicrosoftSession> RefreshMicrosoftAsync(CancellationToken ct = default)
+    {
+        if (Current?.Type != "microsoft" || Current.RefreshToken is not { } rt)
+            throw new InvalidOperationException("当前不是正版账号");
+        var http = new HttpClient();
+        var session = await MicrosoftAuth.RefreshAsync(http, rt, ct);
+        MicrosoftSession = session;
+        // 轮换保存新 refresh token
+        Current = new AccountInfo(session.MinecraftName, session.MinecraftUuid, "microsoft",
+            session.AccessToken, session.RefreshToken);
+        var idx = _accounts.FindIndex(a => a.Name.Equals(session.MinecraftName, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0) _accounts[idx] = Current;
+        Save();
+        Changed?.Invoke();
+        return session;
     }
 
     /// <summary>切换当前账号（按名称；不存在则忽略）</summary>
@@ -80,11 +116,16 @@ public sealed class AccountService
             var saved = JsonSerializer.Deserialize<StoredState>(json);
             if (saved is null) return;
             _accounts = (saved.Accounts ?? [])
-                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type))
+                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type, a.AccessToken, a.RefreshToken))
                 .ToList();
             Current = saved.CurrentName is { } cur
                 ? _accounts.FirstOrDefault(a => a.Name == cur)
                 : null;
+            if (Current?.Type == "microsoft" && Current.RefreshToken is { } rt)
+            {
+                MicrosoftSession = new MicrosoftAuth.MicrosoftSession(
+                    Current.AccessToken ?? "", rt, Current.Uuid, Current.Name);
+            }
         }
         catch (Exception) { /* 存储损坏则忽略 */ }
     }
@@ -103,7 +144,7 @@ public sealed class AccountService
             Directory.CreateDirectory(Path.GetDirectoryName(_storePath)!);
             var stored = new StoredState(
                 Current?.Name,
-                _accounts.Select(a => new StoredAccount(a.Name, a.Uuid, a.Type)).ToList());
+                _accounts.Select(a => new StoredAccount(a.Name, a.Uuid, a.Type, a.AccessToken, a.RefreshToken)).ToList());
             File.WriteAllText(_storePath, JsonSerializer.Serialize(stored));
         }
         catch (Exception) { /* 存储失败不阻塞登录 */ }
@@ -119,8 +160,10 @@ public sealed class AccountService
         return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
     }
 
-    public sealed record AccountInfo(string Name, string Uuid, string Type);
+    public sealed record AccountInfo(string Name, string Uuid, string Type,
+        string? AccessToken = null, string? RefreshToken = null);
 
     private sealed record StoredState(string? CurrentName, List<StoredAccount> Accounts);
-    private sealed record StoredAccount(string Name, string Uuid, string Type);
+    private sealed record StoredAccount(string Name, string Uuid, string Type,
+        string? AccessToken = null, string? RefreshToken = null);
 }

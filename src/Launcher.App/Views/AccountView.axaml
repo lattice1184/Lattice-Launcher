@@ -57,11 +57,17 @@
                     <TextBox Text="{Binding NameInput}" Watermark="用户名"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="登录离线账号" Classes="primary" Command="{Binding LoginOfflineCommand}"/>
-                        <Button Content="微软正版登录" Command="{Binding LoginMicrosoftCommand}"/>
+                        <Button Content="微软正版登录" Command="{Binding LoginMicrosoftCommand}"
+                                IsEnabled="{Binding !IsMsAuthBusy}"/>
                         <Button Content="退出" Classes="ghost" Command="{Binding LogoutCommand}"
                                 IsVisible="{Binding IsLoggedIn}"/>
                     </StackPanel>
                     <TextBlock Text="{Binding Status}" Classes="sub" FontSize="12"/>
+                    <Border CornerRadius="6" Padding="10,8" Background="#12332F"
+                            IsVisible="{Binding IsMsAuthBusy}">
+                        <TextBlock Text="{Binding MsAuthStatus}" FontSize="12" Foreground="#B5F4E9"
+                                   TextWrapping="Wrap"/>
+                    </Border>
                 </StackPanel>
             </Border>
         </StackPanel>

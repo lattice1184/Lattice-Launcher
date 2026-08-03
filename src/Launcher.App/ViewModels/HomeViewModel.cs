@@ -200,8 +200,25 @@ public partial class HomeViewModel : ViewModelBase
                 ? s.MemoryMb
                 : (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6);
             var extraArgs = s.ExtraJvmArgs?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            // 正版账号：启动前静默刷新 access token（过期自动换新，用户无感；刷新失败提示重新登录）
+            var accessToken = "token";
+            if (account.Type == "microsoft")
+            {
+                try
+                {
+                    var session = await Task.Run(() => _accounts.RefreshMicrosoftAsync());
+                    accessToken = session.AccessToken;
+                }
+                catch (Exception ex)
+                {
+                    LaunchStatus = $"正版登录已失效：{ex.Message}（请到账号页重新登录）";
+                    LaunchState = "失败";
+                    IsLaunching = false;
+                    return;
+                }
+            }
             _running = await Task.Run(() => _launcher.LaunchAsync(
-                version.Name, gameDir, account.Name, account.Uuid,
+                version.Name, gameDir, account.Name, account.Uuid, accessToken,
                 memoryMb: memMb, extraJvmArgs: extraArgs,
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None));

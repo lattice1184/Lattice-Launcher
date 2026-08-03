@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -123,7 +124,54 @@ public partial class AccountViewModel : ViewModelBase
         Refresh();
     }
 
-    // 微软正版登录（F4b）：OAuth 设备码 + Xbox/XSTS/Minecraft 认证链，待 ClientId 配置后接入
+    [ObservableProperty]
+    public partial bool IsMsAuthBusy { get; set; }
+
+    /// <summary>设备码登录进度（user_code / 等待授权 / 认证中）</summary>
+    [ObservableProperty]
+    public partial string MsAuthStatus { get; set; } = "";
+
+    /// <summary>微软正版登录：设备码流程（PCL 同款，Mojang 公开 client_id）</summary>
     [RelayCommand]
-    private void LoginMicrosoft() => Status = "微软正版登录即将支持（需配置 ClientId）";
+    private async Task LoginMicrosoft()
+    {
+        if (IsMsAuthBusy) return;
+        IsMsAuthBusy = true;
+        Status = "";
+        try
+        {
+            using var http = new HttpClient();
+            http.Timeout = TimeSpan.FromSeconds(30);
+
+            // 1. 设备码
+            var device = await MicrosoftAuth.RequestDeviceCodeAsync(http, CancellationToken.None);
+            MsAuthStatus = $"请在浏览器打开 {device.VerificationUri} 并输入代码：{device.UserCode}";
+            try { Process.Start(new ProcessStartInfo(device.VerificationUri) { UseShellExecute = true }); }
+            catch { /* 无法自动打开则手动 */ }
+
+            // 2. 轮询授权（用户输码后自动继续；15 分钟超时）
+            var oauthToken = await MicrosoftAuth.PollOAuthTokenAsync(http, device, CancellationToken.None);
+            MsAuthStatus = "授权成功，正在认证 Minecraft…";
+
+            // 3. Xbox/XSTS/Minecraft 认证链 → 正版账号
+            var session = await MicrosoftAuth.AuthenticateMinecraftAsync(http, oauthToken, "", CancellationToken.None);
+            _accounts.LoginMicrosoft(session);
+            MsAuthStatus = "";
+            Status = $"已以正版账号 {session.MinecraftName} 登录";
+            NotificationService.Success($"正版账号 {session.MinecraftName} 登录成功");
+            Refresh();
+        }
+        catch (OperationCanceledException) { MsAuthStatus = "已取消授权"; }
+        catch (TimeoutException ex) { MsAuthStatus = ex.Message; }
+        catch (Exception ex)
+        {
+            MsAuthStatus = "";
+            Status = $"登录失败: {ex.Message}";
+            NotificationService.Error($"微软登录失败: {ex.Message}");
+        }
+        finally
+        {
+            IsMsAuthBusy = false;
+        }
+    }
 }
