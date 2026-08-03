@@ -72,15 +72,16 @@ public sealed class CurseForgeService
     };
 
     /// <summary>搜索（classId 按类型过滤；gameVersion 字符串精确匹配；index 分页）</summary>
-    public async Task<List<CurseforgeProject>> SearchAsync(
+    public async Task<CurseForgeSearchPage?> SearchAsync(
         ProjectType type, string? query = null, string? gameVersion = null,
         SortIndex sort = SortIndex.Relevance,
         int limit = 20, int index = 0, CancellationToken ct = default)
     {
-        if (!IsEnabled) return [];
+        if (!IsEnabled) return null;
         var url = BuildSearchUrl(type, query, gameVersion, sort, limit, index);
-        var response = await GetJsonAsync<CurseforgeProjectsResponse>(url, ct);
-        return response?.data ?? [];
+        var response = await GetJsonAsync<CurseforgeSearchResponse>(url, ct);
+        if (response is null) return null;
+        return new CurseForgeSearchPage(response.data ?? [], response.pagination?.totalCount ?? response.data.Count);
     }
 
     /// <summary>项目详情（含 logo / authors / 下载数）</summary>
@@ -224,3 +225,11 @@ public sealed class CurseForgeService
 
 /// <summary>CF /files 响应包装（PCL.Core 缺 files 响应类型，本地补）</summary>
 public sealed record CurseforgeFilesResponse(List<CurseforgeFile> data);
+
+/// <summary>CF /mods/search 响应（分页总数供 UI 分页栏）</summary>
+public sealed record CurseforgeSearchPagination(int totalCount);
+
+public sealed record CurseforgeSearchResponse(List<CurseforgeProject> data, CurseforgeSearchPagination? pagination);
+
+/// <summary>搜索页结果（项目列表 + 总数；无分页信息时总数=当前页条数）</summary>
+public sealed record CurseForgeSearchPage(List<CurseforgeProject> Projects, int TotalCount);
