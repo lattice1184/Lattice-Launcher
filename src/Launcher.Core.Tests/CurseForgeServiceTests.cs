@@ -76,12 +76,12 @@ public class CurseForgeServiceTests
     }
 
     [Fact]
-    public async Task SearchAsync_Disabled_ReturnsEmpty_NoHttp()
+    public async Task SearchAsync_Disabled_ReturnsNull_NoHttp()
     {
         var handler = new CfStubHandler();
         var svc = new CurseForgeService((string?)null, new HttpClient(handler));
         var results = await svc.SearchAsync(ProjectType.Mod);
-        Assert.Empty(results);
+        Assert.Null(results);
         Assert.Empty(handler.Requests);
     }
 
@@ -160,10 +160,12 @@ public class CurseForgeServiceTests
 
         var results = await svc.SearchAsync(ProjectType.Mod, "sodium");
 
-        Assert.Single(results);
-        Assert.Equal("Sodium", results[0].name);
-        Assert.Equal(12345, results[0].downloadCount);
-        Assert.Equal("jellysquid3", results[0].authors[0].name);
+        Assert.NotNull(results);
+        Assert.Single(results!.Projects);
+        Assert.Equal("Sodium", results.Projects[0].name);
+        Assert.Equal(12345, results.Projects[0].downloadCount);
+        Assert.Equal("jellysquid3", results.Projects[0].authors[0].name);
+        Assert.Equal(1, results.TotalCount); // 无分页信息 → 回退当前页条数
         Assert.Contains("x-api-key=test-key", handler.Requests.Single());
     }
 
