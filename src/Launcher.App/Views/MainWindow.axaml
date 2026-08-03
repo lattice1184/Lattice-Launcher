@@ -51,6 +51,9 @@
                         <Button Content="账号" Classes="nav" Classes.active="{Binding IsAccountActive}"
                                 Command="{Binding NavigateCommand}" CommandParameter="account"
                                 HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
+                        <Button Content="开服" Classes="nav" Classes.active="{Binding IsServerActive}"
+                                Command="{Binding NavigateCommand}" CommandParameter="server"
+                                HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>
                         <Button Content="设置" Classes="nav" Classes.active="{Binding IsSettingsActive}"
                                 Command="{Binding NavigateCommand}" CommandParameter="settings"
                                 HorizontalAlignment="Stretch" Margin="0,3" Padding="14,8"/>

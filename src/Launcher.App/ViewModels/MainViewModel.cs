@@ -27,11 +27,15 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsSettingsActive { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsServerActive { get; set; }
+
     public HomeViewModel Home { get; } = new();
     public VersionBrowseViewModel Versions { get; } = new();
     public DownloadViewModel Downloads { get; } = new();
     public AccountViewModel Account { get; } = new();
     public SettingsViewModel Settings { get; } = new();
+    public ServerViewModel Server { get; } = new();
 
     public MainViewModel()
     {
@@ -55,6 +59,7 @@ public partial class MainViewModel : ViewModelBase
         IsDownloadsActive = page == "download";
         IsAccountActive = page == "account";
         IsSettingsActive = page == "settings";
+        IsServerActive = page == "server";
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.EnsureLoadedAsync(); // 首次进入版本页才拉清单
@@ -64,6 +69,7 @@ public partial class MainViewModel : ViewModelBase
             "download" => Downloads,
             "account" => Account,
             "settings" => Settings,
+            "server" => Server,
             _ => Home,
         };
     }

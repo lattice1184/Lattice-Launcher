@@ -1,0 +1,258 @@
+using System.Collections.ObjectModel;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Launcher.App.Services;
+using Launcher.Core.Download;
+using Launcher.Core.Launch;
+using Launcher.Core.Server;
+using Launcher.Core.Services;
+using Launcher.Core.Utils;
+
+namespace Launcher.App.ViewModels;
+
+/// <summary>server.properties 编辑行（显示名 + 键 + 当前值）</summary>
+public partial class PropRowVM : ObservableObject
+{
+    public string Key { get; }
+    public string Label { get; }
+
+    [ObservableProperty]
+    public partial string Value { get; set; }
+
+    public PropRowVM(string key, string label, string value)
+    {
+        Key = key;
+        Label = label;
+        Value = value;
+    }
+}
+
+/// <summary>
+/// 开服页：选择已装版本 → 下载服务端 → 编辑 server.properties → 启动/停止/控制台。
+/// </summary>
+public partial class ServerViewModel : ViewModelBase
+{
+    private static readonly (string Key, string Label)[] PropDefs =
+    [
+        ("server-port", "端口"),
+        ("level-name", "世界名"),
+        ("max-players", "最大玩家"),
+        ("motd", "服务器描述 (MOTD)"),
+        ("online-mode", "正版验证 (online-mode)"),
+        ("difficulty", "难度 (easy/normal/hard)"),
+        ("gamemode", "游戏模式 (survival/creative)"),
+        ("view-distance", "视距 (区块)"),
+        ("pvp", "PVP"),
+        ("white-list", "白名单"),
+    ];
+
+    private readonly ServerInstaller _installer = new();
+    private readonly ServerProcess _process = new();
+    private const int MaxLogLines = 500;
+
+    public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
+    public ObservableCollection<PropRowVM> PropRows { get; } = [];
+    public ObservableCollection<string> Logs { get; } = [];
+
+    [ObservableProperty]
+    public partial VersionInstanceVM? SelectedVersion { get; set; }
+
+    [ObservableProperty]
+    public partial string Status { get; set; } = "选择已安装版本以开服";
+
+    [ObservableProperty]
+    public partial bool IsRunning { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsInstalling { get; set; }
+
+    [ObservableProperty]
+    public partial string ServerDirText { get; set; } = "";
+
+    public string CommandInput { get; set; } = "";
+
+    /// <summary>当前服务端目录（servers/{versionId}）</summary>
+    private string? ServerDir => SelectedVersion is null
+        ? null
+        : ServerInstaller.ServerDir(GameDirectory.InstallDir(), SelectedVersion.Name);
+
+    public ServerViewModel()
+    {
+        _process.OutputReceived += line => AppendLog(line);
+        _process.Exited += code =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                IsRunning = false;
+                AppendLog(code == 0 ? "§ 服务端已停止" : $"§ 服务端异常退出（exitCode={code}）");
+                Status = code == 0 ? "服务端已停止" : "服务端异常退出，请查看日志";
+            });
+        };
+        _ = RefreshVersionsAsync();
+    }
+
+    private async Task RefreshVersionsAsync()
+    {
+        try
+        {
+            var svc = new VersionManifestService();
+            await svc.RefreshAsync();
+            InstalledVersions.Clear();
+            foreach (var e in svc.Entries.Where(e => e.Installed))
+                InstalledVersions.Add(new VersionInstanceVM(e.Id));
+            if (InstalledVersions.Count > 0) SelectedVersion = InstalledVersions[0];
+        }
+        catch { }
+    }
+
+    partial void OnSelectedVersionChanged(VersionInstanceVM? value)
+    {
+        if (value is null) return;
+        var dir = ServerInstaller.ServerDir(GameDirectory.InstallDir(), value.Name);
+        ServerDirText = dir;
+        Status = File.Exists(Path.Combine(dir, "server.jar")) ? "服务端已下载，可启动" : "尚未下载服务端";
+        LoadProperties();
+    }
+
+    /// <summary>下载服务端 jar（确认后执行；幂等跳过已有）</summary>
+    [RelayCommand]
+    private async Task DownloadServer()
+    {
+        var version = SelectedVersion;
+        if (version is null) { Status = "请先选择版本"; return; }
+        if (IsInstalling) return;
+        if (DialogService.MainWindow() is { } owner
+            && !await DialogService.Confirm(owner,
+                $"下载 Minecraft {version.Name} 服务端（约 50MB）到 {ServerDir}？", "下载服务端", "下载", "取消"))
+        {
+            return;
+        }
+
+        IsInstalling = true;
+        Status = "正在下载服务端…";
+        try
+        {
+            var dir = await _installer.InstallAsync(version.Name, GameDirectory.InstallDir(), null, CancellationToken.None);
+            ServerDirText = ServerDir ?? "";
+            Status = "服务端下载完成，可启动";
+            NotificationService.Success($"{version.Name} 服务端已就绪");
+            LoadProperties();
+        }
+        catch (Exception ex)
+        {
+            Status = $"下载失败: {ex.Message}";
+            NotificationService.Error(ex.Message);
+        }
+        finally
+        {
+            IsInstalling = false;
+        }
+    }
+
+    /// <summary>启动服务端（自动同意 EULA；Java 自动选配 + 设置页内存）</summary>
+    [RelayCommand]
+    private void StartServer()
+    {
+        var version = SelectedVersion;
+        var dir = ServerDir;
+        if (version is null || dir is null) { Status = "请先选择版本"; return; }
+        if (!File.Exists(Path.Combine(dir, "server.jar")))
+        {
+            Status = "尚未下载服务端，请先下载";
+            return;
+        }
+        if (IsRunning) return;
+
+        ServerInstaller.AcceptEula(dir);
+        var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
+            ? custom
+            : JavaSelector.Pick(17);
+        var mem = LauncherSettings.Current.MemoryMb > 0
+            ? LauncherSettings.Current.MemoryMb
+            : 2048;
+        try
+        {
+            Logs.Clear();
+            _process.Start(dir, java, mem);
+            IsRunning = true;
+            Status = "服务端运行中（控制台可输命令）";
+            AppendLog($"§ 已启动：{java}");
+            AppendLog($"§ 内存 {mem}MB · 世界目录 {dir}");
+        }
+        catch (Exception ex)
+        {
+            Status = $"启动失败: {ex.Message}";
+            NotificationService.Error(ex.Message);
+        }
+    }
+
+    /// <summary>优雅停止（stop 命令 + 超时强杀）</summary>
+    [RelayCommand]
+    private void StopServer()
+    {
+        if (!IsRunning) return;
+        Status = "正在停止…";
+        AppendLog("§ 发送 stop 命令…");
+        _process.Stop();
+    }
+
+    /// <summary>发送控制台命令（回车触发；输入框清空）</summary>
+    [RelayCommand]
+    private void SendCommand(string command)
+    {
+        var cmd = command?.Trim();
+        if (string.IsNullOrEmpty(cmd)) return;
+        AppendLog($"> {cmd}");
+        _process.SendCommand(cmd);
+    }
+
+    /// <summary>加载 server.properties 到编辑表单（默认值兜底）</summary>
+    private void LoadProperties()
+    {
+        var dir = ServerDir;
+        if (dir is null) return;
+        var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
+        PropRows.Clear();
+        foreach (var (key, label) in PropDefs)
+        {
+            var fallback = key switch
+            {
+                "server-port" => "25565",
+                "max-players" => "20",
+                "difficulty" => "normal",
+                "gamemode" => "survival",
+                "online-mode" => "true",
+                "pvp" => "true",
+                "white-list" => "false",
+                "view-distance" => "10",
+                _ => "",
+            };
+            PropRows.Add(new PropRowVM(key, label, props.Get(key, fallback)));
+        }
+    }
+
+    /// <summary>保存 server.properties（写回服务端目录）</summary>
+    [RelayCommand]
+    private void SaveProperties()
+    {
+        var dir = ServerDir;
+        if (dir is null) return;
+        var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
+        foreach (var row in PropRows) props.Set(row.Key, row.Value);
+        props.Save(Path.Combine(dir, "server.properties"));
+        Status = "server.properties 已保存";
+        NotificationService.Success("server.properties 已保存");
+    }
+
+    private void AppendLog(string line)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AppendLog(line));
+            return;
+        }
+        if (Logs.Count >= MaxLogLines) Logs.RemoveAt(0);
+        Logs.Add(line);
+    }
+}
