@@ -400,7 +400,7 @@ public partial class EcosystemViewModel : ViewModelBase
                     if (p is not null)
                     {
                         var card = new ProjectCardVM(p);
-                        if (TypeMatches(card.Type)) Cards.Add(card);
+                        if (TypeMatches(card.Type.ToString())) Cards.Add(card);
                     }
                 }
                 else

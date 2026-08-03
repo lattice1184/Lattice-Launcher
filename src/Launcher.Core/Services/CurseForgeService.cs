@@ -81,7 +81,7 @@ public sealed class CurseForgeService
         var url = BuildSearchUrl(type, query, gameVersion, sort, limit, index);
         var response = await GetJsonAsync<CurseforgeSearchResponse>(url, ct);
         if (response is null) return null;
-        return new CurseForgeSearchPage(response.data ?? [], response.pagination?.totalCount ?? response.data.Count);
+        return new CurseForgeSearchPage(response.data ?? [], response.pagination?.totalCount ?? response.data?.Count ?? 0);
     }
 
     /// <summary>项目详情（含 logo / authors / 下载数）</summary>
