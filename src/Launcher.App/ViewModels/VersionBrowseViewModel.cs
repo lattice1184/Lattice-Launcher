@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,9 +10,9 @@ using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>已装版本行（左栏）：名称 + 来源标签 + 加载器徽章 + 所在目录</summary>
+/// <summary>已装版本行（左栏）：名称 + 来源标签 + 加载器徽章 + 所在目录 + 客户端文件缺失标记（有 json 无 jar 的残件版本）</summary>
 public sealed record InstalledVersionRowVM(
-    string Id, string SourceLabel, string LoaderBadge, string GameDir, string ReleaseDate);
+    string Id, string SourceLabel, string LoaderBadge, string GameDir, string ReleaseDate, bool IsJarMissing);
 
 /// <summary>
 /// 版本页（PCL2 式已装管理）：左栏已装版本列表（跨源扫描 + 搜索 + 行启动），
@@ -108,7 +109,8 @@ public partial class VersionBrowseViewModel : ViewModelBase
         InstallMarker.IsMarked(dir, id) ? "本启动器" : GameDirectory.SourceLabel(GameDirectory.SourceOf(dir)),
         LoaderBadgeOf(id),
         dir,
-        GetReleaseDate(dir, id));
+        GetReleaseDate(dir, id),
+        !File.Exists(Path.Combine(dir, "versions", id, $"{id}.jar")));
 
     /// <summary>从版本 JSON 读发布时间（懒，缺省空）</summary>
     private static string GetReleaseDate(string dir, string id)
@@ -196,6 +198,23 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     [ObservableProperty]
     public partial string ErrorText { get; set; } = "";
 
+    /// <summary>客户端文件缺失（扫描层只认 json，残件版本启动时才暴露）</summary>
+    [ObservableProperty]
+    public partial bool JarMissing { get; set; }
+
+    public string JarMissingText => $"版本 {Id} 的客户端文件缺失，无法启动。可补全下载，或前往官方页面手动下载。";
+
+    /// <summary>打开官方下载页（minecraft.net）——无文件版本的"链接跳转下载"入口</summary>
+    [RelayCommand]
+    private void OpenOfficialDownload()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://www.minecraft.net/zh-hans/download") { UseShellExecute = true });
+        }
+        catch { /* 无法打开浏览器忽略 */ }
+    }
+
     public string GameDir { get; private set; } = "";
     public bool ShowRepairButton => !IsDownloading;
     public bool ShowProgress => IsDownloading;
@@ -266,6 +285,8 @@ public partial class InstalledVersionDetailVM : ViewModelBase
         SizeText = "预估体积：计算中…";
         ErrorText = "";
         DownloadProgressPercent = 0;
+        JarMissing = !File.Exists(Path.Combine(row.GameDir, "versions", row.Id, $"{row.Id}.jar"));
+        OnPropertyChanged(nameof(JarMissingText));
         HasSelection = true;
 
         // 分区：版本管理（模组/存档/操作）——加载器在下载时选择（下载页融合流程）

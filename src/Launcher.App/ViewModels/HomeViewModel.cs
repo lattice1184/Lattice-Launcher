@@ -382,7 +382,10 @@ public partial class HomeViewModel : ViewModelBase
         catch (Exception ex)
         {
             LaunchState = "失败";
-            LaunchStatus = ex.Message;
+            // 客户端文件缺失（残件版本）：提示去版本页补全
+            LaunchStatus = ex is FileNotFoundException
+                ? $"{ex.Message}（可在版本页选中该版本补全下载）"
+                : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
             IsLaunching = false;

@@ -41,6 +41,10 @@
                                                 <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="#B5F4E9"/>
                                             </Border>
                                             <TextBlock Text="{Binding ReleaseDate}" Classes="dim" FontSize="10"/>
+                                            <Border CornerRadius="3" Padding="5,0" Background="#22332F3F"
+                                                    VerticalAlignment="Center" IsVisible="{Binding IsJarMissing}">
+                                                <TextBlock Text="缺文件" FontSize="9" Foreground="{StaticResource Danger}"/>
+                                            </Border>
                                         </StackPanel>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="▶" Classes="ghost" FontSize="11" Padding="8,3"
@@ -120,6 +124,21 @@
                                                  IsVisible="{Binding Detail.ShowProgress}"/>
                                     <TextBlock Text="{Binding Detail.ErrorText}" Foreground="{StaticResource Danger}"
                                                FontSize="12" TextWrapping="Wrap" IsVisible="{Binding Detail.HasError}"/>
+
+                                    <!-- 客户端文件缺失：补全下载 / 官方链接 -->
+                                    <Border CornerRadius="6" Padding="10,8" Background="#22332F3F"
+                                            IsVisible="{Binding Detail.JarMissing}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="{Binding Detail.JarMissingText}" FontSize="12"
+                                                       Foreground="{StaticResource Danger}" TextWrapping="Wrap"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Button Content="补全下载" Classes="primary" FontSize="11" Padding="14,5"
+                                                        Command="{Binding Detail.RepairCommand}"/>
+                                                <Button Content="打开官方下载页" Classes="ghost" FontSize="11" Padding="14,5"
+                                                        Command="{Binding Detail.OpenOfficialDownloadCommand}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 
