@@ -135,11 +135,30 @@
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
-        <!-- 导航按钮：激活态左侧 Accent 色条 + 填充 -->
+        <!-- 导航按钮：固定尺寸（无弹性缩放）+ 点击涟漪 + 激活态左侧 Accent 色条 -->
         <Style Selector="Button.nav">
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="False"/>
+            <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
+            <Setter Property="Template">
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalAlignment="Left" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                            <Canvas x:Name="RippleHost" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
         </Style>
         <Style Selector="Button.nav:hover">
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
@@ -203,14 +222,12 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
-        <!-- 列表行：扁平 + hover（背景过渡 + 弹性放大 1.015）+ 分隔线 -->
+        <!-- 列表行：扁平 + hover 背景过渡 + 分隔线（缩放会跳动，不做） -->
         <Style Selector="Border.row">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
-            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
-            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <BrushTransition Property="Background" Duration="0:0:0.15"/>
