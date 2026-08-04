@@ -164,3 +164,10 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 回答用户："无效会话"根因 = online-mode 改动未重启生效（服务端只启动时读一次 server.properties），诊断弹窗已能自动说明
 - 测试 +3（197/197 全绿）：ops.json 解析/缺失/损坏
 - 提交 aede9c6；水位 ~40%
+
+## AJ 批次（2026-08-04 18:35 发布 185.8MB）
+一键开服（一条龙）
+- 用户："不能一条龙跑完吗全程"——操作条加「一键开服」主按钮（下载服务端/启动降为 ghost 次要按钮）
+- **OneClickStart 流程**：① 缺 server.jar 自动下载（DownloadServer 重构出无确认的 DownloadServerCoreAsync）→ ② 无 world 自动生成（启动→Done→自动 stop→等退出）→ ③ 启动服务端 → 就绪（Done）后 ④ 自动授予 OP（登录账号名，OpNameText）⑤ 拉起客户端自动连接（JoinGame）。任一步失败中止、已完成部分保留；防重入 _oneClickActive
+- ParseServerReady 双分支：_autoStopOnReady（生成世界）/ _autoJoinOnReady（一键开服）
+- 197/197 全绿；提交 87c34df；水位 ~40%
