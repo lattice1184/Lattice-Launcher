@@ -45,15 +45,15 @@ public static class RippleBehavior
         {
             Width = 0,
             Height = 0,
-            Fill = new SolidColorBrush(Color.Parse("#26FFFFFF")),
+            Fill = new SolidColorBrush(Color.Parse("#33FFFFFF")),
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(ellipse, pos.X);
         Canvas.SetTop(ellipse, pos.Y);
         host.Children.Add(ellipse);
 
-        // 扩散 + 淡出（DispatcherTimer 步进，结束移除；避免累积椭圆）
-        var steps = 18;
+        // 扩散 + 淡出（~390ms 放慢到能看清；结束移除避免累积椭圆）
+        var steps = 26;
         var i = 0;
         var ease = new CubicEaseOut();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };

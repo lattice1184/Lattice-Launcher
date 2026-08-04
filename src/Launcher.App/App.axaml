@@ -53,15 +53,34 @@
             <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
         </Style>
 
-        <!-- 按钮过渡：背景/边框 0.15s；弹性缩放（hover 拉伸 1.02 / pressed 压缩 0.96 / 释放回弹）由 SpringScaleBehavior 托管 -->
+        <!-- 按钮过渡：背景/边框 0.15s；弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost） -->
         <Style Selector="Button">
             <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
             <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
             <Setter Property="Transitions">
                 <Transitions>
                     <BrushTransition Property="Background" Duration="0:0:0.15"/>
                     <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
                 </Transitions>
+            </Setter>
+            <Setter Property="Template">
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}"/>
+                            <Canvas x:Name="RippleHost" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
             </Setter>
         </Style>
         <Style Selector="Button:pressed">
@@ -135,13 +154,12 @@
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
-        <!-- 导航按钮：固定尺寸（无弹性缩放）+ 点击涟漪 + 激活态左侧 Accent 色条 -->
+        <!-- 导航按钮：固定尺寸（无弹性缩放，涟漪由全局 Button 挂载）+ 激活态左侧 Accent 色条 -->
         <Style Selector="Button.nav">
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="False"/>
-            <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
             <Setter Property="Template">
                 <ControlTemplate TargetType="Button">
                     <Border Background="{TemplateBinding Background}"
