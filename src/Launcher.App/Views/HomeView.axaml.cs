@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
@@ -23,6 +24,20 @@ public partial class HomeView : UserControl
     {
         if (e.Action == NotifyCollectionChangedAction.Add)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => LogScroll?.ScrollToEnd());
+    }
+
+    /// <summary>复制控制台全部日志到剪贴板（错误信息可直接粘贴给他人）</summary>
+    private async void OnCopyLogs(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not HomeViewModel vm || vm.GameLogs.Count == 0)
+        {
+            Launcher.App.Services.NotificationService.Error("控制台暂无日志");
+            return;
+        }
+        var top = TopLevel.GetTopLevel(this);
+        if (top?.Clipboard is not { } cb) return;
+        await cb.SetTextAsync(string.Join(Environment.NewLine, vm.GameLogs));
+        Launcher.App.Services.NotificationService.Success($"已复制 {vm.GameLogs.Count} 行日志");
     }
 
     /// <summary>导出日志（游戏日志 + 崩溃日志 + 系统信息 → zip）</summary>

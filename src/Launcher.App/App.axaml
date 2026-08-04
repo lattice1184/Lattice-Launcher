@@ -53,17 +53,12 @@
             <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
         </Style>
 
-        <!-- 按钮过渡：背景/边框 0.15s；弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost） -->
+        <!-- 按钮：弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost）。
+             注意：不放 Transitions——样式伪类 Setter 驱动的过渡动画在 Avalonia 12 下导致 hover 失效/白影闪现（AC1） -->
         <Style Selector="Button">
             <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
             <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
             <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
-            <Setter Property="Transitions">
-                <Transitions>
-                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
-                    <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
-                </Transitions>
-            </Setter>
             <Setter Property="Template">
                 <ControlTemplate TargetType="Button">
                     <Border Background="{TemplateBinding Background}"

@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Interactivity;
 using Launcher.App.ViewModels;
@@ -33,6 +34,20 @@ public partial class ServerView : UserControl
     }
 
     private void OnSendClick(object? sender, RoutedEventArgs e) => Send();
+
+    /// <summary>复制服务端控制台全部日志到剪贴板</summary>
+    private async void OnCopyLogs(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ServerViewModel vm || vm.Logs.Count == 0)
+        {
+            Launcher.App.Services.NotificationService.Error("控制台暂无日志");
+            return;
+        }
+        var top = TopLevel.GetTopLevel(this);
+        if (top?.Clipboard is not { } cb) return;
+        await cb.SetTextAsync(string.Join(Environment.NewLine, vm.Logs));
+        Launcher.App.Services.NotificationService.Success($"已复制 {vm.Logs.Count} 行日志");
+    }
 
     /// <summary>导出日志（游戏/崩溃日志 + 系统信息 zip）</summary>
     private async void OnExportLogs(object? sender, RoutedEventArgs e)
