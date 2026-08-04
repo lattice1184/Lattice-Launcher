@@ -161,7 +161,15 @@ public sealed class JavaArgumentsBuilder
         // java.library.path 与硬编码参数去重：版本 JSON 可能带子目录后缀（如 26.2 的 ${natives_directory}/java），
         // 统一使用本构建器计算的 natives 根目录（dll 平铺解压即可被找到）
         if (arg.StartsWith("-Djava.library.path=", StringComparison.OrdinalIgnoreCase)) return;
-        if (!jvmArgs.Contains(arg)) jvmArgs.Add(arg);
+        // AL8 修复：裸选项（-p/--add-opens/--add-exports/--add-modules 等）是成对参数（选项+值），
+        // 通用去重会吃掉第二个选项名 → 值错位 → ClassNotFoundException（TACZgun 崩溃）——
+        // 去重只适用于自包含的 -D 参数（重复赋值无害，java 后者覆盖前者）
+        if (arg.StartsWith("-D", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!jvmArgs.Contains(arg)) jvmArgs.Add(arg);
+            return;
+        }
+        jvmArgs.Add(arg);
     }
 
     private static Dictionary<string, string> BuildTokens(
@@ -198,6 +206,10 @@ public sealed class JavaArgumentsBuilder
             // AL8：Forge 1.20+ 的 -p 模块路径用 ${classpath_separator} 连接模块 jar——缺失则整串
             // 未替换，java 模块系统把路径串当单一文件解析 → InvalidPathException（TACZgun 崩溃根因）
             ["classpath_separator"] = Path.PathSeparator.ToString(),
+            // AL8：1.20.1+ 官方/Forge json 的 game 参数带 ${clientid}/${auth_xuid}（官方启动器专属 token），
+            // 缺失则原样传给游戏——离线用 0 安全
+            ["clientid"] = "0",
+            ["auth_xuid"] = "0",
         };
     }
 
