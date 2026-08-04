@@ -30,10 +30,10 @@
         <Color x:Key="OnAccent">#0B1F1C</Color>
         <Color x:Key="Danger">#E05A5A</Color>
         <Color x:Key="Success">#5AD07C</Color>
-        <!-- 圆角与间距基准 -->
-        <CornerRadius x:Key="RadiusSmall">3</CornerRadius>
-        <CornerRadius x:Key="RadiusMedium">4</CornerRadius>
-        <CornerRadius x:Key="RadiusLarge">6</CornerRadius>
+        <!-- 圆角与间距基准（圆滑不锐利） -->
+        <CornerRadius x:Key="RadiusSmall">5</CornerRadius>
+        <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
+        <CornerRadius x:Key="RadiusLarge">10</CornerRadius>
         <!-- 间距基准（紧凑统一） -->
         <x:Double x:Key="SpaceXXS">4</x:Double>
         <x:Double x:Key="SpaceXS">6</x:Double>
