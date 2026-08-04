@@ -98,3 +98,12 @@ Toast 滑入 + 涟漪深色 + 版本页小屏 + 发布脚本自动杀进程
 - **白影根因**：Button:pressed 背景 BgActive #2A3240 比 BgRaised #242A36 亮 → 全局改为 #1A2029（按下=变深）
 - 坑：PointerPressed/PointerReleased 是路由事件（PointerPressedEventArgs），PointerEntered/Exited 是直接事件（PointerEventArgs）——签名别混
 - 提交 e942b72；192/192 全绿
+
+## AC 批次（2026-08-04 15:52 发布 185.8MB）
+按钮 hover 色系 + 内置卸载 + 控制台复制 + 服务端下载进队列
+- AC1 hover 根治：删除全局 Button 样式 Transitions（BrushTransition 0.15s）——样式伪类 Setter 驱动的过渡动画是 hover 失效（danger 悬浮不变红，用户确认）/白影闪现的嫌疑根因；去掉后瞬时生效。AB 批次 nav 本地值 + 本批去动画 = 双保险
+- AC2 内置卸载（设置页"关于"卡片）：红字 Warn 列出删除项（本体 exe/应用数据 AppData\Launcher/游戏目录含存档）→ 写延迟删除 ps1（UTF-8 BOM——PowerShell 5.1 中文路径不乱码；安装目录仅删空目录防误删用户自放文件）→ MainWindow.Close() 退出
+- AC3 复制：HomeView「复制日志」/ ServerView「复制」（clipboard.SetTextAsync；**Avalonia 12 的 IClipboard 在 Avalonia.Input.Platform 命名空间**，SetTextAsync 是扩展方法）
+- AC4 服务端下载进队列：DownloadServer/DownloadAndStartAsync 改 DownloadManager.EnqueueGroup（ctx.AddChild 包 ServerInstaller——Core 不动）+ NavigateToDownloadQueue（原裸下载不进下载记录不跳转）
+- 坑：GameDirectory.EnsureDefault() 是 void（创建目录）；取默认路径用 Detect()；Avalonia Application 无 Shutdown()——关主窗口即可
+- 提交 7f5b9ff；192/192 全绿
