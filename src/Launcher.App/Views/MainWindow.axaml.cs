@@ -18,8 +18,10 @@ public partial class MainWindow : Window
             RestoreWindowSize();
             ApplyOpacityFallback();
             ApplyAppearance();
-            // 页面切换：弹性滑入淡出（BackEase overshoot 拉伸感）
+            // 页面切换：平滑滑入淡出
             PageHost.PageTransition = new UiAnim.FadeSlideTransition { Duration = TimeSpan.FromMilliseconds(180) };
+            // Toast 出现时右侧滑入（NVIDIA 浮窗风；Opacity 淡入淡出由绑定驱动）
+            ToastsHost.ContainerPrepared += (_, e) => UiAnim.SlideInX(e.Container);
             // 外观实时跟随设置页改动（保存应用 + 预览）
             if (DataContext is MainViewModel main)
             {

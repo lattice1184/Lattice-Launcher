@@ -70,12 +70,12 @@ public static class RippleBehavior
 
         var pos = e.GetPosition(host);
         var maxR = Math.Max(host.Bounds.Width, host.Bounds.Height) * 1.2;
-        // Google 涟漪：扩散色 = 点击后的压暗色（BgActive #2A3240，与 Button:pressed 背景一致）
+        // Google 涟漪：扩散色 = 点击变深（BgBase #14181F——比所有按钮底色更暗；BgActive 反而比底色亮会显"白影"）
         var ellipse = new Ellipse
         {
             Width = 0,
             Height = 0,
-            Fill = new SolidColorBrush(Color.Parse("#2A3240")),
+            Fill = new SolidColorBrush(Color.Parse("#14181F")),
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(ellipse, pos.X);

@@ -169,7 +169,7 @@
                                                     <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
                                                             Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
                                                             CommandParameter="{Binding}"/>
-                                                    <Button Grid.Column="3" Content="删除" Classes="ghost" FontSize="10" Padding="8,2"
+                                                    <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
                                                             Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
@@ -212,21 +212,22 @@
                             <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="版本操作" FontSize="13" FontWeight="SemiBold"/>
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5"
+                                    <!-- WrapPanel：窄右栏自动换行，按钮不被裁切 -->
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.BackupCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="导出整合包 (mrpack)" Classes="ghost" FontSize="12" Padding="12,5"
+                                        <Button Content="导出整合包 (mrpack)" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.ExportMrpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="导出整合包 (ZIP)" Classes="ghost" FontSize="12" Padding="12,5"
+                                        <Button Content="导出整合包 (ZIP)" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.ExportModpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5"
+                                        <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.OpenFolderCommand}"/>
-                                        <Button Content="删除" Classes="danger" FontSize="12" Padding="12,5"
+                                        <Button Content="删除" Classes="danger" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.DeleteCommand}"/>
-                                    </StackPanel>
+                                    </WrapPanel>
                                     <TextBlock Text="{Binding Detail.Manage.StatusText}" Classes="sub" FontSize="12"
                                                TextWrapping="Wrap"/>
                                 </StackPanel>
