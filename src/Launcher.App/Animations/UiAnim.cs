@@ -163,6 +163,28 @@ public static class UiAnim
         timer.Start();
     }
 
+    /// <summary>Toast 右侧滑入：只动画位移 48→0（不动 Opacity——Toast 淡入由 ToastItem.Opacity 绑定驱动，动会覆盖绑定破坏淡出）</summary>
+    public static void SlideInX(Visual root, double fromX = 48, int ms = 220)
+    {
+        root.RenderTransform = new TranslateTransform(fromX, 0);
+        var steps = Math.Max(1, ms / 15);
+        var i = 0;
+        var ease = new CubicEaseOut();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        timer.Tick += (_, _) =>
+        {
+            i++;
+            var t = Math.Min(1.0, i / (double)steps);
+            if (root.RenderTransform is TranslateTransform tr) tr.X = fromX * (1 - ease.Ease(t));
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                root.RenderTransform = null;
+            }
+        };
+        timer.Start();
+    }
+
     /// <summary>右侧切出：内容滑出到右 48px + 淡出（窗口淡出负责真正关闭）</summary>
     public static void SlideOutToRight(Visual root, Action? done = null)
     {
