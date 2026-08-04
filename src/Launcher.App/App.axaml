@@ -54,11 +54,13 @@
         </Style>
 
         <!-- 按钮：弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost）。
-             注意：不放 Transitions——样式伪类 Setter 驱动的过渡动画在 Avalonia 12 下导致 hover 失效/白影闪现（AC1） -->
+             hover 变色由 HoverBrushBehavior 托管（本地值驱动——样式伪类 Setter 对模板绑定的驱动在 Avalonia 12 不可靠，AD1 根治） -->
         <Style Selector="Button">
             <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
             <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
             <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:HoverBrushBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource BgHover}"/>
             <Setter Property="Template">
                 <ControlTemplate TargetType="Button">
                     <Border Background="{TemplateBinding Background}"
@@ -113,52 +115,40 @@
             <Setter Property="Padding" Value="14,7"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
-        <Style Selector="Button:hover">
-            <Setter Property="Background" Value="{StaticResource BgHover}"/>
-        </Style>
         <Style Selector="Button:disabled">
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
-        <!-- 主操作按钮（唯一饱和面） -->
+        <!-- 主操作按钮（唯一饱和面；hover 亮青绿由行为驱动） -->
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="{StaticResource Accent}"/>
             <Setter Property="Foreground" Value="{StaticResource OnAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-        <Style Selector="Button.primary:hover">
-            <Setter Property="Background" Value="{StaticResource AccentHover}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource AccentHover}"/>
         </Style>
 
-        <!-- 危险按钮（红字；hover 红底浅） -->
+        <!-- 危险按钮（红字；hover 红底浅红字由行为驱动） -->
         <Style Selector="Button.danger">
             <Setter Property="Foreground" Value="{StaticResource Danger}"/>
             <Setter Property="Background" Value="Transparent"/>
-        </Style>
-        <Style Selector="Button.danger:hover">
-            <Setter Property="Background" Value="#22E05A5A"/>
-            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="#22E05A5A"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{StaticResource Danger}"/>
         </Style>
 
-        <!-- 幽灵按钮 -->
+        <!-- 幽灵按钮（hover 灰底白字由行为驱动） -->
         <Style Selector="Button.ghost">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-        </Style>
-        <Style Selector="Button.ghost:hover">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource BgRaised}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{StaticResource TextPrimary}"/>
         </Style>
 
-        <!-- 生态 Tab -->
+        <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动） -->
         <Style Selector="Button.tab">
             <Setter Property="Padding" Value="16,7"/>
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
             <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
-        </Style>
-        <Style Selector="Button.tab:hover">
-            <Setter Property="Background" Value="{StaticResource BgHover}"/>
         </Style>
         <Style Selector="Button.tab.active">
             <Setter Property="Background" Value="#12332F"/>

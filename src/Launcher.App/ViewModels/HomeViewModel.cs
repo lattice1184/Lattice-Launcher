@@ -305,11 +305,28 @@ public partial class HomeViewModel : ViewModelBase
     [RelayCommand]
     private Task Launch() => LaunchAsync();
 
-    /// <summary>启动核心（主页按钮与版本页 [启动] 共用）</summary>
-    private async Task LaunchAsync()
+    /// <summary>启动核心（主页按钮/版本页 [启动] 共用；额外参数为空 = 普通启动）</summary>
+    private async Task LaunchAsync() => await LaunchCoreAsync(null, "", null);
+
+    /// <summary>一键进服：启动客户端并自动连接本地服务端（开服页调用；host/port 由开服页读取）</summary>
+    public async Task RequestLaunchWithServerAsync(string versionId, string gameDir, string host, int port)
+    {
+        await RefreshVersionsAsync();
+        var found = InstalledVersions.FirstOrDefault(v => v.Name.Equals(versionId, StringComparison.OrdinalIgnoreCase));
+        if (found is null)
+        {
+            InstalledVersions.Add(new VersionInstanceVM(versionId, "本启动器", gameDir));
+            found = InstalledVersions[^1];
+        }
+        SelectedVersion = found;
+        await LaunchCoreAsync(found, gameDir, ["--server", host, "--port", port.ToString()]);
+    }
+
+    /// <summary>启动核心（主页按钮/版本页 [启动]/一键进服共用）</summary>
+    private async Task LaunchCoreAsync(VersionInstanceVM? overrideVersion, string overrideGameDir, string[]? extraGameArgs)
     {
         if (IsLaunching || IsRunning) return;
-        var version = SelectedVersion;
+        var version = overrideVersion ?? SelectedVersion;
         if (version is null)
         {
             LaunchStatus = "请先选择版本";
@@ -341,7 +358,8 @@ public partial class HomeViewModel : ViewModelBase
         try
         {
             // 启动链路（后台线程；阶段回调切回 UI 更新指示条）——内存/Java/参数：版本级配置覆盖全局
-            var gameDir = version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
+            var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
+                : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var s = LauncherSettings.Current;
             var (memCfg, javaCfg, argsCfg) = VersionConfigService.Merge(gameDir, version.Name, s);
             var memMb = memCfg > 0
@@ -371,7 +389,7 @@ public partial class HomeViewModel : ViewModelBase
                 version.Name, gameDir, account.Name, account.Uuid, accessToken,
                 memoryMb: memMb, extraJvmArgs: extraArgs,
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
-                ct: CancellationToken.None));
+                ct: CancellationToken.None, extraGameArgs: extraGameArgs));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;

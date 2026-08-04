@@ -39,10 +39,12 @@ public sealed class JavaArgumentsBuilder
     /// <param name="memoryMb">内存上限 MB</param>
     /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等，用户覆盖优先）</param>
     /// <param name="versionIsolation">版本隔离（game_directory 指向 versions/{id}，saves/mods 不串门）；null = 读设置</param>
+    /// <param name="extraGameArgs">附加游戏参数（如一键进服 --server host --port N，追加在 arguments.game 之后）</param>
     public LaunchProfile Build(
         VersionJson version, string gameDir, string javaPath,
         string accountName, string accountUuid, string accessToken,
-        long memoryMb, string[]? extraJvmArgs = null, bool? versionIsolation = null)
+        long memoryMb, string[]? extraJvmArgs = null, bool? versionIsolation = null,
+        string[]? extraGameArgs = null)
     {
         // 0. inheritsFrom 链解析（Forge/NeoForge/Fabric 生成的 version.json 继承原版）
         var v = version;
@@ -120,8 +122,9 @@ public sealed class JavaArgumentsBuilder
         jvmArgs.Add("-cp");
         jvmArgs.Add(classPath);
 
-        // 8. 游戏参数
+        // 8. 游戏参数（附加参数追加在 arguments.game 之后，如一键进服的 --server/--port）
         var gameArgs = BuildGameArgs(v, tokens);
+        if (extraGameArgs is { Length: > 0 }) gameArgs = [.. gameArgs, .. extraGameArgs];
 
         return new LaunchProfile(javaPath, [.. jvmArgs], gameArgs, gameDir, classPath,
             v.MainClass ?? "net.minecraft.client.main.Main", "", nativesDir, [.. nativesJars]);

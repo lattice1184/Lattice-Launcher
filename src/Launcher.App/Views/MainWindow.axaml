@@ -43,18 +43,21 @@
                         <Button x:Name="NavHome" Content="主页"
                                 Command="{Binding NavigateCommand}" CommandParameter="home"
                                 behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
                         <Button x:Name="NavVersions" Content="版本"
                                 Command="{Binding NavigateCommand}" CommandParameter="version"
                                 behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
                         <Button x:Name="NavDownloads"
                                 Command="{Binding NavigateCommand}" CommandParameter="download"
                                 behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
@@ -69,12 +72,14 @@
                         <Button x:Name="NavServer" Content="开服"
                                 Command="{Binding NavigateCommand}" CommandParameter="server"
                                 behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
                         <Button x:Name="NavSettings" Content="设置"
                                 Command="{Binding NavigateCommand}" CommandParameter="settings"
                                 behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>

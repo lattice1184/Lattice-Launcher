@@ -14,7 +14,8 @@ public sealed class GameLaunchService
         string versionId, string gameDirectory,
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs, string? javaPathOverride = null,
-        Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default)
+        Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default,
+        string[]? extraGameArgs = null)
     {
         // 1. 读版本 JSON
         onStage?.Invoke("解析版本");
@@ -52,7 +53,8 @@ public sealed class GameLaunchService
         onStage?.Invoke("解压 natives");
         var builder = new JavaArgumentsBuilder();
         var profile = builder.Build(version, gameDirectory, java,
-            accountName, accountUuid, accessToken, memoryMb, extraJvmArgs);
+            accountName, accountUuid, accessToken, memoryMb, extraJvmArgs,
+            versionIsolation: null, extraGameArgs);
 
         // log4j 配置兜底：version.json 指定的文件缺失时写入标准模板
         EnsureLog4jConfig(version, gameDirectory);
