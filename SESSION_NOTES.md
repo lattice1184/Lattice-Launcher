@@ -253,3 +253,10 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - **日志增强**：LaunchProcess.DescribeCommandLine（ArgumentList 语义，空格/引号转义）→ GameLaunchService 启动前 onLog 输出（launch-*.log 首行，VM 零改动）+ 服务端 ServerProcess 存 CommandLine + 开服页日志
 - **1B 显示修复**（用户问"为什么变成 1B"）：某源返回 200+1B 垃圾（WAF 拦截页）时进度 total 读响应头 Content-Length=1 → 显示 "1 B"（文件本身 SHA1 校验已拦截删除）。修：进度 total 用 expectedSize 优先 + ServerInstaller 失败路径防御清理 <1MB 残骸
 - 测试 +1（218/218 全绿，Forge120_ClasspathSeparator_ReplacedInModulePath）；提交 7c96a36；水位 ~40%
+
+## AL8b 批次（2026-08-05 00:29 发布 185.9MB）
+成对 JVM 选项去重事故 + clientid/auth_xuid token（AL8a 日志增强立功）
+- **用户实测**：TACZgun 再崩，新错误 `ClassNotFoundException: java.base.java.lang.invoke=cpw.mods.securejarhandler`——**launch-*.log 首行启动命令直接暴露**（AL8 日志增强的价值兑现）
+- **根因**：AddJvmArg 通用去重（jvmArgs.Contains）把重复的 `--add-opens`/`--add-exports` **选项名**去重、值却全留 → 值错位 → 第二个值被 java 当 main class → ClassNotFoundException。成对参数（选项+值）不能去重；只有自包含 `-Dxxx=y` 可去重（重复赋值无害）
+- **顺带**：命令里 `--clientId ${clientid} --xuid ${auth_xuid}` 未替换（1.20.1+ 官方/Forge json 的 game 参数带官方启动器专属 token）→ BuildTokens 补 clientid/auth_xuid="0"（离线安全值）
+- 测试 +1（219/219 全绿）；提交 a0e2658；水位 ~40%
