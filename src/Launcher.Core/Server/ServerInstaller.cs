@@ -51,7 +51,12 @@ public sealed class ServerInstaller
         var merged = VersionJsonMerger.ResolveChain(version, id => LoadParent(gameDir, id));
         var serverUrl = merged.Downloads?.Server?.Url;
         if (string.IsNullOrEmpty(serverUrl))
-            throw new InvalidDataException($"版本 {versionId} 没有服务端下载链接（不支持开服）");
+        {
+            // 加载器/整合包版本无 downloads.server——链接来自原版（如 1.21.1-Fabric → 1.21.1）
+            throw new InvalidDataException(versionId.Contains('-')
+                ? $"版本 {versionId} 的服务端链接来自原版 {versionId[..versionId.IndexOf('-')]}——请先安装该原版版本再开服"
+                : $"版本 {versionId} 没有服务端下载链接（该版本不支持开服）");
+        }
         // size 无效（缺失/≤0）时传 null——不校验大小，由 IsValidServerJar 兜底（AL3）
         long? expectedSize = merged.Downloads!.Server!.Size is { } sz && sz > 0 ? sz : null;
 
@@ -83,7 +88,12 @@ public sealed class ServerInstaller
             }
             catch (Exception ex) { last = ex; }
         }
-        if (last is not null) throw last;
+        if (last is not null)
+        {
+            // 汇总失败信息（AL4）：用户一眼看到各源失败原因，不再只有一个笼统错误
+            throw new InvalidOperationException(
+                $"服务端下载失败（已尝试 {candidates.Count} 个源，最后错误：{last.Message}）", last);
+        }
         WriteDefaultProperties(dir);
         return jarPath;
     }
