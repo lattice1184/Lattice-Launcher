@@ -15,7 +15,13 @@
                           HorizontalContentAlignment="Stretch">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:VersionInstanceVM">
-                            <TextBlock Text="{Binding Name}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Name}"/>
+                                <Border CornerRadius="3" Padding="5,0" VerticalAlignment="Center"
+                                        Background="#12332F" IsVisible="{Binding LoaderBadge, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="#B5F4E9"/>
+                                </Border>
+                            </StackPanel>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>

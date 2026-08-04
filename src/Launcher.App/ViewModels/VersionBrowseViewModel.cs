@@ -107,7 +107,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
     private static InstalledVersionRowVM MakeRow(string id, string dir) => new(
         id,
         InstallMarker.IsMarked(dir, id) ? "本启动器" : GameDirectory.SourceLabel(GameDirectory.SourceOf(dir)),
-        LoaderBadgeOf(id),
+        LoaderBadgeOf(dir, id),
         dir,
         GetReleaseDate(dir, id),
         !File.Exists(Path.Combine(dir, "versions", id, $"{id}.jar")));
@@ -126,9 +126,11 @@ public partial class VersionBrowseViewModel : ViewModelBase
         catch { return ""; }
     }
 
-    /// <summary>加载器徽章（fabric/forge/neoforge/quilt 从版本 id 判断）</summary>
-    private static string LoaderBadgeOf(string id)
+    /// <summary>加载器徽章：读版本 json 真实检测（AG1）；json 缺失时按版本名兜底</summary>
+    private static string LoaderBadgeOf(string dir, string id)
     {
+        var real = Launcher.Core.Launch.LoaderDetector.Detect(dir, id);
+        if (real is not null) return real;
         var lower = id.ToLowerInvariant();
         foreach (var kw in new[] { "neoforge", "fabric", "forge", "quilt" })
             if (lower.Contains(kw)) return kw;
@@ -209,7 +211,30 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     [ObservableProperty]
     public partial bool JarMissing { get; set; }
 
-    public string JarMissingText => $"版本 {Id} 的客户端文件缺失，无法启动。可补全下载，或前往官方页面手动下载。";
+    /// <summary>运行状态徽章（AG2：客户端/服务端运行中——全局 RunningVersion 驱动）</summary>
+    [ObservableProperty]
+    public partial string RunningText { get; set; } = "";
+
+    public string JarMissingText
+    {
+        get
+        {
+            var rv = MainViewModel.Current?.RunningVersion;
+            if (rv is not null && rv.VersionId.Equals(Id, StringComparison.OrdinalIgnoreCase) && rv.Kind == "服务端")
+                return $"版本 {Id} 的客户端文件缺失——不影响开服（服务端运行中），需要启动客户端时再补全下载。";
+            return $"版本 {Id} 的客户端文件缺失，无法启动。可补全下载，或前往官方页面手动下载。";
+        }
+    }
+
+    /// <summary>全局运行状态变化 → 刷新本详情徽章（服务端运行中时缺失红字弱化）</summary>
+    private void RefreshRunning()
+    {
+        var rv = MainViewModel.Current?.RunningVersion;
+        RunningText = rv is not null && rv.VersionId.Equals(Id, StringComparison.OrdinalIgnoreCase)
+            ? $"运行中（{rv.Kind}）"
+            : "";
+        OnPropertyChanged(nameof(JarMissingText));
+    }
 
     /// <summary>打开官方下载页（minecraft.net）——无文件版本的"链接跳转下载"入口</summary>
     [RelayCommand]
@@ -255,6 +280,12 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     {
         _installer = installer;
         _onInstalled = onInstalled;
+        // 全局运行状态订阅（版本页徽章——AG2）
+        if (MainViewModel.Current is { } main)
+            main.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(MainViewModel.RunningVersion)) RefreshRunning();
+            };
     }
 
     /// <summary>选中左栏版本 → 填充六分区（加载器徽章为空才显示安装面板）</summary>
@@ -270,6 +301,7 @@ public partial class InstalledVersionDetailVM : ViewModelBase
         DownloadProgressPercent = 0;
         JarMissing = !File.Exists(Path.Combine(row.GameDir, "versions", row.Id, $"{row.Id}.jar"));
         OnPropertyChanged(nameof(JarMissingText));
+        RefreshRunning();
         HasSelection = true;
 
         // 分区：版本管理（模组/存档/操作）——加载器在下载时选择（下载页融合流程）

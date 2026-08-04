@@ -116,6 +116,17 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsRunning { get; set; }
 
+    /// <summary>运行状态上报全局（版本页徽章；服务端运行不覆盖客户端）</summary>
+    partial void OnIsRunningChanged(bool value)
+    {
+        var main = MainViewModel.Current;
+        if (main is null) return;
+        if (value)
+            main.RunningVersion = new RunningVersionInfo(SelectedVersion?.Name ?? "", "客户端");
+        else if (main.RunningVersion?.Kind == "客户端")
+            main.RunningVersion = null;
+    }
+
     [ObservableProperty]
     public partial double LaunchProgress { get; set; }
 

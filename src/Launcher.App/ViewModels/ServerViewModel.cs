@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -96,6 +97,21 @@ public partial class ServerViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool IsRunning { get; set; }
+
+    /// <summary>运行状态上报全局（版本页徽章）——服务端启动时同步刷新局域网地址（AG2/AG3）</summary>
+    partial void OnIsRunningChanged(bool value)
+    {
+        var main = MainViewModel.Current;
+        if (main is not null)
+        {
+            if (value)
+                main.RunningVersion = new RunningVersionInfo(SelectedVersion?.Name ?? "", "服务端");
+            else if (main.RunningVersion?.Kind == "服务端")
+                main.RunningVersion = null;
+        }
+        if (value) RefreshLanAddress();
+        else LanAddressText = "";
+    }
 
     [ObservableProperty]
     public partial bool IsInstalling { get; set; }
@@ -527,6 +543,56 @@ public partial class ServerViewModel : ViewModelBase
             catch { }
         }
         throw new InvalidOperationException("未找到可用 Java（可在设置页指定 Java 路径）");
+    }
+
+    // ---------- 局域网地址（AG3：服务端运行中显示，朋友可连） ----------
+
+    [ObservableProperty]
+    public partial string LanAddressText { get; set; } = "";
+
+    /// <summary>刷新局域网地址（读 server.properties 端口；无内网 IP 时留空）</summary>
+    private void RefreshLanAddress()
+    {
+        var port = 25565;
+        try
+        {
+            var dir = ServerDir;
+            if (dir is not null)
+                port = ServerProperties.Load(Path.Combine(dir, "server.properties")).GetInt("server-port", 25565);
+        }
+        catch { }
+        var ip = FindLanIp();
+        LanAddressText = ip is null ? "" : $"局域网地址：{ip}:{port}";
+    }
+
+    /// <summary>复制局域网地址（去掉前缀标签，直接得到 ip:port）</summary>
+    [RelayCommand]
+    private async Task CopyLanAddress()
+    {
+        if (LanAddressText.Length == 0) return;
+        var top = DialogService.MainWindow();
+        if (top is null) return;
+        var cb = Avalonia.Controls.TopLevel.GetTopLevel(top)?.Clipboard;
+        if (cb is null) return;
+        await cb.SetTextAsync(LanAddressText.Replace("局域网地址：", ""));
+        NotificationService.Success("局域网地址已复制");
+    }
+
+    /// <summary>取内网 IPv4（优先私有段 192.168 / 10.x / 172.16-31）</summary>
+    private static string? FindLanIp()
+    {
+        foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+            foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+            {
+                if (ua.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                var ip = ua.Address.ToString();
+                if (ip.StartsWith("192.168.") || ip.StartsWith("10.")) return ip;
+                if (ip.StartsWith("172.") && int.TryParse(ip.Split('.')[1], out var b) && b is >= 16 and <= 31) return ip;
+            }
+        }
+        return null;
     }
 
     /// <summary>验证 server.jar 下载完整（缺失或 <1MB 视为失败，抛异常终止后续启动）</summary>
