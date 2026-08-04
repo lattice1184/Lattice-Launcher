@@ -152,4 +152,44 @@ public class JavaArgumentsBuilderTests
 
         Assert.Contains("1.16.5", ex.Message);
     }
+
+    /// <summary>AK：PCL/第三方安装器 profile 库无 downloads 字段——按 maven 坐标推导进 classpath
+    /// （旧逻辑只认 downloads.artifact，fabric-loader 链整个跳过 → KnotClient ClassNotFoundException）</summary>
+    [Fact]
+    public void LibraryWithoutDownloads_IncludedByMavenPath()
+    {
+        var json = """
+            {
+              "id":"1.21.6-fabric-0.19.3","type":"release","mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient",
+              "libraries":[
+                {"name":"net.fabricmc:fabric-loader:0.19.3","url":"https://maven.fabricmc.net/"},
+                {"name":"net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7","url":"https://maven.fabricmc.net/"}
+              ]
+            }
+            """;
+        var p = Build(JsonSerializer.Deserialize<VersionJson>(json)!, @"C:\mc", versionIsolation: false);
+
+        Assert.Contains(@"net\fabricmc\fabric-loader\0.19.3\fabric-loader-0.19.3.jar", p.ClassPath);
+        Assert.Contains(@"net\fabricmc\sponge-mixin\0.17.3+mixin.0.8.7\sponge-mixin-0.17.3+mixin.0.8.7.jar", p.ClassPath);
+        Assert.Equal("net.fabricmc.loader.impl.launch.knot.KnotClient", p.MainClass);
+    }
+
+    /// <summary>AK：混搭 profile（部分带 downloads）——两类库都在 classpath（带 downloads 行为不回归）</summary>
+    [Fact]
+    public void MixedLibraries_BothIncluded()
+    {
+        var json = """
+            {
+              "id":"mixed","type":"release","mainClass":"net.minecraft.client.main.Main",
+              "libraries":[
+                {"name":"org.lwjgl:lwjgl:3.4.1","downloads":{"artifact":{"url":"https://x/l.jar","size":5}}},
+                {"name":"net.fabricmc:fabric-loader:0.19.3","url":"https://maven.fabricmc.net/"}
+              ]
+            }
+            """;
+        var p = Build(JsonSerializer.Deserialize<VersionJson>(json)!, @"C:\mc", versionIsolation: false);
+
+        Assert.Contains(@"org\lwjgl\lwjgl\3.4.1\lwjgl-3.4.1.jar", p.ClassPath);
+        Assert.Contains(@"net\fabricmc\fabric-loader\0.19.3\fabric-loader-0.19.3.jar", p.ClassPath);
+    }
 }

@@ -83,9 +83,11 @@ public sealed class JavaArgumentsBuilder
                 if (oldStyle) classPathParts.Add(nativeJar);
                 continue;
             }
-            if (lib.Downloads?.Artifact is { } artifact)
+            // 有 name 即按 maven 坐标推导进 classpath——PCL/第三方安装器 profile 的库无 downloads 字段
+            // （fabric-loader 等加载器链会被旧逻辑整个跳过 → ClassNotFoundException，AK 修复）
+            if (lib.Name is { Length: > 0 } libName)
             {
-                var rel = Utils.MavenPath.FullPath(lib.Name).Replace('/', Path.DirectorySeparatorChar);
+                var rel = Utils.MavenPath.FullPath(libName).Replace('/', Path.DirectorySeparatorChar);
                 classPathParts.Add(Path.Combine(librariesDir, rel));
             }
         }
