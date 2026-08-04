@@ -221,3 +221,9 @@ server.jar 下载校验 + 解封文件级 + 字号
 - ServerInstaller：无 downloads.server 时推断 MC 版本（jar version.json → id 前缀 → intermediary）→ Mojang manifest（piston-meta version_manifest_v2）拉该版本 server url/size——**无需先装原版**（服务端 jar 只依赖父 json 的 downloads.server 字段）
 - 一键开服/下载服务端自动获益；VersionManifestService.ManifestUrl 公开；构造注入 HttpClient
 - 测试 +3（212/212 全绿）；提交 f5fe4c3；水位 ~40%
+
+## AL5 批次（2026-08-04 23:46 发布 185.8MB）
+服务端下载两处真根因（23:45 用户实测：还是 server.js 失败 + 下载历史还是报完成）
+- **根因 A（历史误报"完成"）**：DownloadTask 组任务状态推导竞态——子任务失败时 SetState(Failed) 经 UI Post **异步**生效，而 Completion **同步**完成；父任务 WhenAll 返回时子任务 State 仍是 Downloading → 误判无失败 → 父任务 Completed → 历史绿色"完成"。**影响所有组任务**（版本下载/加载器/服务端）。修：新增 internal TerminalState 同步终态（Post 前同步记录），组推导改读 TerminalState；Retry/Resume 重置。回归测试 DeferredSyncContext（Post 入队手动 Drain）精确复现——修复前 Actual: Completed
+- **根因 B（还是失败）**：BMCLAPI 兜底候选用 versionId（"红石生电优化"）拼 URL → 必然 404。修：候选 3 用推断出的 MC 版本（mcVersion ?? 数字前缀），官方直连失败时兜底真正可用
+- 测试 +4（216/216 全绿）；提交 084af72；水位 ~40%
