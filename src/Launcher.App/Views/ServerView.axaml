@@ -46,15 +46,51 @@
                     <!-- 机器状态 + 建议配置 -->
                     <Border Classes="card" Padding="12">
                         <StackPanel Spacing="8">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
                                 <TextBlock Text="机器状态" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="应用建议" Classes="primary" Padding="14,5"
+                                <Button Grid.Column="1" Content="去更改" Classes="ghost" Padding="14,5"
+                                        ToolTip.Tip="跳设置页修改内存/Java（单次服务器配置）"
+                                        Command="{Binding GoToSettingsCommand}"/>
+                                <Button Grid.Column="2" Content="应用建议" Classes="primary" Padding="14,5"
                                         Command="{Binding ApplySuggestionCommand}"/>
-                                <Button Grid.Column="2" Content="刷新状态" Classes="ghost" Padding="14,5"
+                                <Button Grid.Column="3" Content="刷新状态" Classes="ghost" Padding="14,5"
                                         Command="{Binding RefreshMachineStatusCommand}"/>
                             </Grid>
                             <TextBlock Text="{Binding MachineStatusText}" Classes="sub" FontSize="12"
                                        TextWrapping="Wrap" LineHeight="20"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 在线玩家（图形化管理：踢出/封禁/OP） -->
+                    <Border Classes="card" Padding="12">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock Text="{Binding PlayersCountText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="刷新" Classes="ghost" Padding="14,5"
+                                        Command="{Binding RefreshPlayersCommand}" IsEnabled="{Binding IsRunning}"/>
+                            </Grid>
+                            <TextBlock Text="暂无玩家在线" Classes="dim" FontSize="12"
+                                       IsVisible="{Binding OnlinePlayers.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
+                            <ItemsControl ItemsSource="{Binding OnlinePlayers}" IsVisible="{Binding OnlinePlayers.Count}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ServerPlayerVM">
+                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondary}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <Button Grid.Column="1" Content="踢出" Classes="ghost" FontSize="10" Padding="8,2"
+                                                    Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).KickPlayerCommand}"
+                                                    CommandParameter="{Binding}" IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                            <Button Grid.Column="2" Content="封禁" Classes="ghost" FontSize="10" Padding="8,2"
+                                                    Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).BanPlayerCommand}"
+                                                    CommandParameter="{Binding}" IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                            <Button Grid.Column="3" Content="OP" Classes="ghost" FontSize="10" Padding="8,2"
+                                                    Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).OpPlayerCommand}"
+                                                    CommandParameter="{Binding}" IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 
