@@ -186,3 +186,9 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 修复：有 name 即按 maven 坐标推导进 classpath（与 DownloadService 下载逻辑一致）；自装版本 json 全带 downloads 不受影响
 - LogDiagnostics 加 ClassNotFoundException 诊断
 - 测试 +2（199/199 全绿）；提交 6220ecb（下条确认）；水位 ~40%
+
+## AL 批次（2026-08-04 22:08 发布 185.8MB）
+服务端下载 BMCLAPI 镜像兜底
+- 用户问"为什么下载服务端基本都是失败"——查证：服务端 jar 托管在 piston-data.mojang.com，官方直连国内不稳（实测时通时断）；镜像映射（BmclapiDlSourceMapper）只覆盖 piston-meta/libraries/resources，**服务端无兜底** → 官方失败即失败
+- 修复：ServerInstaller.InstallAsync 官方失败 → fallback https://bmclapi2.bangbang93.com/version/{id}/server（302 到 CDN）
+- 测试 +2（201/201 全绿）；提交；水位 ~40%
