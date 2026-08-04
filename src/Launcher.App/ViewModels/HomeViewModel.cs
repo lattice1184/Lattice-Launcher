@@ -63,9 +63,9 @@ public partial class HomeViewModel : ViewModelBase
 
     private string? _lastLaunchVersionId;
 
-    /// <summary>跳版本页并选中该版本（补全下载）</summary>
+    /// <summary>跳版本页并选中该版本（补全下载；等待列表加载完成再选中）</summary>
     [RelayCommand]
-    private void GoRepair() => MainViewModel.Current?.NavigateToVersion(_lastLaunchVersionId);
+    private async Task GoRepair() => await (MainViewModel.Current?.NavigateToVersionAsync(_lastLaunchVersionId) ?? Task.CompletedTask);
 
     /// <summary>打开官方下载页（minecraft.net）</summary>
     [RelayCommand]
