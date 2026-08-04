@@ -360,11 +360,20 @@ public partial class ServerViewModel : ViewModelBase
         Status = "正在下载服务端…";
         try
         {
-            var dir = await _installer.InstallAsync(version.Name, GameDirectory.InstallDir(), null, CancellationToken.None);
+            var installer = _installer;
+            var dir = GameDirectory.InstallDir();
+            var task = DownloadManager.Instance.EnqueueGroup($"下载服务端 {version.Name}", (ctx, ct) =>
+            {
+                ctx.AddChild("server.jar", 1, (progress, c) => installer.InstallAsync(version.Name, dir, progress, c));
+                return Task.CompletedTask;
+            });
+            // 自动跳到下载板块"下载记录"tab（角标已随 ActiveCountChanged 亮起）
+            MainViewModel.Current?.NavigateToDownloadQueue();
+            await task.Completion;
             ServerDirText = ServerDir ?? "";
+            LoadProperties();
             Status = "服务端下载完成，可启动";
             NotificationService.Success($"{version.Name} 服务端已就绪");
-            LoadProperties();
         }
         catch (Exception ex)
         {
@@ -391,7 +400,16 @@ public partial class ServerViewModel : ViewModelBase
         Status = "正在下载服务端…";
         try
         {
-            var dir = await _installer.InstallAsync(version.Name, GameDirectory.InstallDir(), null, CancellationToken.None);
+            var installer = _installer;
+            var dir = GameDirectory.InstallDir();
+            var task = DownloadManager.Instance.EnqueueGroup($"下载服务端 {version.Name}", (ctx, ct) =>
+            {
+                ctx.AddChild("server.jar", 1, (progress, c) => installer.InstallAsync(version.Name, dir, progress, c));
+                return Task.CompletedTask;
+            });
+            // 自动跳到下载板块"下载记录"tab（与 DownloadServer 一致）
+            MainViewModel.Current?.NavigateToDownloadQueue();
+            await task.Completion;
             ServerDirText = ServerDir ?? "";
             LoadProperties();
             Status = "服务端下载完成，正在启动…";

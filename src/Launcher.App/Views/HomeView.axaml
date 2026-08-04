@@ -98,7 +98,7 @@
                 <!-- 头部 Tab -->
                 <Border DockPanel.Dock="Top" Background="{StaticResource BgSurface}" Padding="12,8"
                         BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1">
-                <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
                     <Button Content="控制台" Classes="tab" Classes.active="{Binding IsConsoleTabSelected}"
                             FontSize="12" Padding="12,5" Command="{Binding SwitchLogTabCommand}" CommandParameter="console"/>
                     <Button Grid.Column="1" Classes="tab" Classes.active="{Binding IsHistoryTabSelected}"
@@ -111,9 +111,11 @@
                             </Border>
                         </StackPanel>
                     </Button>
-                    <Button Grid.Column="3" Content="导出日志" Classes="ghost" FontSize="11" Padding="10,3"
+                    <Button Grid.Column="3" Content="复制日志" Classes="ghost" FontSize="11" Padding="10,3"
+                            Click="OnCopyLogs" IsVisible="{Binding IsConsoleTabSelected}"/>
+                    <Button Grid.Column="4" Content="导出日志" Classes="ghost" FontSize="11" Padding="10,3"
                             Click="OnExportLogs" IsVisible="{Binding IsConsoleTabSelected}"/>
-                    <Button Grid.Column="3" Content="清除记录" Classes="danger" FontSize="11" Padding="10,3"
+                    <Button Grid.Column="4" Content="清除记录" Classes="danger" FontSize="11" Padding="10,3"
                             Command="{Binding ClearLaunchHistoryCommand}" IsVisible="{Binding IsHistoryTabSelected}"/>
                 </Grid>
                 </Border>
