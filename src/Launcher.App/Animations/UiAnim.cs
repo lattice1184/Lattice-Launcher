@@ -119,23 +119,74 @@ public static class UiAnim
         timer.Start();
     }
 
-    /// <summary>对话框通用平滑进出挂载：整窗淡入（Window.Opacity——背景一起动，防"色块瞬间出现"）+ 内容缩放；关闭整窗淡出后真正关闭（NVIDIA 浮窗风）</summary>
+    /// <summary>对话框通用右侧切入切出（NVIDIA 浮窗风）：整窗淡入 + 内容从右 48px 滑入；关闭内容滑出 + 整窗淡出后真正关闭</summary>
     public static void AttachDialog(Window win, Visual root)
     {
         win.Opened += (_, _) =>
         {
             win.Opacity = 0;
             FadeTo(win, 1.0, 200);
-            ElasticIn(root, 0.96);
+            SlideInFromRight(root);
         };
         var closing = false;
         win.Closing += (_, e) =>
         {
             if (closing) return;
             e.Cancel = true;
-            FadeTo(win, 0.0, 180, () => { closing = true; win.Close(); });
-            SmoothOut(root, null); // 内容同步收缩（窗口淡出负责关闭）
+            SlideOutToRight(root); // 明显横向位移（用户实测：只有淡出太突兀）
+            FadeTo(win, 0.0, 200, () => { closing = true; win.Close(); });
         };
+    }
+
+    /// <summary>右侧切入：内容从右 48px 横向滑入 + 淡入（CubicEaseOut）</summary>
+    public static void SlideInFromRight(Visual root)
+    {
+        root.RenderTransform = new TranslateTransform(48, 0);
+        root.Opacity = 0;
+        var steps = 16;
+        var i = 0;
+        var ease = new CubicEaseOut();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        timer.Tick += (_, _) =>
+        {
+            i++;
+            var t = Math.Min(1.0, i / (double)steps);
+            var e = ease.Ease(t);
+            if (root.RenderTransform is TranslateTransform tr) tr.X = 48 * (1 - e);
+            root.Opacity = Math.Clamp(e, 0, 1);
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                root.RenderTransform = null;
+            }
+        };
+        timer.Start();
+    }
+
+    /// <summary>右侧切出：内容滑出到右 48px + 淡出（窗口淡出负责真正关闭）</summary>
+    public static void SlideOutToRight(Visual root, Action? done = null)
+    {
+        if (root.RenderTransform is not TranslateTransform)
+            root.RenderTransform = new TranslateTransform(0, 0);
+        var startOpacity = root.Opacity;
+        var steps = 14;
+        var i = 0;
+        var ease = new CubicEaseIn();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        timer.Tick += (_, _) =>
+        {
+            i++;
+            var t = Math.Min(1.0, i / (double)steps);
+            var e = ease.Ease(t);
+            if (root.RenderTransform is TranslateTransform tr) tr.X = 48 * e;
+            root.Opacity = Math.Max(0, startOpacity * (1 - e));
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                done?.Invoke();
+            }
+        };
+        timer.Start();
     }
 
     /// <summary>窗口透明度插值（淡入淡出；关闭用 CubicEaseIn，出现用 CubicEaseOut）</summary>
