@@ -167,15 +167,14 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="core:ServerOpEntry">
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
-                                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                            <TextBlock Text="{Binding Name}" FontSize="13"
                                                        Foreground="{StaticResource TextSecondary}"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Level}" Classes="dim" FontSize="10"
+                                            <TextBlock Grid.Column="1" Text="OP" Classes="dim" FontSize="11"
                                                        VerticalAlignment="Center"/>
-                                            <Button Grid.Column="2" Content="移除" Classes="ghost" FontSize="10" Padding="8,2"
+                                            <Button Grid.Column="2" Content="移除" Classes="ghost" FontSize="12" Padding="8,3"
                                                     Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).RemoveOpCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                                    CommandParameter="{Binding}"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
@@ -197,15 +196,14 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="core:ServerBannedEntry">
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
-                                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                            <TextBlock Text="{Binding Name}" FontSize="13"
                                                        Foreground="{StaticResource TextSecondary}"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1" Text="已封禁" Classes="dim" FontSize="10"
+                                            <TextBlock Grid.Column="1" Text="已封禁" Classes="dim" FontSize="11"
                                                        VerticalAlignment="Center"/>
-                                            <Button Grid.Column="2" Content="解封" Classes="ghost" FontSize="10" Padding="8,2"
+                                            <Button Grid.Column="2" Content="解封" Classes="ghost" FontSize="12" Padding="8,3"
                                                     Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).UnbanCommand}"
-                                                    CommandParameter="{Binding}"
-                                                    IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                                    CommandParameter="{Binding}"/>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

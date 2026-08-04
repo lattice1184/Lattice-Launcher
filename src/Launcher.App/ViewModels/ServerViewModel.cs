@@ -764,11 +764,21 @@ public partial class ServerViewModel : ViewModelBase
         OnPropertyChanged(nameof(OpsCountText));
     }
 
-    /// <summary>移除 OP（deop 命令；服务端写 ops.json 后自动刷新）</summary>
+    /// <summary>移除 OP（运行中发 deop；停止时直接改 ops.json 文件——重启生效，按钮不再"点不动"）</summary>
     [RelayCommand]
     private async Task RemoveOp(ServerOpEntry entry)
     {
-        if (!IsRunning) { OpStatusText = "先启动服务端再移除 OP"; return; }
+        if (!IsRunning)
+        {
+            // 文件级移除（AL3）：服务端下次启动读 ops.json 生效
+            if (ServerDir is { } stopped)
+            {
+                ServerOpsFile.Remove(stopped, entry.Name);
+                OpStatusText = $"已移除 {entry.Name} 的 OP（文件已更新，重启服务端生效）";
+                RefreshOps();
+            }
+            return;
+        }
         _process.SendCommand($"deop {entry.Name}");
         OpStatusText = $"已发送 deop {entry.Name}";
         await Task.Delay(500);
@@ -795,11 +805,21 @@ public partial class ServerViewModel : ViewModelBase
         OnPropertyChanged(nameof(BannedCountText));
     }
 
-    /// <summary>解封（pardon 命令；服务端写 banned-players.json 后自动刷新）</summary>
+    /// <summary>解封（运行中发 pardon；停止时直接改 banned-players.json 文件——重启生效，按钮不再"点不动"）</summary>
     [RelayCommand]
     private async Task Unban(ServerBannedEntry entry)
     {
-        if (!IsRunning) { OpStatusText = "先启动服务端再解封"; return; }
+        if (!IsRunning)
+        {
+            // 文件级解封（AL3）：服务端下次启动读 banned-players.json 生效
+            if (ServerDir is { } stopped)
+            {
+                ServerBannedFile.Unban(stopped, entry.Name);
+                OpStatusText = $"已解封 {entry.Name}（文件已更新，重启服务端生效）";
+                RefreshBanned();
+            }
+            return;
+        }
         _process.SendCommand($"pardon {entry.Name}");
         OpStatusText = $"已发送 pardon {entry.Name}——该玩家可重新进服";
         await Task.Delay(500);

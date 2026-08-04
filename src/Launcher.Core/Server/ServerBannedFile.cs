@@ -34,4 +34,23 @@ public static class ServerBannedFile
         }
         catch { return []; }
     }
+
+    /// <summary>文件级解封（AL3：服务端停止时直接删 banned-players.json 条目——下次启动生效；运行中请用 pardon 命令）</summary>
+    public static void Unban(string serverDir, string name)
+    {
+        var path = Path.Combine(serverDir, "banned-players.json");
+        if (!File.Exists(path)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+            var kept = doc.RootElement.EnumerateArray()
+                .Where(el => el.ValueKind == JsonValueKind.Object
+                    && !(el.TryGetProperty("name", out var n) && n.GetString()?.Equals(name, StringComparison.OrdinalIgnoreCase) == true))
+                .Select(el => el.Clone())
+                .ToList();
+            File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(kept));
+        }
+        catch { /* 损坏/占用不处理（运行中请用 pardon） */ }
+    }
 }

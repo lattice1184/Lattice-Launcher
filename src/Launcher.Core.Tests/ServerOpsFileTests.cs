@@ -43,4 +43,25 @@ public class ServerOpsFileTests
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
+
+    /// <summary>AL3：文件级移除 OP——按名字移除条目（大小写不敏感），其余保留</summary>
+    [Fact]
+    public void Remove_RemovesByName_CaseInsensitive()
+    {
+        var dir = TempDir();
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "ops.json");
+            File.WriteAllText(path,
+                """[{"uuid":"a","name":"Steve","level":4,"bypassesPlayerLimit":false},{"uuid":"b","name":"Alex","level":2,"bypassesPlayerLimit":false}]""");
+
+            ServerOpsFile.Remove(dir, "STEVE"); // 大小写不敏感
+
+            var ops = ServerOpsFile.Load(dir);
+            Assert.Single(ops);
+            Assert.Equal("Alex", ops[0].Name);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }
