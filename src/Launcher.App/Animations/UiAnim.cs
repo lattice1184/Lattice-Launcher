@@ -21,41 +21,53 @@ public static class UiAnim
 
         public async Task Start(Visual? from, Visual? to, bool forward, CancellationToken ct)
         {
-            var offset = 24.0;
-
-            if (to is not null)
+            var offset = 20.0;
+            try
             {
-                to.Opacity = 0;
-                to.RenderTransform = new TranslateTransform(forward ? offset : -offset, 0);
+                if (to is not null)
+                {
+                    to.Opacity = 0;
+                    to.RenderTransform = new TranslateTransform(forward ? offset : -offset, 0);
+                }
+                if (from is not null && SlideOldOut)
+                {
+                    await AnimateToAsync(from, 0.0, ct);
+                    from.Opacity = 0;
+                }
+                if (to is not null)
+                {
+                    await AnimateToAsync(to, 1.0, ct);
+                    to.Opacity = 1;
+                    to.RenderTransform = null;
+                }
             }
-            if (from is not null && SlideOldOut)
+            finally
             {
-                await AnimateToAsync(from, 0.0, ct);
-                from.Opacity = 0;
-            }
-            if (to is not null)
-            {
-                await AnimateToAsync(to, 1.0, ct);
-                to.RenderTransform = null;
+                // 取消/中断也必须复位——防页面残留 Opacity=0 或位移（"页面没了"根因）
+                if (to is not null)
+                {
+                    to.Opacity = 1;
+                    to.RenderTransform = null;
+                }
+                if (from is not null && SlideOldOut) from.Opacity = 0;
             }
         }
 
-        /// <summary>从当前值平滑到目标透明度（位移 BackEase 弹性 overshoot——拉伸感；透明度 CubicEaseOut 防闪烁）</summary>
+        /// <summary>从当前值平滑到目标透明度（位移同步归零；CubicEaseInOut 平滑滑移——无 overshoot 防"不平滑"）</summary>
         private Task AnimateToAsync(Visual target, double toOpacity, CancellationToken ct)
         {
             var tcs = new TaskCompletionSource();
             var steps = Math.Max(1, (int)(Duration.TotalMilliseconds / 15));
             var i = 0;
             var startOpacity = target.Opacity;
-            var ease = BackOut;                            // 位移：弹性回弹（overshoot ~+37%）
-            var fade = new CubicEaseOut();                 // 透明度：无 overshoot
+            var ease = new CubicEaseInOut();
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
             timer.Tick += (_, _) =>
             {
                 i++;
                 var t = Math.Min(1.0, i / (double)steps);
-                var e = ease(t);
-                target.Opacity = Math.Clamp(startOpacity + (toOpacity - startOpacity) * fade.Ease(t), 0, 1);
+                var e = ease.Ease(t);
+                target.Opacity = Math.Clamp(startOpacity + (toOpacity - startOpacity) * e, 0, 1);
                 if (target.RenderTransform is TranslateTransform tr)
                 {
                     tr.X *= (1 - e);
@@ -67,6 +79,8 @@ public static class UiAnim
                     tcs.TrySetResult();
                 }
             };
+            if (ct.CanBeCanceled)
+                ct.Register(() => { timer.Stop(); tcs.TrySetResult(); });
             timer.Start();
             return tcs.Task;
         }
