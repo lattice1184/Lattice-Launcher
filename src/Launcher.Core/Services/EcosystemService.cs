@@ -90,6 +90,8 @@ public sealed class EcosystemService
         var file = PickPrimaryFile(version.Files)
             ?? throw new InvalidOperationException("该版本没有可下载文件");
         var targetDir = ResolveInstallPath(_gameDirectory, instanceId, type);
+        // 目标目录兜底创建（自定义实例名时 versions/{name}/mods 可能不存在——否则下载失败/落错位）
+        Directory.CreateDirectory(targetDir);
         var destPath = Path.Combine(targetDir, Path.GetFileName(file.FileName));
         await _downloads.DownloadFileAsync(file.Url, destPath, file.Hashes?.Sha1, file.Size, progress, ct);
         return destPath;

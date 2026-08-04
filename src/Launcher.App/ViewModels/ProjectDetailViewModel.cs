@@ -463,6 +463,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
             ProgressState = "安装完成";
             Progress = 100;
             InstallButtonText = "已安装";
+            // 长通知告知保存位置（Toast 支持换行；用户明确要求知道文件放哪了）
+            if (InstalledPath.Length > 0 && _card.Type != ProjectType.Modpack)
+                NotificationService.Success($"已安装到：{InstalledPath}");
             if (_card.Type == ProjectType.Modpack)
                 NotificationService.Info("整合包已下载到 downloads/modpacks——可到【版本】页点「导入整合包」创建实例");
         }

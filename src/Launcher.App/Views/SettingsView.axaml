@@ -169,6 +169,7 @@
                         <TextBlock Text="关于" FontSize="14" FontWeight="SemiBold"/>
                         <TextBlock Text="YanKa Launcher · 基于 Avalonia / .NET 10 · PCL.Core (Apache-2.0)" Classes="dim" FontSize="11"/>
                         <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
                             <Button Content="卸载启动器" Classes="danger" Padding="14,6" Click="OnUninstall"/>
                             <TextBlock Text="删除启动器本体 + 应用数据 + 游戏目录（含世界存档），不可恢复"
                                        Classes="dim" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
