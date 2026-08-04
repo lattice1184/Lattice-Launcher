@@ -75,6 +75,17 @@
 
                 <!-- 行3：配置摘要 -->
                 <TextBlock Text="{Binding LaunchConfigText}" Classes="dim" FontSize="10"/>
+
+                <!-- 启动失败修复入口（客户端文件缺失时显示） -->
+                <StackPanel Spacing="6" IsVisible="{Binding ShowRepairGuide}">
+                    <TextBlock Text="{Binding RepairGuideText}" Foreground="{StaticResource Danger}" FontSize="11"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="去版本页补全" Classes="primary" FontSize="11" Padding="14,5"
+                                Command="{Binding GoRepairCommand}"/>
+                        <Button Content="打开官方下载页" Classes="ghost" FontSize="11" Padding="14,5"
+                                Command="{Binding OpenOfficialDownloadCommand}"/>
+                    </StackPanel>
+                </StackPanel>
                 <!-- 进度条（卡内底部） -->
                 <ProgressBar Value="{Binding LaunchProgress}" Maximum="100" Height="4"
                              IsVisible="{Binding IsLaunching}"/>

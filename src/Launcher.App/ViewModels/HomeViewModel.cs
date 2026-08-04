@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -53,6 +54,29 @@ public partial class HomeViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string LaunchStatus { get; set; } = "选择版本并启动";
+
+    /// <summary>启动失败且为客户端文件缺失时显示修复入口（去版本页补全 / 官方下载）</summary>
+    [ObservableProperty]
+    public partial bool ShowRepairGuide { get; set; }
+
+    public string RepairGuideText => "客户端文件缺失，可补全下载或前往官方页面：";
+
+    private string? _lastLaunchVersionId;
+
+    /// <summary>跳版本页并选中该版本（补全下载）</summary>
+    [RelayCommand]
+    private void GoRepair() => MainViewModel.Current?.NavigateToVersion(_lastLaunchVersionId);
+
+    /// <summary>打开官方下载页（minecraft.net）</summary>
+    [RelayCommand]
+    private void OpenOfficialDownload()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://www.minecraft.net/zh-hans/download") { UseShellExecute = true });
+        }
+        catch { /* 无法打开浏览器忽略 */ }
+    }
 
     /// <summary>启动配置摘要（内存/Java/隔离，显示在启动区小字）</summary>
     [ObservableProperty]
@@ -287,6 +311,8 @@ public partial class HomeViewModel : ViewModelBase
         if (IsLaunching || IsRunning) return;
         var version = SelectedVersion;
         if (version is null) { LaunchStatus = "请先选择版本"; return; }
+        _lastLaunchVersionId = version.Name;
+        ShowRepairGuide = false; // 清除上次失败的修复入口
         var account = _accounts.Current;
         if (account is null) { LaunchStatus = "请先在【账号】页登录"; return; }
 
@@ -382,9 +408,10 @@ public partial class HomeViewModel : ViewModelBase
         catch (Exception ex)
         {
             LaunchState = "失败";
-            // 客户端文件缺失（残件版本）：提示去版本页补全
-            LaunchStatus = ex is FileNotFoundException
-                ? $"{ex.Message}（可在版本页选中该版本补全下载）"
+            // 客户端文件缺失（残件版本）：显示修复入口按钮
+            ShowRepairGuide = ex is FileNotFoundException;
+            LaunchStatus = ShowRepairGuide
+                ? "客户端文件缺失，无法启动（可补全下载或前往官方页面）"
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);

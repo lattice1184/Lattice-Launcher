@@ -61,6 +61,13 @@ public partial class MainViewModel : ViewModelBase
         _ = Home.RequestLaunchAsync(versionId, gameDir);
     }
 
+    /// <summary>跳版本页并选中指定版本（主页启动失败"去版本页补全"用）</summary>
+    public void NavigateToVersion(string? id = null)
+    {
+        Navigate("version");
+        if (!string.IsNullOrEmpty(id)) Versions.SelectById(id);
+    }
+
     /// <summary>停止游戏（版本页 [停止]）</summary>
     public void StopGame() => Home.StopGameCommand.Execute(null);
 
