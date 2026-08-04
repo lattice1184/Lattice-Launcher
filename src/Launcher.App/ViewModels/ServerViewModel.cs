@@ -537,6 +537,18 @@ public partial class ServerViewModel : ViewModelBase
         if (IsRunning || IsInstalling) return;
 
         ServerInstaller.AcceptEula(dir);
+        // 启动前日志文件锁预检（AJ2）：服务端启动要删除旧的 latest.log，被残留进程/编辑器占用时启动即失败——先探测并明确提示
+        var latest = Path.Combine(dir, "logs", "latest.log");
+        if (File.Exists(latest))
+        {
+            try { using var probe = File.Open(latest, FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
+            catch
+            {
+                Status = $"日志文件被其他程序占用，无法启动服务端：\n{latest}\n\n最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或编辑器打开着日志。";
+                NotificationService.Error("日志文件被占用（可结束残留 java.exe 或关闭打开的日志后重试）");
+                return;
+            }
+        }
         var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
             ? custom
             : PickServerJava(version.Name);
