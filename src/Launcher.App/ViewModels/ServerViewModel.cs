@@ -144,6 +144,12 @@ public partial class ServerViewModel : ViewModelBase
     /// <summary>预生成世界完成标志：Exited 时提示"世界已生成"</summary>
     private bool _worldGenDone;
 
+    /// <summary>一键开服标志：就绪（Done）后自动授予 OP + 拉起客户端（AJ 批次）</summary>
+    private bool _autoJoinOnReady;
+
+    /// <summary>一键开服进行中（防重入）</summary>
+    private bool _oneClickActive;
+
     public ServerViewModel()
     {
         OpNameText = Launcher.Core.Account.AccountService.Shared.Current?.Name ?? "";
@@ -400,7 +406,7 @@ public partial class ServerViewModel : ViewModelBase
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx lpBuffer);
 
-    /// <summary>下载服务端 jar（确认后执行；幂等跳过已有）</summary>
+    /// <summary>下载服务端 jar（确认后执行；幂等跳过已有）——一条龙（AJ）走无确认的 core 版本</summary>
     [RelayCommand]
     private async Task DownloadServer()
     {
@@ -417,7 +423,14 @@ public partial class ServerViewModel : ViewModelBase
         {
             return;
         }
+        await DownloadServerCoreAsync();
+    }
 
+    /// <summary>下载服务端核心（无确认弹窗——一条龙自动调用；幂等跳过已有）</summary>
+    private async Task DownloadServerCoreAsync()
+    {
+        var version = SelectedVersion;
+        if (version is null || IsInstalling) return;
         IsInstalling = true;
         Status = "正在下载服务端…";
         try
@@ -790,14 +803,98 @@ public partial class ServerViewModel : ViewModelBase
         await StartServer();
     }
 
-    /// <summary>行级检测：预生成世界时服务端就绪（Done）→ 自动 stop</summary>
+    /// <summary>行级检测：服务端就绪（Done）→ 预生成世界自动 stop / 一键开服自动授权进服</summary>
     private void ParseServerReady(string line)
     {
-        if (!_autoStopOnReady || !ServerReady.IsMatch(line)) return;
-        _autoStopOnReady = false;
-        _worldGenDone = true;
-        AppendLog("§ 世界生成完成，自动停止…");
-        _process.SendCommand("stop");
+        if (!ServerReady.IsMatch(line)) return;
+        if (_autoStopOnReady)
+        {
+            _autoStopOnReady = false;
+            _worldGenDone = true;
+            AppendLog("§ 世界生成完成，自动停止…");
+            _process.SendCommand("stop");
+            return;
+        }
+        if (_autoJoinOnReady)
+        {
+            _autoJoinOnReady = false;
+            AppendLog("§ 服务端就绪——自动授予 OP 并拉起客户端…");
+            _ = FinishOneClick(); // AppendLog 经 Dispatcher.Post 在 UI 线程执行，这里同样在 UI 线程
+        }
+    }
+
+    /// <summary>一键开服（AJ：下载→生成世界→启动→就绪后自动授予 OP→拉起客户端进服；任一步失败中止，已完成部分保留）</summary>
+    [RelayCommand]
+    private async Task OneClickStart()
+    {
+        var version = SelectedVersion;
+        var dir = ServerDir;
+        if (version is null || dir is null) { await WarnNoVersion(); return; }
+        if (IsRunning || IsInstalling || _oneClickActive) { Status = "服务端运行中或流程进行中，先停止再一键开服"; return; }
+        _oneClickActive = true;
+
+        // ① 缺服务端 → 自动下载
+        if (!File.Exists(Path.Combine(dir, "server.jar")))
+        {
+            Status = "① 下载服务端…";
+            await DownloadServerCoreAsync();
+            if (!File.Exists(Path.Combine(dir, "server.jar")))
+            {
+                Status = "服务端下载失败，一键开服中止";
+                _oneClickActive = false;
+                return;
+            }
+        }
+
+        // ② 无世界 → 生成（启动→Done→自动停→等退出）
+        if (!Directory.Exists(Path.Combine(dir, CurrentLevelName())))
+        {
+            Status = "② 生成世界（首次约 1~2 分钟，完成后自动停止）…";
+            _autoStopOnReady = true;
+            _worldGenDone = false;
+            await StartServer();
+            while (IsRunning) await Task.Delay(400);
+            if (!Directory.Exists(Path.Combine(dir, CurrentLevelName())))
+            {
+                Status = "世界生成失败，一键开服中止（可查看控制台日志）";
+                _oneClickActive = false;
+                return;
+            }
+        }
+
+        // ③④⑤ 启动 → 就绪后自动授予 OP + 拉起客户端进服
+        _autoJoinOnReady = true;
+        Status = "③ 启动服务端…（就绪后自动授权并进服）";
+        await StartServer();
+    }
+
+    /// <summary>一键开服收尾（服务端就绪后）：授予 OP（登录账号名）→ 拉起客户端自动连接</summary>
+    private async Task FinishOneClick()
+    {
+        var name = OpNameText.Trim();
+        if (name.Length > 0)
+        {
+            _process.SendCommand($"op {name}");
+            Status = $"④ 已授予 {name} OP——拉起客户端…";
+        }
+        else Status = "④ 未登录账号，跳过自动 OP——拉起客户端…";
+        await Task.Delay(800); // 等服务端写入 ops.json
+        RefreshOps();
+        Status = "⑤ 拉起客户端并连接服务器…";
+        try
+        {
+            await JoinGame();
+            Status = "一键开服完成——服务端运行中，客户端已连接";
+            NotificationService.Success("一键开服完成");
+        }
+        catch (Exception ex)
+        {
+            Status = $"进服失败：{ex.Message}（服务端仍在运行，可手动点「进入服务器」）";
+        }
+        finally
+        {
+            _oneClickActive = false;
+        }
     }
 
     /// <summary>日志行玩家解析（joined/left 实时增删；list 输出整体重置）</summary>
