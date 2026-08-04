@@ -151,4 +151,103 @@ public class ServerInstallerTests
         }
         finally { CleanUp(dir); }
     }
+
+    // ---------- AM：服务端 URL 自动推断（整合包/加载器版本无 downloads.server） ----------
+
+    /// <summary>stub 清单/版本 json 路由（manifest + 版本 json 都指向 piston-meta）</summary>
+    private static void RouteManifest(HostStubHandler handler, string mcVersion, string serverPath)
+    {
+        const string manifest = """
+            {"latest":{"release":"26.2"},"versions":[
+              {"id":"1.21.1","type":"release","url":"https://piston-meta.mojang.com/v1/packages/aaa/1.21.1.json"},
+              {"id":"1.21.10","type":"release","url":"https://piston-meta.mojang.com/v1/packages/bbb/1.21.10.json"}
+            ]}
+            """;
+        handler.RouteBytes("piston-meta.mojang.com/mc/game/version_manifest_v2.json", 200, System.Text.Encoding.UTF8.GetBytes(manifest));
+        handler.RouteBytes($"piston-meta.mojang.com/v1/packages/{mcVersion switch { "1.21.1" => "aaa", _ => "bbb" }}/{mcVersion}.json", 200,
+            System.Text.Encoding.UTF8.GetBytes(
+                $"{{\"id\":\"{mcVersion}\",\"downloads\":{{\"server\":{{\"url\":\"https://piston-data.mojang.com/v1/objects/abc/server.jar\"}}}}}}"));
+    }
+
+    /// <summary>版本 json（无 downloads.server，id 带数字前缀如 1.21.1-Fabric 0.19.3）→ 前缀推断 → 清单拿链接</summary>
+    private static string MakeLoaderGameDir(string id = "1.21.1-Fabric 0.19.3")
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"srvtest-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, ".minecraft");
+        var vdir = Path.Combine(dir, "versions", id);
+        Directory.CreateDirectory(vdir);
+        File.WriteAllText(Path.Combine(vdir, $"{id}.json"),
+            $$"""{"id":"{{id}}","type":"release","mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient","libraries":[]}""");
+        return dir;
+    }
+
+    [Fact]
+    public async Task InstallAsync_LoaderVersion_InfersMcFromIdPrefix()
+    {
+        var handler = new HostStubHandler();
+        RouteManifest(handler, "1.21.1", "abc");
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
+        var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+        var dir = MakeLoaderGameDir();
+        try
+        {
+            var jar = await installer.InstallAsync("1.21.1-Fabric 0.19.3", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
+            Assert.Contains(handler.Requests, r => r.Contains("version_manifest_v2.json")); // 走了清单推断
+            Assert.Contains(handler.Requests, r => r.Contains("piston-data.mojang.com/v1/objects/abc/server.jar"));
+        }
+        finally { CleanUp(dir); }
+    }
+
+    /// <summary>整合包版本（id 无数字前缀、无 downloads.server）→ jar 内 version.json 推断 MC 版本</summary>
+    [Fact]
+    public async Task InstallAsync_ModpackVersion_InfersMcFromJarVersionJson()
+    {
+        var handler = new HostStubHandler();
+        RouteManifest(handler, "1.21.10", "abc");
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
+        var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+        var root = Path.Combine(Path.GetTempPath(), $"srvtest-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, ".minecraft");
+        var vdir = Path.Combine(dir, "versions", "红石生电优化");
+        Directory.CreateDirectory(vdir);
+        try
+        {
+            File.WriteAllText(Path.Combine(vdir, "红石生电优化.json"),
+                """{"id":"红石生电优化","type":"release","mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient","libraries":[]}""");
+            // 整合包 jar = 原版 client jar 改名：内含 version.json {"id":"1.21.10"}
+            using (var zip = System.IO.Compression.ZipFile.Open(Path.Combine(vdir, "红石生电优化.jar"), System.IO.Compression.ZipArchiveMode.Create))
+            {
+                var entry = zip.CreateEntry("version.json");
+                using var w = new StreamWriter(entry.Open());
+                w.Write("""{"id":"1.21.10","name":"1.21.10"}""");
+            }
+
+            var jar = await installer.InstallAsync("红石生电优化", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
+            Assert.Contains(handler.Requests, r => r.Contains("bbb/1.21.10.json")); // jar 推断出 1.21.10
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    /// <summary>清单中找不到该 MC 版本 → 明确报错</summary>
+    [Fact]
+    public async Task InstallAsync_ManifestMissingVersion_Throws()
+    {
+        var handler = new HostStubHandler();
+        RouteManifest(handler, "1.21.1", "abc"); // manifest 只有 1.21.1/1.21.10
+        var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+        var dir = MakeLoaderGameDir("9.9.9-Fabric 0.19.3"); // 前缀推断 9.9.9——manifest 里没有
+        try
+        {
+            var ex = await Assert.ThrowsAsync<InvalidDataException>(
+                () => installer.InstallAsync("9.9.9-Fabric 0.19.3", dir));
+            Assert.Contains("9.9.9", ex.Message);
+        }
+        finally { CleanUp(dir); }
+    }
 }
