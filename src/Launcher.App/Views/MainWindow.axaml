@@ -18,8 +18,8 @@
     </Design.DataContext>
 
     <!-- 液态玻璃背景层（毛玻璃：滚动内容透过可见模糊） -->
-    <Border CornerRadius="8" BorderBrush="#4D2F3745" BorderThickness="1" ClipToBounds="True">
-        <ExperimentalAcrylicBorder x:Name="RootSurface" CornerRadius="8">
+    <Border CornerRadius="12" BorderBrush="#4D2F3745" BorderThickness="1" ClipToBounds="True">
+        <ExperimentalAcrylicBorder x:Name="RootSurface" CornerRadius="12">
             <ExperimentalAcrylicBorder.Material>
                 <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                              TintColor="#14181F"
@@ -29,7 +29,7 @@
             <Grid>
             <DockPanel>
                 <!-- 左侧导航（液态玻璃；内角随窗口圆角） -->
-                <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="160" CornerRadius="8,0,0,8">
+                <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="160" CornerRadius="12,0,0,12">
                     <ExperimentalAcrylicBorder.Material>
                         <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                                      TintColor="#14181F"
@@ -86,7 +86,7 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="svc:ToastItem">
                         <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
-                                CornerRadius="8" Padding="14,9" Opacity="{Binding Opacity}">
+                                CornerRadius="10" Padding="14,9" Opacity="{Binding Opacity}">
                             <Border.Transitions>
                                 <Transitions>
                                     <DoubleTransition Property="Opacity" Duration="0:0:0.24"/>

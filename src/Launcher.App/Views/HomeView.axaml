@@ -14,7 +14,7 @@
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
                     <Button x:Name="AvatarButton" Padding="0" Background="Transparent" BorderThickness="0"
                             Click="OnAvatarClick" ToolTip.Tip="账号管理（登录/切换/皮肤）">
-                        <Border Width="44" Height="44" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                        <Border Width="44" Height="44" CornerRadius="10" ClipToBounds="True" Background="{StaticResource BgRaised}">
                             <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"/>
                         </Border>
                     </Button>
@@ -178,7 +178,7 @@
                 <StackPanel Spacing="10">
                     <!-- 当前账号行 -->
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                        <Border Width="40" Height="40" CornerRadius="6" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                        <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
                             <Image Source="{Binding Account.Avatar}" Width="40" Height="40" Stretch="Uniform"/>
                         </Border>
                         <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
