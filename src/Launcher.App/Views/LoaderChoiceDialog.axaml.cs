@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Loader;
 
@@ -20,6 +21,12 @@ public partial class LoaderChoiceDialog : Window
     private TaskCompletionSource<LoaderChoice?>? _result;
     private LoaderKind? _kind;
     private string _versionId = "";
+
+    /// <summary>加载器版本列表（先 5 条 + 后台分批补全；增量绑定避免 ComboBox 全量重建卡顿）</summary>
+    private readonly System.Collections.ObjectModel.ObservableCollection<string> _versions = [];
+
+    /// <summary>竞态丢弃：快速切换加载器时旧响应作废</summary>
+    private int _versionGen;
 
     public LoaderChoiceDialog()
     {
@@ -59,27 +66,44 @@ public partial class LoaderChoiceDialog : Window
             return;
         }
 
-        // 懒加载版本列表
+        // 懒加载版本列表：先绑前 5 条立即可用，剩余后台分批静默补全（全量绑定 ComboBox 会卡）
+        var gen = ++_versionGen;
         VersionStatus.Text = "加载版本…";
-        VersionBox.ItemsSource = null;
+        _versions.Clear();
+        VersionBox.ItemsSource = _versions;
         try
         {
             var list = await _service.GetLoaderVersionsAsync(_kind.Value, _versionId, CancellationToken.None);
+            if (gen != _versionGen) return; // 竞态：期间切了别的加载器，丢弃旧响应
+
             var versions = list.Select(v => v.Version).ToList();
-            VersionBox.ItemsSource = versions;
-            if (versions.Count > 0)
-            {
-                VersionBox.SelectedItem = versions[0];
-                VersionStatus.Text = $"共 {versions.Count} 个版本";
-            }
-            else
+            if (versions.Count == 0)
             {
                 VersionStatus.Text = "该加载器暂无可用版本";
+                return;
             }
+
+            foreach (var v in versions.Take(5)) _versions.Add(v); // 前 5 条立即渲染
+            VersionBox.SelectedItem = _versions[0];
+
+            // 静默补全剩余（分批节流，UI 不卡；期间切加载器则丢弃）
+            var rest = versions.Skip(5).ToList();
+            for (var i = 0; i < rest.Count; i += 8)
+            {
+                if (gen != _versionGen) return;
+                await Task.Delay(25); // 节流：给 UI 呼吸时间
+                var batch = rest.Skip(i).Take(8).ToList();
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (gen != _versionGen) return;
+                    foreach (var v in batch) _versions.Add(v);
+                });
+            }
+            VersionStatus.Text = $"共 {_versions.Count} 个版本";
         }
         catch (Exception ex)
         {
-            VersionStatus.Text = $"加载失败: {ex.Message}";
+            if (gen == _versionGen) VersionStatus.Text = $"加载失败: {ex.Message}";
         }
     }
 
