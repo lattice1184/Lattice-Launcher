@@ -310,11 +310,23 @@ public partial class HomeViewModel : ViewModelBase
     {
         if (IsLaunching || IsRunning) return;
         var version = SelectedVersion;
-        if (version is null) { LaunchStatus = "请先选择版本"; return; }
+        if (version is null)
+        {
+            LaunchStatus = "请先选择版本";
+            await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
+                "请选择要启动的已安装版本，再点击启动游戏。", "无法启动游戏", "知道了", "");
+            return;
+        }
         _lastLaunchVersionId = version.Name;
         ShowRepairGuide = false; // 清除上次失败的修复入口
         var account = _accounts.Current;
-        if (account is null) { LaunchStatus = "请先在【账号】页登录"; return; }
+        if (account is null)
+        {
+            LaunchStatus = "请先登录账号";
+            await DialogService.Warn(DialogService.MainWindow(), "未登录账号",
+                "游戏需要账号才能启动。点击头像可离线登录或使用正版账号。", "无法启动游戏", "知道了", "");
+            return;
+        }
 
         GameLogs.Clear();
         HasLogs = false;

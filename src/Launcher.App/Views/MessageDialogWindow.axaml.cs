@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 
 namespace Launcher.App.Views;
 
@@ -20,15 +21,34 @@ public partial class MessageDialogWindow : Window
     public static async Task<bool> Confirm(Window? owner, string message,
         string title, string confirm, string cancel)
     {
-        var win = new MessageDialogWindow
-        {
-            Title = title,
-        };
+        var win = new MessageDialogWindow { Title = title };
         win.MessageText.Text = message;
         win.ConfirmBtn.Content = confirm;
         win.CancelBtn.Content = cancel;
         win.CancelBtn.IsVisible = cancel.Length > 0;
+        return await ShowAndWaitAsync(owner, win);
+    }
 
+    /// <summary>
+    /// 警告对话框：红字加粗原因 + 普通色说明（前提不满足/操作失败弹窗化，替代无着重色的状态栏小字）。
+    /// </summary>
+    public static async Task<bool> Warn(Window? owner, string reason, string detail,
+        string title, string confirm = "确定", string cancel = "取消")
+    {
+        var win = new MessageDialogWindow { Title = title };
+        win.MessageText.Text = reason;
+        win.MessageText.Foreground = new SolidColorBrush(Color.Parse("#E05A5A")); // Danger 红
+        win.MessageText.FontWeight = FontWeight.SemiBold;                          // 加粗表示原因
+        win.DetailText.Text = detail;
+        win.DetailText.IsVisible = detail.Length > 0;
+        win.ConfirmBtn.Content = confirm;
+        win.CancelBtn.Content = cancel;
+        win.CancelBtn.IsVisible = cancel.Length > 0;
+        return await ShowAndWaitAsync(owner, win);
+    }
+
+    private static async Task<bool> ShowAndWaitAsync(Window? owner, MessageDialogWindow win)
+    {
         var tcs = new TaskCompletionSource<bool>();
         win._result = tcs;
         try
