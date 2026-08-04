@@ -126,8 +126,43 @@ public partial class ServerViewModel : ViewModelBase
                 Status = code == 0 ? "服务端已停止" : "服务端异常退出，请查看日志";
             });
         };
+        InitSuggestions();
+        RefreshSuggestionDiff();
         _ = RefreshVersionsAsync();
+        // 机器状态实时刷新（每 5 秒；后台读内存/CPU/磁盘，只更新状态文本不动建议输入）
+        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _statusTimer.Tick += async (_, _) => await RefreshStatusCoreAsync();
+        _statusTimer.Start();
     }
+
+    private readonly DispatcherTimer _statusTimer;
+
+    /// <summary>建议配置编辑值（机器状态卡内直接可改，ApplySuggestion 应用）</summary>
+    [ObservableProperty]
+    public partial string SuggestionMemoryText { get; set; } = "2048";
+
+    [ObservableProperty]
+    public partial string SuggestionViewText { get; set; } = "10";
+
+    [ObservableProperty]
+    public partial string SuggestionPlayersText { get; set; } = "20";
+
+    /// <summary>建议与当前参数的 diff 提示（应用后/输入变化时联动）</summary>
+    [ObservableProperty]
+    public partial string SuggestionStatusText { get; set; } = "";
+
+    /// <summary>填入初始建议值（内存/视距/玩家）</summary>
+    private void InitSuggestions()
+    {
+        var (xmx, view, players) = BuildSuggestion();
+        SuggestionMemoryText = xmx.ToString();
+        SuggestionViewText = view.ToString();
+        SuggestionPlayersText = players.ToString();
+    }
+
+    partial void OnSuggestionMemoryTextChanged(string value) => RefreshSuggestionDiff();
+    partial void OnSuggestionViewTextChanged(string value) => RefreshSuggestionDiff();
+    partial void OnSuggestionPlayersTextChanged(string value) => RefreshSuggestionDiff();
 
     /// <summary>刷新已装版本（构造 + 每次进入开服页调用——新装的版本立即可见）</summary>
     public async Task RefreshVersionsAsync()
@@ -179,37 +214,51 @@ public partial class ServerViewModel : ViewModelBase
             20);
     }
 
-    /// <summary>查看机器状态并给出建议配置（内存/CPU/磁盘 + Xmx/Java/视距）</summary>
-    [RelayCommand]
-    private void RefreshMachineStatus()
+    /// <summary>机器状态实时刷新（每 5 秒自动；后台读内存/CPU/磁盘）</summary>
+    private async Task RefreshStatusCoreAsync()
+    {
+        MachineStatusText = await Task.Run(() =>
+        {
+            try
+            {
+                var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;      // 可用物理内存
+                var total = TotalPhysicalMemory();                               // 总物理内存
+                var diskFree = FreeDiskGb(GameDirectory.InstallDir());
+                var cpu = CpuUsagePercent();                                     // 实时 CPU 使用率（失败 -1）
+
+                var cpuText = cpu >= 0 ? $"{cpu:0.#}%" : $"{Environment.ProcessorCount} 核";
+                return $"内存：可用 {avail / 1024.0 / 1024 / 1024:0.#} GB / 总 {total / 1024.0 / 1024 / 1024:0.#} GB" + Environment.NewLine +
+                       $"CPU：{cpuText}（{Environment.ProcessorCount} 核） · 磁盘剩余：{diskFree:0.#} GB";
+            }
+            catch (Exception ex)
+            {
+                return $"读取失败: {ex.Message}";
+            }
+        });
+    }
+
+    /// <summary>CPU 使用率（PerformanceCounter 两次采样差值；无权限/不支持返回 -1）</summary>
+    private static double CpuUsagePercent()
     {
         try
         {
-            var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;      // 可用物理内存
-            var total = TotalPhysicalMemory();                               // 总物理内存
-            var cpu = Environment.ProcessorCount;
-            var diskFree = FreeDiskGb(GameDirectory.InstallDir());
-            var (xmxMb, view, players) = BuildSuggestion();
-            var java = xmxMb >= 4096 ? "17/21（大内存建议 21）" : "17+";
-
-            MachineStatusText =
-                $"内存：可用 {avail / 1024.0 / 1024 / 1024:0.#} GB / 总 {total / 1024.0 / 1024 / 1024:0.#} GB" + Environment.NewLine +
-                $"CPU：{cpu} 核 · 磁盘剩余：{diskFree:0.#} GB" + Environment.NewLine +
-                $"建议配置：-Xmx{xmxMb}M · Java {java} · 视距 {view} · 最大玩家 {players}";
+            using var counter = new System.Diagnostics.PerformanceCounter("Processor", "% Processor Time", "_Total");
+            counter.NextValue();
+            Thread.Sleep(300);
+            return Math.Round(counter.NextValue(), 1);
         }
-        catch (Exception ex)
-        {
-            MachineStatusText = $"读取失败: {ex.Message}";
-        }
+        catch { return -1; }
     }
 
-    /// <summary>一键应用建议：写入 server.properties（视距/玩家）+ 更新全局内存</summary>
+    /// <summary>应用建议配置（读建议编辑框值）：写 server.properties（视距/玩家）+ 更新全局内存</summary>
     [RelayCommand]
     private void ApplySuggestion()
     {
         var dir = ServerDir;
         if (dir is null) { Status = "请先选择版本"; return; }
-        var (xmxMb, view, players) = BuildSuggestion();
+        var xmxMb = long.TryParse(SuggestionMemoryText, out var m) && m >= 512 ? m : 2048;
+        var view = int.TryParse(SuggestionViewText, out var v) && v >= 2 && v <= 32 ? v : 10;
+        var players = int.TryParse(SuggestionPlayersText, out var p) && p >= 1 && p <= 1000 ? p : 20;
 
         // server.properties：只覆盖建议项，不碰用户已有配置
         var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
@@ -217,7 +266,7 @@ public partial class ServerViewModel : ViewModelBase
         props.Set("max-players", players.ToString());
         props.Save(Path.Combine(dir, "server.properties"));
 
-        // 全局内存 = 建议 Xmx
+        // 全局内存 = 建议 Xmx（启动服务端时使用）
         var s = LauncherSettings.Current;
         s.MemoryMb = (int)xmxMb;
         s.Save();
@@ -226,22 +275,23 @@ public partial class ServerViewModel : ViewModelBase
         LoadProperties();
         RefreshSuggestionDiff();
 
-        Status = $"已应用建议：内存 {xmxMb}MB · 视距 {view} · 玩家 {players}";
-        NotificationService.Success("已应用建议配置");
+        Status = $"已应用配置：内存 {xmxMb}MB · 视距 {view} · 玩家 {players}";
+        NotificationService.Success("已应用服务器配置");
     }
 
-    /// <summary>建议 diff：对比当前参数与建议值写入机器状态区（手动改参数/应用建议后联动刷新）</summary>
+    /// <summary>建议 diff：对比建议编辑框值与当前 server.properties 参数（输入变化/应用后联动）</summary>
     private void RefreshSuggestionDiff()
     {
-        var (_, view, players) = BuildSuggestion();
+        var view = int.TryParse(SuggestionViewText, out var sv) ? sv : 10;
+        var players = int.TryParse(SuggestionPlayersText, out var sp) ? sp : 20;
         var diffs = new List<string>();
         if (int.TryParse(PropRows.FirstOrDefault(r => r.Key == "view-distance")?.Value, out var cv) && cv != view)
             diffs.Add($"视距 {view}（当前 {cv}）");
         if (int.TryParse(PropRows.FirstOrDefault(r => r.Key == "max-players")?.Value, out var cp) && cp != players)
             diffs.Add($"最大玩家 {players}（当前 {cp}）");
-        MachineStatusText = diffs.Count == 0
+        SuggestionStatusText = diffs.Count == 0
             ? $"建议配置已与当前参数一致 ✓（视距 {view} · 最大玩家 {players}）"
-            : $"建议调整：{string.Join("、", diffs)}（可在下方参数区修改后保存）";
+            : $"建议调整：{string.Join("、", diffs)}（点[应用建议配置]生效）";
     }
 
     /// <summary>物理内存总量（GlobalMemoryStatusEx P/Invoke）</summary>
@@ -377,10 +427,6 @@ public partial class ServerViewModel : ViewModelBase
     }
 
     // ---------- 服务器图形化管理 ----------
-
-    /// <summary>机器状态"去更改"→ 设置页（内存/Java 作为单次服务器配置，改后启动即用）</summary>
-    [RelayCommand]
-    private void GoToSettings() => MainViewModel.Current?.NavigateCommand.Execute("settings");
 
     /// <summary>刷新玩家列表（list 命令 → 日志解析回填）</summary>
     [RelayCommand]

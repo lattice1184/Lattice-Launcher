@@ -43,21 +43,33 @@
             <ScrollViewer Grid.Column="0" MinWidth="260">
                 <StackPanel Spacing="8">
 
-                    <!-- 机器状态 + 建议配置 -->
+                    <!-- 机器状态（实时）+ 建议配置（直接可改） -->
                     <Border Classes="card" Padding="12">
                         <StackPanel Spacing="8">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-                                <TextBlock Text="机器状态" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="去更改" Classes="ghost" Padding="14,5"
-                                        ToolTip.Tip="跳设置页修改内存/Java（单次服务器配置）"
-                                        Command="{Binding GoToSettingsCommand}"/>
-                                <Button Grid.Column="2" Content="应用建议" Classes="primary" Padding="14,5"
-                                        Command="{Binding ApplySuggestionCommand}"/>
-                                <Button Grid.Column="3" Content="刷新状态" Classes="ghost" Padding="14,5"
-                                        Command="{Binding RefreshMachineStatusCommand}"/>
-                            </Grid>
+                            <TextBlock Text="机器状态 · 每 5 秒自动刷新" FontWeight="SemiBold"/>
                             <TextBlock Text="{Binding MachineStatusText}" Classes="sub" FontSize="12"
                                        TextWrapping="Wrap" LineHeight="20"/>
+
+                            <!-- 建议配置编辑（不用跳设置页） -->
+                            <StackPanel Spacing="6" Margin="0,4,0,0">
+                                <TextBlock Text="建议配置（可直接修改后应用）" FontSize="12" FontWeight="SemiBold"/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="内存 (MB)" Classes="sub" FontSize="12" VerticalAlignment="Center" MinWidth="64"/>
+                                    <TextBox Grid.Column="1" Text="{Binding SuggestionMemoryText}" FontSize="12"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="视距" Classes="sub" FontSize="12" VerticalAlignment="Center" MinWidth="64"/>
+                                    <TextBox Grid.Column="1" Text="{Binding SuggestionViewText}" FontSize="12"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <TextBlock Text="最大玩家" Classes="sub" FontSize="12" VerticalAlignment="Center" MinWidth="64"/>
+                                    <TextBox Grid.Column="1" Text="{Binding SuggestionPlayersText}" FontSize="12"/>
+                                </Grid>
+                                <Button Content="应用建议配置" Classes="primary" FontSize="12" Padding="14,6"
+                                        HorizontalAlignment="Left" Command="{Binding ApplySuggestionCommand}"/>
+                                <TextBlock Text="{Binding SuggestionStatusText}" Classes="dim" FontSize="11"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
