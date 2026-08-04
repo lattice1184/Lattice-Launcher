@@ -192,3 +192,11 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 用户问"为什么下载服务端基本都是失败"——查证：服务端 jar 托管在 piston-data.mojang.com，官方直连国内不稳（实测时通时断）；镜像映射（BmclapiDlSourceMapper）只覆盖 piston-meta/libraries/resources，**服务端无兜底** → 官方失败即失败
 - 修复：ServerInstaller.InstallAsync 官方失败 → fallback https://bmclapi2.bangbang93.com/version/{id}/server（302 到 CDN）
 - 测试 +2（201/201 全绿）；提交；水位 ~40%
+
+## AL2 批次（2026-08-04 22:25 发布 185.8MB）
+服务端三候选下载链 + 封禁列表解封
+- 用户报：封禁不能解封 + "server.jar 还是失败"
+- **下载失败根因追加**：BMCLAPI 服务端接口 302 → 签名 CDN（12.749333.xyz）连不上（WAFPRO 防护，HTTP:000）——单镜像兜底不可靠。候选链改为：官方 piston-data（实测通）→ launcher.mojang.com 旧域名（实测通 35MB）→ BMCLAPI
+- **解封**：ServerBannedFile（读 banned-players.json）+ 开服页封禁列表卡（名字+解封 pardon 按钮）+ 封禁/启停后自动刷新；banned-players.json 里用户自己把自己封了（iwasGOD）
+- 测试修复：ServerInstallerTests 目录隔离（ServerDir 取 gameDir 父级——%TEMP%/servers 共享残留导致假成功）+ 跳过真实网络预检（测试不依赖外网）
+- 测试 +6（205/205 全绿）；提交 7216ba7；水位 ~40%
