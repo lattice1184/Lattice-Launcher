@@ -146,3 +146,12 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 查证：1.21.10 是纯原版（mainClass=net.minecraft.client.main.Main、官方 client.jar URL）——非 NeoForge；NeoForge 安装器生成的版本名本就带后缀（与 PCL 一致）
 - 水位：~40%（369k/917k）
 - 提交 8b3d2a1；192/192 全绿
+
+## AH 批次（2026-08-04 17:56 发布 185.8MB）
+开服页连接信息卡 + 授予 OP + 新服务端默认离线
+- **连接信息卡**：机器状态卡加"连接信息"区——本机 127.0.0.1:{port}（一键进服用）+ 局域网 {ip}:{port}（复制）；AG3 的 LanAddressText 升级为 LocalAddressText + LanAddressText 两行
+- **授予 OP**：管理员区输入框（预填登录账号名 AccountService.Shared.Current.Name）+ 授予 OP 按钮——stdin 发 `op <名>`，**无需玩家在线**（MC 写 ops.json 上线即生效）；未运行/空名有提示
+- **新服默认离线**：ServerInstaller.WriteDefaultProperties——下载服务端后预写 server.properties（online-mode=false 等 10 键与 PropDefs 对齐），MC 首次启动直接使用；文件已存在不覆盖（已有服不受影响）
+- 回答用户疑问：启动器内参数设置**起效**（PropRows 保存到 server.properties，服务端启动时读取——已运行需重启生效）
+- 测试 +2（194/194 全绿）：预写默认离线 / 已存在不覆盖
+- 提交 f1e9ac5；水位 ~40%
