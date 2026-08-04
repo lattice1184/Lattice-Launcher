@@ -195,6 +195,9 @@ public sealed class JavaArgumentsBuilder
             ["launcher_version"] = "0.1.0",
             // Forge/NeoForge 1.17+ 安装器生成的 version.json 含 ${library_directory}（bootstraplauncher 路径）
             ["library_directory"] = Path.Combine(gameDir, "libraries").Replace('\\', '/'),
+            // AL8：Forge 1.20+ 的 -p 模块路径用 ${classpath_separator} 连接模块 jar——缺失则整串
+            // 未替换，java 模块系统把路径串当单一文件解析 → InvalidPathException（TACZgun 崩溃根因）
+            ["classpath_separator"] = Path.PathSeparator.ToString(),
         };
     }
 

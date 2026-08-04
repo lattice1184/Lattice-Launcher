@@ -593,6 +593,9 @@ public partial class ServerViewModel : ViewModelBase
             Status = "服务端运行中（控制台可输命令）";
             AppendLog($"§ 已启动：{java}");
             AppendLog($"§ 内存 {mem}MB · 世界目录 {dir}");
+            // AL8：完整启动命令落日志（崩溃/启动失败时根因一眼可见）
+            if (_process.CommandLine is { } cmd)
+                AppendLog($"§ 启动命令：" + LaunchProcess.DescribeCommandLine(java, cmd));
             RefreshOps(); // 启动后 ops.json 已就绪（含已授予的 OP）
             RefreshBanned(); // 启动后 banned-players.json 已就绪
         }

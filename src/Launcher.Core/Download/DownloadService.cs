@@ -202,7 +202,9 @@ public sealed class DownloadService
         using var response = await SendWith416RetryAsync(request, destPath, ct);
         response.EnsureSuccessStatusCode();
 
-        var total = response.Content.Headers.ContentLength ?? 0; // 本次响应要读的字节数
+        // AL8：进度 total 用真实目标大小（expectedSize 优先）——源返回 1B 垃圾（WAF 拦截页等）
+        // 时不再显示 "1 B" 误导；校验仍由 sha1/size 兜底，无效响应自动换源
+        var total = expectedSize ?? response.Content.Headers.ContentLength ?? 0;
         await using (var src = await response.Content.ReadAsStreamAsync(ct))
         {
             using var dst = new FileStream(destPath, FileMode.Append, FileAccess.Write, FileShare.None);

@@ -107,7 +107,13 @@ public sealed class ServerInstaller
                 File.Delete(jarPath);
                 last = new InvalidDataException($"「{url}」返回内容无效（{len} 字节，非服务端 jar）");
             }
-            catch (Exception ex) { last = ex; }
+            catch (Exception ex)
+            {
+                // AL8：防御性清理——DownloadService 各失败路径会删文件，但保底不残留
+                // 垃圾内容（如 1B 拦截页/错误占位），下次重试也能干净起步
+                try { if (File.Exists(jarPath) && new FileInfo(jarPath).Length < 1024 * 1024) File.Delete(jarPath); } catch { }
+                last = ex;
+            }
         }
         if (last is not null)
         {

@@ -56,6 +56,9 @@ public sealed class GameLaunchService
             accountName, accountUuid, accessToken, memoryMb, extraJvmArgs,
             versionIsolation: null, extraGameArgs);
 
+        // AL8：启动命令写入日志（onLog → launch-*.log 首行）——崩溃/启动失败时未替换的占位符等根因一眼可见
+        onLog?.Invoke("§ 启动命令：" + LaunchProcess.DescribeCommandLine(profile));
+
         // log4j 配置兜底：version.json 指定的文件缺失时写入标准模板
         EnsureLog4jConfig(version, gameDirectory);
 
