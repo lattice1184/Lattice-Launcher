@@ -127,3 +127,13 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - AE6 danger hover #22E05A5A（13% 透明几乎不可见）→ #8C2F2F 实色深红
 - 坑：catch 内 owner 与外层 Confirm owner 冲突（CS0136）；StorageWindow 自 DataContext 需 x:DataType；DownloadGroupTests 并发测试偶发失败（重跑过）
 - 提交 75f4b17；192/192 全绿（首跑 1 个偶发，重跑过）
+
+## AF 批次（2026-08-04 16:48 发布 185.8MB）
+全局版本绑定 + MOD 落点修正 + 冲突提示 + 下载页实例分批
+- AF1 **全局版本绑定**：MainViewModel.CurrentVersion——主页 SelectedVersion 变化 → 全局同步（单向权威）；EcosystemViewModel 初始化 + 主页切换时 SelectedInstance 跟随；开服页跟随（"主页选什么，后面就全都是那个版本"）
+- AF2 **MOD 落点修正（严重）**：根因=下载页实例 VM 不带 GameDir + InstallAsync 用全局自建目录 → fabric api 装进自建目录自动创建的空 versions/{id} 目录，PCL 版本真实 mods 目录里没有。修复：Instances 带来源目录（PCL 扫描 → PCL 目录）；EcosystemService.InstallAsync/InstallWithDependenciesAsync 加 gameDirOverride（主文件+依赖透传）；ResolveInstallPath 改隔离判定（versions/{id} 存在→版本目录，否则共享 mods）
+- AF3 **冲突提示**：安装前检查目标 mods——同名文件（覆盖确认）+ 同 mod id（zip 读 jar 的 fabric.mod.json id 匹配 → "已安装此模组" 确认）
+- AF4 下载页实例下拉分批：前 5 立即 + 每批 8 静默补全（LoaderChoiceDialog 模式）；LoaderChoiceDialog 本身 Y 批次已分批
+- 测试：ResolveInstallPath 断言更新（新隔离语义——临时目录建 versions/{id} 验证）；CF 测试防幂等残留（共享 mods 同名文件 sha1 跳过 → 请求断言偶发失败，开头清理）
+- 水位：~34%（310k/917k）
+- 提交 1be7011；192/192 全绿
