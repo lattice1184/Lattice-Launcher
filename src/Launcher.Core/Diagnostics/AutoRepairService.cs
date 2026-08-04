@@ -20,7 +20,10 @@ public sealed class AutoRepairService
         var task = DownloadManager.Instance.EnqueueGroup($"自动修复 {versionId}",
             (ctx, ct) => installer.InstallAsync(version, ctx, ct));
         await task.Completion;
-        return task.State == DownloadTaskState.Completed ? "补全完成" : $"补全未完成（{task.State}）";
+        // AL9 复查：任务失败/取消必须抛——调用方据此如实报告"修复失败"，不盲目自动重启
+        if (task.State != DownloadTaskState.Completed)
+            throw new InvalidOperationException($"补全未完成（{task.State}）");
+        return "补全完成";
     }
 
     /// <summary>重解压 natives：先递归删 natives 目录清残留，再从库 jar 提取 dll/so/dylib。返回处理描述。</summary>
