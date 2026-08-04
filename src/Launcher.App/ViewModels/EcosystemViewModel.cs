@@ -223,7 +223,8 @@ public partial class EcosystemViewModel : ViewModelBase
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 all.Add(new VersionInstanceVM(e.Id, e.GameDirectory.Length > 0
                     ? Launcher.Core.Utils.GameDirectory.SourceLabel(Launcher.Core.Utils.GameDirectory.SourceOf(e.GameDirectory))
-                    : "", e.GameDirectory));
+                    : "", e.GameDirectory,
+                    Launcher.Core.Launch.LoaderDetector.Detect(e.GameDirectory, e.Id) ?? ""));
             // 目录补漏：fabric/forge/neoforge/quilt 等不在 manifest 的已装版本（带来源目录——MOD 落点关键）
             foreach (var (dir, _) in Launcher.Core.Utils.GameDirectory.ScanSourceDirs())
             {
@@ -235,7 +236,8 @@ public partial class EcosystemViewModel : ViewModelBase
                     if (all.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(d, $"{id}.json")))
                         all.Add(new VersionInstanceVM(id, Launcher.Core.Utils.GameDirectory.SourceLabel(
-                            Launcher.Core.Utils.GameDirectory.SourceOf(dir)), dir));
+                            Launcher.Core.Utils.GameDirectory.SourceOf(dir)), dir,
+                            Launcher.Core.Launch.LoaderDetector.Detect(dir, id) ?? ""));
                 }
             }
             // 分批填充：前 5 立即，剩余每批 8 静默补全（大列表不卡，复用 LoaderChoiceDialog 模式）
@@ -288,9 +290,10 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
             var instance = SelectedInstance;
-            // 三级筛选：显式选择优先，否则跟随实例（加载器猜测/版本解析）
+            // 三级筛选：显式选择优先，否则跟随实例（真实加载器徽章优先——AG1，名字猜测兜底）
             var loader = SelectedLoader
-                ?? (instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
+                ?? (instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
+                    : instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
             var gameVersion = SelectedGameVersion?.Value
                 ?? (instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
             var category = SelectedCategory?.Key;
@@ -461,7 +464,8 @@ public partial class EcosystemViewModel : ViewModelBase
             await InstallCfCardAsync(card, instance, gameVersion);
             return;
         }
-        var loader = instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
+        var loader = instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
+            : instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
         try
         {
             var version = await _eco.FindBestVersionAsync(card.Id, gameVersion, loader, CancellationToken.None);

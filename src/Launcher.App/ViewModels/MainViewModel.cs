@@ -37,6 +37,10 @@ public partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     public partial VersionInstanceVM? CurrentVersion { get; set; }
 
+    /// <summary>全局运行状态（客户端/服务端；版本页徽章用——AG2 状态同步）</summary>
+    [ObservableProperty]
+    public partial RunningVersionInfo? RunningVersion { get; set; }
+
     public MainViewModel()
     {
         Current = this;
@@ -70,7 +74,7 @@ public partial class MainViewModel : ViewModelBase
     {
         Navigate("version");
         if (string.IsNullOrEmpty(id)) return;
-        await Versions.EnsureLoadedAsync();
+        await Versions.LoadAsync(); // 重扫完成后选中（下载补全后红字同步）
         Versions.SelectById(id);
     }
 
@@ -87,7 +91,7 @@ public partial class MainViewModel : ViewModelBase
         IsServerActive = page == "server";
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
-        if (page == "version") _ = Versions.EnsureLoadedAsync(); // 首次进入版本页才拉清单
+        if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
         if (page == "server") _ = Server.RefreshVersionsAsync(); // 每次进开服页刷新已装版本（新装的立即可见）
         CurrentPage = page switch
         {
@@ -99,3 +103,6 @@ public partial class MainViewModel : ViewModelBase
         };
     }
 }
+
+/// <summary>全局运行状态（AG2）：Kind = 客户端 / 服务端</summary>
+public sealed record RunningVersionInfo(string VersionId, string Kind);
