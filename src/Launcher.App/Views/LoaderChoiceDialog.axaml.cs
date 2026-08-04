@@ -24,6 +24,7 @@ public partial class LoaderChoiceDialog : Window
     public LoaderChoiceDialog()
     {
         InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
     }
 
     /// <summary>展示加载器选择（versionId 为要下载的版本）；取消返回 null</summary>

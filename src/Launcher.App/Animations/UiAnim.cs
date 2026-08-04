@@ -86,44 +86,80 @@ public static class UiAnim
         }
     }
 
-    /// <summary>弹性弹出（对话框）：scale 0.94→1 overshoot 回弹 + 淡入</summary>
-    public static void PopIn(Visual root) => ElasticIn(root, 0.94);
+    /// <summary>平滑弹出（对话框）：scale 0.96→1 + 淡入（CubicEaseOut，无弹跳——NVIDIA 浮窗风）</summary>
+    public static void PopIn(Visual root) => ElasticIn(root, 0.96);
 
-    /// <summary>弹性放大进入（Popup 面板）：scale 0.90→1 overshoot 回弹 + 淡入</summary>
-    public static void SpringIn(Visual root) => ElasticIn(root, 0.90);
+    /// <summary>平滑放大进入（Popup 面板）：scale 0.94→1 + 淡入（无弹跳）</summary>
+    public static void SpringIn(Visual root) => ElasticIn(root, 0.94);
 
-    /// <summary>BackEase 弹性放大 + 淡入（拉伸变形感：越过目标再回弹）</summary>
+    /// <summary>CubicEaseOut 平滑放大 + 淡入（去弹性——用户实测弹跳不平滑）</summary>
     private static void ElasticIn(Visual root, double fromScale)
     {
         root.RenderTransform = new ScaleTransform(fromScale, fromScale);
         root.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
         root.Opacity = 0;
-        var steps = 18;
+        var steps = 16;
         var i = 0;
-        var ease = BackOut;
-        var fade = new CubicEaseOut();
+        var ease = new CubicEaseOut();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
         timer.Tick += (_, _) =>
         {
             i++;
             var t = Math.Min(1.0, i / (double)steps);
-            var e = ease(t);
+            var e = ease.Ease(t);
             if (root.RenderTransform is ScaleTransform s)
             {
-                var scale = fromScale + (1 - fromScale) * e; // overshoot → 越过 1.0 再回落
+                var scale = fromScale + (1 - fromScale) * e;
                 s.ScaleX = scale;
                 s.ScaleY = scale;
             }
-            root.Opacity = Math.Clamp(fade.Ease(t), 0, 1);
+            root.Opacity = Math.Clamp(e, 0, 1);
             if (t >= 1.0) timer.Stop();
         };
         timer.Start();
     }
 
-    /// <summary>BackEaseOut 弹性公式（t=0→0，t=1→1，中途 overshoot ~+37% 再回落——拉伸变形感；Avalonia 无内置 BackEase，本地实现）</summary>
-    private static double BackOut(double t)
+    /// <summary>对话框通用平滑进出挂载：Opened 淡入 + Closing 拦截平滑切出后真正关闭（NVIDIA 浮窗风）</summary>
+    public static void AttachDialog(Window win, Visual root)
     {
-        var p = 1 - t;
-        return 1 - p * (p * p - Math.Sin(p * Math.PI));
+        win.Opened += (_, _) => PopIn(root);
+        var closing = false;
+        win.Closing += (_, e) =>
+        {
+            if (closing) return;
+            e.Cancel = true;
+            SmoothOut(root, () => { closing = true; win.Close(); });
+        };
+    }
+
+    /// <summary>平滑切出（关闭对话框）：scale 1→0.97 + 淡出（CubicEaseIn），完成回调后再真正关闭</summary>
+    public static void SmoothOut(Visual root, Action? done = null)
+    {
+        root.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+        if (root.RenderTransform is not ScaleTransform)
+            root.RenderTransform = new ScaleTransform(1, 1);
+        var startOpacity = root.Opacity;
+        var steps = 14;
+        var i = 0;
+        var ease = new CubicEaseIn();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        timer.Tick += (_, _) =>
+        {
+            i++;
+            var t = Math.Min(1.0, i / (double)steps);
+            var e = ease.Ease(t);
+            root.Opacity = Math.Max(0, startOpacity * (1 - e));
+            if (root.RenderTransform is ScaleTransform s)
+            {
+                s.ScaleX = 1 - 0.03 * e;
+                s.ScaleY = 1 - 0.03 * e;
+            }
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                done?.Invoke();
+            }
+        };
+        timer.Start();
     }
 }

@@ -5,7 +5,7 @@
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgSurface}">
 
-    <StackPanel Margin="24,20" Spacing="14">
+    <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock Text="导出整合包" FontSize="17" FontWeight="Bold"/>
 
         <!-- 内容勾选（PCL 式） -->

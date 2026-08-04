@@ -15,6 +15,7 @@ public partial class GameDirSetupWindow : Window
     {
         InitializeComponent();
         PathBox.Text = GameDirectory.InstallDir();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
     }
 
     /// <summary>浏览…：系统文件夹选择器</summary>

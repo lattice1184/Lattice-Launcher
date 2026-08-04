@@ -18,6 +18,7 @@ public partial class ExportDialogWindow : Window
     public ExportDialogWindow()
     {
         InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
     }
 
     /// <summary>展示导出设置框（defaultDir 默认输出目录；defaultName 默认包名）</summary>
