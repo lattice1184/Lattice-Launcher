@@ -49,7 +49,7 @@
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="下载"/>
-                                <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                                <Border Classes="badge" BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                         VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
                                     <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{StaticResource Accent}" FontSize="10"/>
                                 </Border>

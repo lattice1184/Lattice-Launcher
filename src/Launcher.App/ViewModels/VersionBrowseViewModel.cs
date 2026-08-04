@@ -372,6 +372,8 @@ public partial class InstalledVersionDetailVM : ViewModelBase
             var version = await installer.GetOrFetchVersionJsonAsync(targetId, null, CancellationToken.None);
             var task = DownloadManager.Instance.EnqueueGroup($"修复 {targetId}", (ctx, ct) =>
                 installer.InstallAsync(version, ctx, ct));
+            // 自动跳到下载板块"下载记录"tab（角标已随 ActiveCountChanged 亮起）
+            MainViewModel.Current?.NavigateToDownloadQueue();
             void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
             {
                 if (e.PropertyName == nameof(DownloadTask.ProgressPercent))
