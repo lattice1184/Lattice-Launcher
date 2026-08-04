@@ -260,3 +260,12 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - **根因**：AddJvmArg 通用去重（jvmArgs.Contains）把重复的 `--add-opens`/`--add-exports` **选项名**去重、值却全留 → 值错位 → 第二个值被 java 当 main class → ClassNotFoundException。成对参数（选项+值）不能去重；只有自包含 `-Dxxx=y` 可去重（重复赋值无害）
 - **顺带**：命令里 `--clientId ${clientid} --xuid ${auth_xuid}` 未替换（1.20.1+ 官方/Forge json 的 game 参数带官方启动器专属 token）→ BuildTokens 补 clientid/auth_xuid="0"（离线安全值）
 - 测试 +1（219/219 全绿）；提交 a0e2658；水位 ~40%
+
+## AL9 批次（2026-08-05 00:45 发布 185.9MB）
+启动器自动读日志自修复引擎（用户："既然日志这么有用……能不能让启动器自动读日志然后自修复呢"）
+- **架构**：识别层（LogDiagnostics 规则结构化 FixKind）+ 执行层（AutoRepairService）+ 接入层（HomeViewModel 失败/崩溃路径）+ 展示层（崩溃窗诊断区）
+- **规则升级**：21 条 → 24 条（+KnotClient 加载器主类/jar 缺失/jar 损坏），每条带 FixKind：AdviceOnly（Java/内存/驱动类，只建议）/ Redownload（类加载/文件缺失 → VersionInstaller 幂等补全重下走下载队列）/ ReExtractNatives（natives 缺失 → 删目录重解压，ExtractNatives 从启动链路提取为静态方法）
+- **LogDiagnostics 移入 Core**（Launcher.Core.Diagnostics，仅依赖 Regex，可单测）；旧 Diagnose(string) 兼容包装，LogExportHelper/ServerViewModel 调用点零改动
+- **自动修复流程**（用户确认方案：修复后自动重试一次）：崩溃/失败 → 诊断 → 命中可修项 → "§ 检测到问题…正在自动修复…" → 修复 → 自动重新启动（_autoFixApplied 最多一次，重试经递归调用不重置；FileNotFoundException 异常即证据跳过诊断直接重下）→ 二次失败弹崩溃窗（带诊断区 + 一键修复按钮）
+- **踩坑**：catch 块看不到 try 局部 gameDir（重算）；DiagLine 嵌套私有类型 XAML 编译不过（改顶层 public + x:DataType）；测试 StreamWriter 未释放
+- 测试 +14（233/233 全绿）；水位 ~45%
