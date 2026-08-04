@@ -155,3 +155,12 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 回答用户疑问：启动器内参数设置**起效**（PropRows 保存到 server.properties，服务端启动时读取——已运行需重启生效）
 - 测试 +2（194/194 全绿）：预写默认离线 / 已存在不覆盖
 - 提交 f1e9ac5；水位 ~40%
+
+## AI 批次（2026-08-04 18:08 发布 185.8MB）
+预生成空世界 + OP 权限面板 + Invalid session 诊断
+- **预生成世界**：操作条加「生成世界」按钮——启动服务端 → 日志 Done（首次生成完成）→ 自动 stop → 空世界落盘（servers/{id}/world），Exited 时通知"世界已生成"。玩家再进服直接玩；world 已存在/未下载服务端/运行中有提示
+- **OP 权限面板（服务器权限>游戏内OP）**：ServerOpsFile（Core 新建）读 ops.json → 开服页 OP 列表卡（名字+等级+移除 deop+刷新）；授予 OP 后 500ms 自动刷新；启动/停止后自动刷新。权限管理完全图形化，不依赖游戏内命令
+- **Invalid session 诊断**：LogDiagnostics 加模式（Invalid session|Failed to verify username）→ 中文说明：服务端仍按正版校验，改 online-mode 后必须重启服务端（配置只在启动时读一次）/ 离线客户端连正版服
+- 回答用户："无效会话"根因 = online-mode 改动未重启生效（服务端只启动时读一次 server.properties），诊断弹窗已能自动说明
+- 测试 +3（197/197 全绿）：ops.json 解析/缺失/损坏
+- 提交 aede9c6；水位 ~40%
