@@ -235,3 +235,12 @@ server.jar 下载校验 + 解封文件级 + 字号
 - FetchServerInfoAsync 返回 sha1（manifest 推断路径同样拿到）
 - 测试 +1（217/217 全绿）：官方返回"sha1 不符但表面合法"内容 → 拒绝换下一候选
 - 提交 5de410e（随 AL5 的 DownloadTask 竞态修复一起，本次为 SHA1 校验独立提交）；水位 ~40%
+
+## AL7 批次（2026-08-05 00:06 发布 185.9MB）
+开服版本目录错位根治 + 红字规范 + 密度默认标准 + 个性化设置修复
+- **根因 A（下载从未真正开始）**："一瞬间的请先前往版本下载" + 下载失败——ServerViewModel 全部硬编码自建目录（InstallDir），红石生电优化在 PCL 目录（扫描不复制）→ 找不到版本 json → "版本未安装（请先在版本页下载）"→ AM 推断 26.2 代码根本没走到。修：RefreshVersionsAsync 带 GameDir（VersionInstanceVM 已有字段）+ VersionGameDir helper 替换全部调用点（ServerDir/选版本/下载/Java 选配/JoinGame）
+- **根因 B（个性化没用）**：① 10 处 {StaticResource Accent} 运行时替换 Resources 不更新（模板静态缓存）→ 全改 DynamicResource；② 预览读 LauncherSettings 旧值（VM 已变未写盘）→ ApplyAccentColor(string)/ApplyAppearance(double,DensityMode) 参数化，Preview 传 VM 值；③ 导航激活色条硬编码 #2DD4BF → 跟随强调色
+- **根因 C（字太小）**：默认密度=紧凑 0.9（整 UI 缩 10% 主因）→ 默认标准 + 系数 0.95/1.0/1.15（用户确认方案）
+- **根因 D（红字规范）**：Status 8 处失败路径红字加粗（SetStatus/StatusIsError + TextBlock.status-error 样式 + Classes.status-error 绑定）；Error Toast 文字红（ToastItem.MessageBrush）；Warn reason 原本已红
+- **根因 E（一闪而过）**：下载失败后 NavigateToServer 切回开服页（下载中自动跳下载板块，不切回看不到红字）
+- 217/217 全绿；水位 ~40%
