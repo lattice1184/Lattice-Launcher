@@ -171,3 +171,10 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - **OneClickStart 流程**：① 缺 server.jar 自动下载（DownloadServer 重构出无确认的 DownloadServerCoreAsync）→ ② 无 world 自动生成（启动→Done→自动 stop→等退出）→ ③ 启动服务端 → 就绪（Done）后 ④ 自动授予 OP（登录账号名，OpNameText）⑤ 拉起客户端自动连接（JoinGame）。任一步失败中止、已完成部分保留；防重入 _oneClickActive
 - ParseServerReady 双分支：_autoStopOnReady（生成世界）/ _autoJoinOnReady（一键开服）
 - 197/197 全绿；提交 87c34df；水位 ~40%
+
+## AJ2 批次（2026-08-04 18:40 发布 185.8MB）
+日志文件占用预检
+- 用户报：点启动即失败 "另一个程序已锁定文件"——根因：服务端启动要删 servers/{id}/logs/latest.log，被残留 java.exe 进程或打开着日志的编辑器锁定
+- StartServer 启动前探测 latest.log 锁（FileShare.None 探测）：占用时直接中文提示（结束残留 java.exe / 关闭编辑器），不再启动即失败
+- LogDiagnostics 加模式：Unable to delete file / FileSystemException / 另一个程序已锁定 → 中文说明
+- 197/197 全绿；水位 ~40%
