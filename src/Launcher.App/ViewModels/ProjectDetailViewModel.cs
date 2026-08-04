@@ -385,6 +385,10 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 : version.GameVersions?.FirstOrDefault() ?? "";
             var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
             var instanceName = _instance?.Name ?? "modpack";
+            // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2
+            var gameDirFor = _instance is { GameDir.Length: > 0 } inst
+                ? inst.GameDir
+                : Launcher.Core.Utils.GameDirectory.InstallDir();
 
             // 依赖可选跳过：全部安装 / 仅主文件（依赖数来自安装前的解析提示）
             var includeDeps = true;
@@ -394,13 +398,17 @@ public partial class ProjectDetailViewModel : ViewModelBase
                     DependencyHint, $"安装 {_card.Title}", "全部安装", "仅主文件");
             }
 
+            // 冲突提示：目标文件夹已有同名文件 / 已安装同 mod（fabric.mod.json id 匹配）——AF3
+            if (_card.Type != ProjectType.Modpack && !await EnsureNoConflictAsync(gameDirFor, instanceName, version))
+                return;
+
             // 经全局下载中心执行（后台线程 + 队列 UI + 内联进度双显示，一处真相）
             await ExecuteInstallAsync(async (dp, t) =>
             {
                 if (includeDeps)
                     return await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
-                        gameVersion, loader, dp, t);
-                var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t);
+                        gameVersion, loader, dp, t, gameDirOverride: gameDirFor);
+                var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t, gameDirFor);
                 var r = new DependencyInstallReport();
                 r.Installed.Add(new InstalledDependency(_card.Id, version.Id, path));
                 return r;
@@ -420,6 +428,46 @@ public partial class ProjectDetailViewModel : ViewModelBase
             IsInstalling = false;
             if (!InstallDone) CanInstall = true;
         }
+    }
+
+    /// <summary>冲突提示（AF3）：目标目录已有同名文件 / 已安装同 mod（fabric.mod.json id 匹配）→ 确认弹窗；false = 取消安装</summary>
+    private async Task<bool> EnsureNoConflictAsync(string gameDir, string instanceId, ModrinthVersion version)
+    {
+        var owner = DialogService.MainWindow();
+        if (owner is null) return true;
+        var targetDir = EcosystemService.ResolveInstallPath(gameDir, instanceId, _card.Type);
+        // 同名文件
+        var fileName = version.Files?.FirstOrDefault()?.FileName ?? "";
+        if (fileName.Length > 0 && File.Exists(Path.Combine(targetDir, fileName)))
+            return await DialogService.Confirm(owner,
+                $"目标文件夹已存在同名文件：{fileName}\n覆盖下载？", "文件已存在", "覆盖", "取消");
+        // 同 mod id（扫描 mods 下 jar 的 fabric.mod.json）
+        if (_card.Type == ProjectType.Mod && Directory.Exists(targetDir))
+        {
+            foreach (var jar in Directory.EnumerateFiles(targetDir, "*.jar"))
+            {
+                if (JarModId(jar) != _card.Id) continue;
+                return await DialogService.Confirm(owner,
+                    $"「{_card.Title}」已安装在该版本的 mods 文件夹（检测到 {Path.GetFileName(jar)}）。\n仍要下载？",
+                    "已安装此模组", "仍要下载", "取消");
+            }
+        }
+        return true;
+    }
+
+    /// <summary>读 jar 的 fabric.mod.json id（Forge mods 无此文件返回空；读取失败静默）</summary>
+    private static string JarModId(string jarPath)
+    {
+        try
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(jarPath);
+            var entry = zip.GetEntry("fabric.mod.json") ?? zip.GetEntry("META-INF/fabric.mod.json");
+            if (entry is null) return "";
+            using var sr = new StreamReader(entry.Open());
+            var doc = System.Text.Json.JsonDocument.Parse(sr.ReadToEnd());
+            return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "";
+        }
+        catch { return ""; }
     }
 
     /// <summary>经全局下载中心执行安装：队列 + 内联进度同步 + 状态收尾（Modrinth/CurseForge 共用）</summary>

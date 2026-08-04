@@ -200,6 +200,12 @@ public partial class ServerViewModel : ViewModelBase
                 }
             }
             if (InstalledVersions.Count > 0 && SelectedVersion is null) SelectedVersion = InstalledVersions[0];
+            // 全局版本绑定：主页当前版本优先选中（AF1）
+            if (MainViewModel.Current?.CurrentVersion is { } cur)
+            {
+                var hit = InstalledVersions.FirstOrDefault(v => v.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase));
+                if (hit is not null) SelectedVersion = hit;
+            }
         }
         catch { }
     }

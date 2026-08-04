@@ -33,6 +33,10 @@ public partial class MainViewModel : ViewModelBase
     public SettingsViewModel Settings { get; } = new();
     public ServerViewModel Server { get; } = new();
 
+    /// <summary>全局当前版本（主页权威，单向驱动下载/开服页——AF1：主页选什么，后面就全都是那个版本）</summary>
+    [ObservableProperty]
+    public partial VersionInstanceVM? CurrentVersion { get; set; }
+
     public MainViewModel()
     {
         Current = this;

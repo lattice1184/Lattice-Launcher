@@ -104,12 +104,24 @@ public class EcosystemServiceTests
     [Fact]
     public void ResolveInstallPath_InstanceDirectories()
     {
-        Assert.Equal(@"G:\versions\1.21.1\mods",
-            EcosystemService.ResolveInstallPath(@"G:\", "1.21.1", ProjectType.Mod));
-        Assert.Equal(@"G:\versions\1.21.1\shaderpacks",
-            EcosystemService.ResolveInstallPath(@"G:\", "1.21.1", ProjectType.Shader));
-        Assert.Equal(@"G:\downloads\modpacks",
-            EcosystemService.ResolveInstallPath(@"G:\", "any", ProjectType.Modpack));
+        // AF2：版本目录已存在 → 装版本目录（隔离/PCL 实例）；不存在 → 共享目录（非隔离共享 mods）
+        var temp = Path.Combine(Path.GetTempPath(), "yanla-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(temp, "versions", "1.21.1"));
+        try
+        {
+            Assert.Equal(Path.Combine(temp, "versions", "1.21.1", "mods"),
+                EcosystemService.ResolveInstallPath(temp, "1.21.1", ProjectType.Mod));
+            Assert.Equal(Path.Combine(temp, "versions", "1.21.1", "shaderpacks"),
+                EcosystemService.ResolveInstallPath(temp, "1.21.1", ProjectType.Shader));
+            Assert.Equal(Path.Combine(temp, "mods"),
+                EcosystemService.ResolveInstallPath(temp, "1.20.1", ProjectType.Mod)); // 无版本目录 → 共享
+            Assert.Equal(Path.Combine(temp, "downloads", "modpacks"),
+                EcosystemService.ResolveInstallPath(temp, "any", ProjectType.Modpack));
+        }
+        finally
+        {
+            try { Directory.Delete(temp, true); } catch { }
+        }
     }
 
     // ---------- SelectBestVersion ----------
