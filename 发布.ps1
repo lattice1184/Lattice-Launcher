@@ -10,6 +10,14 @@ $out  = Join-Path $root "发布"
 Write-Host ""
 Write-Host "=== YanKa Launcher 发布 ===" -ForegroundColor Cyan
 
+# 0) 自动关闭运行中的启动器（发布需覆盖 exe；用户不在时自动处理，无需手动关）
+$running = Get-Process -Name "YanKa启动器" -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host "检测到启动器正在运行，自动关闭..." -ForegroundColor Yellow
+    $running | Stop-Process -Force
+    Start-Sleep -Milliseconds 800
+}
+
 # 1) 清空旧产物
 if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path $out -Force | Out-Null
