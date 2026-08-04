@@ -256,6 +256,20 @@
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
         </Style>
 
+        <!-- 下载角标：下载中呼吸脉冲（高亮标记下载导航项） -->
+        <Style Selector="Border.badge">
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
         <!-- 阶段指示点：当前激活呼吸脉冲（仅 Opacity） -->
         <Style Selector="Border.stagedot.current">
             <Style.Animations>
