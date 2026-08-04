@@ -119,11 +119,23 @@ public partial class ServerViewModel : ViewModelBase
         _process.OutputReceived += line => AppendLog(line);
         _process.Exited += code =>
         {
-            Dispatcher.UIThread.Post(() =>
+            Dispatcher.UIThread.Post(async () =>
             {
                 IsRunning = false;
                 AppendLog(code == 0 ? "§ 服务端已停止" : $"§ 服务端异常退出（exitCode={code}）");
                 Status = code == 0 ? "服务端已停止" : "服务端异常退出，请查看日志";
+                if (code != 0)
+                {
+                    // 动态诊断：等 stdout 缓冲刷完，用已收集日志匹配已知错误模式 → 中文原因弹窗
+                    await Task.Delay(300);
+                    var diag = Launcher.App.Services.LogDiagnostics.Diagnose(string.Join(Environment.NewLine, Logs));
+                    foreach (var d in diag) AppendLog("§ 诊断：" + d.Replace(Environment.NewLine, " "));
+                    if (diag.Count > 0 && DialogService.MainWindow() is { } owner)
+                        await DialogService.Warn(owner, $"服务端启动失败（exitCode={code}）",
+                            string.Join(Environment.NewLine + Environment.NewLine, diag)
+                            + Environment.NewLine + Environment.NewLine + "完整日志可在控制台复制或导出。",
+                            "服务端异常退出", "知道了", "");
+                }
             });
         };
         InitSuggestions();
@@ -475,6 +487,21 @@ public partial class ServerViewModel : ViewModelBase
     }
 
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
+    /// <summary>一键进服：启动客户端并自动连接本地服务端（复用主页完整启动链路：阶段指示/日志/退出处理）</summary>
+    [RelayCommand]
+    private async Task JoinGame()
+    {
+        var version = SelectedVersion;
+        if (version is null || !IsRunning) return;
+        var dir = ServerDir;
+        if (dir is null) return;
+        var props = ServerProperties.Load(Path.Combine(dir, "server.properties"));
+        var port = props.GetInt("server-port", 25565);
+        Status = "正在拉起客户端并连接服务器…";
+        if (MainViewModel.Current is { } main)
+            await main.Home.RequestLaunchWithServerAsync(version.Name, GameDirectory.InstallDir(), "127.0.0.1", port);
+    }
+
     [RelayCommand]
     private async Task StopServer()
     {
