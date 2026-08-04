@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Launcher.App.Animations;
 using Launcher.App.ViewModels;
@@ -9,15 +10,32 @@ namespace Launcher.App.Views;
 
 public partial class MainWindow : Window
 {
+    /// <summary>导航按钮注册表（页面 id → 按钮）。视觉全部用本地值驱动——本地值优先级凌驾样式 Setter，
+    /// 模板 TemplateBinding 实时跟随，根治样式伪类在 Avalonia 12 下 hover 失效 / pressed 白影的问题。</summary>
+    private readonly Dictionary<string, Button> _navButtons = new();
+
     public MainWindow()
     {
         InitializeComponent();
+        _navButtons["home"] = NavHome;
+        _navButtons["version"] = NavVersions;
+        _navButtons["download"] = NavDownloads;
+        _navButtons["server"] = NavServer;
+        _navButtons["settings"] = NavSettings;
+        // VM 到达后订阅激活态变化（覆盖点击/跳转/GoRepair 等所有导航路径）
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is MainViewModel main)
+                main.PropertyChanged += OnVmPropertyChanged;
+            ApplyNavVisuals();
+        };
         // 窗口显示后 ActualTransparencyLevel 才为最终值；亚克力合成失败时切不透明，保证窗口永远可见
         Opened += (_, _) =>
         {
             RestoreWindowSize();
             ApplyOpacityFallback();
             ApplyAppearance();
+            ApplyNavVisuals(); // 兜底：DataContext 若早于挂载，这里补一次
             // 页面切换：平滑滑入淡出
             PageHost.PageTransition = new UiAnim.FadeSlideTransition { Duration = TimeSpan.FromMilliseconds(180) };
             // Toast 出现时右侧滑入（NVIDIA 浮窗风；Opacity 淡入淡出由绑定驱动）
@@ -55,6 +73,67 @@ public partial class MainWindow : Window
         s.WindowHeight = Height;
         s.Save();
     }
+
+    // ---------- 导航视觉（本地值驱动；hover/按下/激活三态互斥恢复） ----------
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsServerActive" or "IsSettingsActive")
+            ApplyNavVisuals();
+    }
+
+    /// <summary>按 VM 激活态刷新全部导航视觉（active：深青底 + 白字 + 左侧 Accent 色条）</summary>
+    private void ApplyNavVisuals()
+    {
+        if (DataContext is not MainViewModel main) return;
+        foreach (var (page, btn) in _navButtons)
+        {
+            if (IsPageActive(main, page))
+            {
+                btn.Background = new SolidColorBrush(Color.Parse("#12332F"));
+                btn.Foreground = Brushes.White;
+                btn.BorderBrush = new SolidColorBrush(Color.Parse("#2DD4BF")); // Accent 左色条
+                btn.BorderThickness = new Thickness(3, 0, 0, 0);
+            }
+            else
+            {
+                btn.Background = Brushes.Transparent;
+                btn.Foreground = new SolidColorBrush(Color.Parse("#8A93A6")); // TextSecondary
+                btn.BorderThickness = new Thickness(0);
+            }
+        }
+    }
+
+    private static bool IsPageActive(MainViewModel main, string page) => page switch
+    {
+        "home" => main.IsHomeActive,
+        "version" => main.IsVersionsActive,
+        "download" => main.IsDownloadsActive,
+        "server" => main.IsServerActive,
+        "settings" => main.IsSettingsActive,
+        _ => false,
+    };
+
+    private void NavEnter(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Button btn || btn is null || DataContext is not MainViewModel main) return;
+        foreach (var (page, b) in _navButtons)
+        {
+            if (ReferenceEquals(b, btn) && IsPageActive(main, page)) return; // 激活项 hover 不改色
+        }
+        btn.Background = new SolidColorBrush(Color.Parse("#2C3544")); // BgHover 悬浮变色
+        btn.Foreground = new SolidColorBrush(Color.Parse("#E8EAF0")); // TextPrimary
+    }
+
+    private void NavExit(object? sender, PointerEventArgs e) => ApplyNavVisuals();
+
+    private void NavPress(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Button btn)
+            btn.Background = new SolidColorBrush(Color.Parse("#1A2029")); // 按下变深，无白影（涟漪由 RippleBehavior 触发）
+    }
+
+    private void NavRelease(object? sender, PointerReleasedEventArgs e) => ApplyNavVisuals();
 
     private void ApplyOpacityFallback()
     {

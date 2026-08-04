@@ -6,3 +6,85 @@
 - **沉淀**：PROJECT_STATE.md（41KB 交接文档）提交 `f2f74e3`；旧对话 26.3MB 已按用户要求删除
 - **机制**：新建 CLAUDE.md（防注入死命令 + 上下文调度规则）+ SESSION_NOTES.md + cron 每 ~40 分钟检查上下文水位
 - **Backlog 未动**：CurseForge 源 / mrpack 导入 / 微软登录实测 / P7 动画
+
+## 2026-08-03 Q 批次：多源下载（CurseForge 第二源）+ 下载加速配置化（完成）
+- **vendor 补丁 #11**（0009fe8）：CurseforgeFile 追加 downloadUrl/fileLength/gameVersions/dependencies + CurseforgeFileDependency record；PATCHES.md 记录
+- **下载配置化**（cd8596d）：DownloadTier（低8/中16/高24）+ ChunkCount/BufferSize 覆盖项 + CurseForgeApiKey 设置项；FromSettings 提取为可单测静态方法
+- **设置页 UI**（d62e354）：分片并发档位按钮 + API Key 密码框（即时保存）
+- **CurseForgeService**（ae813f4）：搜索/详情/文件列表/最佳文件匹配/安装；key 解析 设置页>环境变量；sortField 1 基值已核实（1=Featured 6=TotalDownloads 11=ReleasedDate）
+- **依赖适配器**（b862eb2）：CF CreateResolver/ToDependencyReferences（relationType==1）；InstallWithDependenciesAsync 一键安装
+- **搜索分页模型**（10bac64）：CurseForgeSearchPage(TotalCount)
+- **生态页双源**（0814762）：来源筛选（全部/Modrinth/CurseForge）+ 卡片来源角标 + 详情页 CF 分支（最佳文件/依赖计数/安装）+ 收藏双源（cf- 前缀防冲突）；Install 提取共享 ExecuteInstallAsync
+- **flake 修复**（8afc582）：Phase1 门控测试阈值断言 ≥2/4 + 反饥饿线程池（机器负载下 5 子任务偶 1~2 个启动延迟超窗，根因未确诊，非本批引入）
+- 测试 192/192 全绿
+- 待办：用户申请 CF API key 后联调实测；加速档位（低8/中16/高24）实测对比
+- **发布**（9355474）：Release 构建修复（收藏模式 TypeMatches 枚举→字符串 + 空列表防御）→ 发布.ps1 成功，发布\YanKa启动器.exe 185.7MB（22:40）；注意：发布脚本清空整个发布目录（原 PCL 子目录被删）
+
+## 2026-08-03 R 批次：自适应布局 + 整体 UI 布局 + 开服/生态体验修复（完成）
+- **ServerView 布局**（521038a）：两栏 2*,1,3* + GridSplitter 拖拽分隔条 + MinWidth 保护；参数行 Auto,* 横向舒展；控制台空态提示
+- **EcosystemView 筛选栏**（dc286b7）：chips 独立行 + 版本/分类/排序/来源 Grid 均分（MinWidth），宽窗口无右侧空白
+- **三页居中限宽**（af995f8）：Settings/Account/ProjectDetail MaxWidth 提高 + 居中
+- **建议联动**（be852d5）：保存/应用参数后建议区 diff 刷新；应用后表单刷新
+- **路径 Toast**（b95dd95）：Modrinth/CurseForge 安装完成显示完整目标路径
+- **PCL 存档读放宽**（febc6a8）：SavesDir 回退共享目录（写侧仍走 RootDir）
+- **窗口尺寸记忆**（f69feec）：关闭保存 + 启动恢复（夹取主屏居中）
+- 测试 192/192 全绿；已发布到 发布\ 目录
+
+## S 批次（2026-08-03 23:57 发布 185.7MB）
+PCL 式简约重构：账号页融合主页 + 服务器页彻底改良 + 弹性交互动画
+- S5 弹性动画：UiAnim BackEase overshoot 拉伸感（页面切换/弹出）+ 新增 SpringScaleBehavior 附加行为（按钮 hover 1.02/pressed 0.96 弹性回弹，全局 Setter 挂载）+ nav 激活 Accent 色条 + 清理闲置动画类。Avalonia 无 ScaleTransition/BackEase——行为手写 DispatcherTimer 插值
+- S1 账号融合：删导航"账号"项（6→5）+ AccountView 删除；HomeViewModel 持有 Account + AccountTypeText 徽章；头像点击弹 Popup 账号面板（当前账号/切换/删除/离线+正版登录/换肤）
+- S2 开服页重写：修 GridSplitter 嵌套 bug（嵌在 ScrollViewer 内两栏从未生效）+ 顶部操作条单行 + 参数 UniformGrid 2 列（10 参数 5 行）+ 控制台自动滚底
+- S4 主页收敛：阶段条/进度条仅启动时显示
+- S3 版本详情：5 卡垂直堆叠 → Tab 面板（基本信息/配置/模组/存档/操作）
+- 提交：4c4226a(S5) 5f8de74(S1+S4) 21358c3(S2) 5146da3(S3)；192/192 测试全绿
+
+## T 批次（2026-08-04 10:45 发布 185.7MB）
+版本页空白修复 + 动画收束 + 无文件版本 + 服务器图形化管理
+- T1 动画：FadeSlideTransition try/finally 复位（快速切页残留 Opacity=0/位移 = "页面没了"根因）+ 平滑滑移去 overshoot；row hover 去弹性（跳动）；导航涟漪 RippleBehavior（自定义 nav 模板 RippleHost Canvas + 点击扩散圆），nav 关弹性
+- T2 无文件版本：InstalledVersionRowVM/Detail 加 JarMissing（扫描只认 json 不认 jar，启动才爆）；版本行"缺文件"红标；基本信息 Tab 警告条 + 补全下载(RepairCommand) + 打开官方下载页；启动失败提示引导
+- T3 服务器：机器状态"去更改"→ 设置页（单次服务器配置）；在线玩家卡（日志解析 joined/left/list 实时增删）+ 踢出/封禁/OP 按钮（stdin 命令，无 RCON）
+- 提交：6a3ffaa(T1) d81905a(T2) 54fe72f(T3)；192/192 全绿
+
+## U 批次（2026-08-04 11:03 发布 185.7MB）
+版本页回退 + 启动失败入口 + 弹窗平滑动画 + 圆角圆滑
+- U1 版本页回退 Tab 化（git 恢复 5 卡直排——Tab 化是空白唯一嫌疑，不冒险；保留缺文件补全功能 + SelectById）
+- U2 主页启动失败：ShowRepairGuide + [去版本页补全](NavigateToVersion 自动选中该版本) + [打开官方下载页]
+- U3 弹窗：PopIn 去弹性改 CubicEaseOut（NVIDIA 浮窗风）+ SmoothOut 淡出收缩再关窗；AttachDialog 统一挂 MessageDialog/ExportDialog/LoaderChoiceDialog/GameDirSetupWindow
+- U4 圆角：令牌 5/8/10 + 窗口 12 + 导航 12,0,0,12 + Toast 10 + 头像 10
+- 提交：04e17b8(U1) c7bad78(U2) 2bc463d(U3) 7d3a34b(U4)；192/192 全绿
+
+## V 批次（2026-08-04 11:59 发布 185.8MB）
+弹窗窗口级动画 + 服务器页重构 + 涟漪全按钮 + BUG 收尾 + API400 应急文档
+- V5 CONTEXT_OVERFLOW.md 应急文档（400 发生时立即登记）
+- V1 弹窗：根因=Window 背景不透明盖住内容动画；改 FadeTo(win.Opacity) 整窗淡入淡出 + 内容缩放；CrashReportWindow 补挂载
+- V3 断链修复：NavigateToVersionAsync await EnsureLoadedAsync 后 SelectById（首次导航选不中 bug）
+- V2 服务器重构：删"去更改"跳设置（用户吐槽）；建议配置内联编辑（内存/视距/玩家 3 输入 + 应用按钮，ApplySuggestion 读输入值）；机器状态 DispatcherTimer 5s 实时刷新（CPU PerformanceCounter 包 + 两次采样；失败降级核数）；SuggestionStatusText 建议 diff 独立于实时状态
+- V4 涟漪：全局 Button 模板内置 RippleHost + 挂载（nav 专属模板保留）；390ms 放慢 + 颜色加深 #33FFFFFF
+- 提交：495be59(V5+V1) 2f48cc9(V3) 9d44ca2(V2) d2d3236(V4)；192/192 全绿
+
+## W 批次（2026-08-04 12:23 发布 185.8MB）
+Google 式涟漪 + 弹窗右侧切入切出 + 补全下载自动跳转
+- W1 涟漪：扩散色改 BgActive 压暗色（#2A3240，点击变深从点击点扩散，0.9→0 淡出 390ms）+ TemplateApplied 缓存（Avalonia 12 无 ControlTemplate.FindName——回退视觉树找第一个 Canvas，当前 Content 无 Canvas 安全）
+- W2 弹窗：SlideInFromRight/SlideOutToRight（48px 横向位移 + 淡入淡出，用户实测"只有淡出太突兀"——补明显位移）
+- W3 补全下载：Repair EnqueueGroup 后自动 NavigateToDownloadQueue（agent 确认 Repair 已走队列，角标自动亮）；下载导航角标呼吸脉冲（Border.badge 0.55↔1 0.9s 循环）
+- 提交：fc1f6d9(W1) 7e70d23(W2) dfcba18(W3)；192/192 全绿
+
+## X 批次（2026-08-04 12:35 发布 185.8MB）
+Toast 滑入 + 涟漪深色 + 版本页小屏 + 发布脚本自动杀进程
+- X1 Toast（真"弹窗"！用户澄清是右上角通知不是对话框）：ContainerPrepared + SlideInX（纯位移 48→0，不动 Opacity 防破坏绑定淡出）
+- X2 涟漪"白影"根因：BgActive #2A3240 比按钮底色 BgRaised #242A36 亮 → 改 BgBase #14181F（真正变深）
+- X3 版本页：版本操作 WrapPanel 换行（窄右栏不裁切）+ 模组删除按钮 ghost→danger
+- 发布.ps1 加第 0 步：检测到 YanKa启动器 进程自动 Stop-Process（用户不在时无需手动关）
+- 提交：480a0fc + 发布.ps1；192/192 全绿
+
+## Y 批次（2026-08-04 发布）
+加载器版本分批加载：LoaderChoiceDialog 先绑前 5 条（立即可用）+ 剩余每批 8 个节流静默补全（ObservableCollection 增量替代 ItemsSource 全量绑定——ComboBox 不重建下拉）+ _versionGen 竞态丢弃（快速切换加载器不串台）。卡顿点确认：网络 await 不阻塞 UI，卡在 ComboBox 全量绑定。提交 e82b605；192/192 全绿
+
+## AA 批次（2026-08-04 发布）
+前提警告弹窗化 + 正常退出误报修复
+- 新增 DialogService.Warn / MessageDialogWindow.Warn：红字加粗原因 + 普通色说明 + 双选项（替代无着重色状态栏小字）
+- 开服页 StartServer 无服务端 → 警告框 [取消]/[立即下载并启动]（DownloadAndStartAsync 下载完自动启动）；未选版本 → 警告框；ApplySuggestion/DownloadServer 同样
+- 主页未选版本/未登录 → 警告框（LaunchStatus 保留）
+- 修复"主界面退出游戏被报异常退出"：LaunchProcess.GetExitCode 根因=ExitCode==0 时去读官方包装器才写的 exitStatus 文件（裸 Java 启动不写）→ -1；改为缺失/为 0 一律返回 0（正常退出），文件非 0 才异常
+- 提交 4c5bed6；192/192 全绿

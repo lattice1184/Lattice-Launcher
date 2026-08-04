@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Launcher.App.ViewModels"
         xmlns:svc="using:Launcher.App.Services"
+        xmlns:behaviors="using:Launcher.App.Animations"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="860" d:DesignHeight="560"
@@ -38,14 +39,24 @@
                     <StackPanel Margin="10">
                         <TextBlock Text="YanKa Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
                                    Margin="6,10,6,20"/>
-                        <Button Content="主页" Classes="nav" Classes.active="{Binding IsHomeActive}"
+                        <!-- 导航项视觉（hover/active/按下）由 MainWindow.axaml.cs 本地值驱动——样式伪类在 Avalonia 12 下不可靠（历史多轮修复失败） -->
+                        <Button x:Name="NavHome" Content="主页"
                                 Command="{Binding NavigateCommand}" CommandParameter="home"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
-                        <Button Content="版本" Classes="nav" Classes.active="{Binding IsVersionsActive}"
+                        <Button x:Name="NavVersions" Content="版本"
                                 Command="{Binding NavigateCommand}" CommandParameter="version"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
-                        <Button Classes="nav" Classes.active="{Binding IsDownloadsActive}"
+                        <Button x:Name="NavDownloads"
                                 Command="{Binding NavigateCommand}" CommandParameter="download"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="下载"/>
@@ -55,11 +66,17 @@
                                 </Border>
                             </StackPanel>
                         </Button>
-                        <Button Content="开服" Classes="nav" Classes.active="{Binding IsServerActive}"
+                        <Button x:Name="NavServer" Content="开服"
                                 Command="{Binding NavigateCommand}" CommandParameter="server"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
-                        <Button Content="设置" Classes="nav" Classes.active="{Binding IsSettingsActive}"
+                        <Button x:Name="NavSettings" Content="设置"
                                 Command="{Binding NavigateCommand}" CommandParameter="settings"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7"/>
                     </StackPanel>
                 </ExperimentalAcrylicBorder>
