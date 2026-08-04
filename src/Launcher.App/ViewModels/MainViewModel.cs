@@ -61,11 +61,13 @@ public partial class MainViewModel : ViewModelBase
         _ = Home.RequestLaunchAsync(versionId, gameDir);
     }
 
-    /// <summary>跳版本页并选中指定版本（主页启动失败"去版本页补全"用）</summary>
-    public void NavigateToVersion(string? id = null)
+    /// <summary>跳版本页并选中指定版本（主页启动失败"去版本页补全"用；先等版本列表加载完成再选中——否则首次导航 _all 为空选不中）</summary>
+    public async Task NavigateToVersionAsync(string? id = null)
     {
         Navigate("version");
-        if (!string.IsNullOrEmpty(id)) Versions.SelectById(id);
+        if (string.IsNullOrEmpty(id)) return;
+        await Versions.EnsureLoadedAsync();
+        Versions.SelectById(id);
     }
 
     /// <summary>停止游戏（版本页 [停止]）</summary>
