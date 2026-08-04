@@ -244,3 +244,12 @@ server.jar 下载校验 + 解封文件级 + 字号
 - **根因 D（红字规范）**：Status 8 处失败路径红字加粗（SetStatus/StatusIsError + TextBlock.status-error 样式 + Classes.status-error 绑定）；Error Toast 文字红（ToastItem.MessageBrush）；Warn reason 原本已红
 - **根因 E（一闪而过）**：下载失败后 NavigateToServer 切回开服页（下载中自动跳下载板块，不切回看不到红字）
 - 217/217 全绿；水位 ~40%
+
+## AL8 批次（2026-08-05 00:24 发布 185.9MB）
+Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
+- **用户实测**："换一个测试对象就崩"（TACZgun Forge 枪械整合包 exitStatus=1）+ "桌面日志文件夹测试日志是否有效" + "把对付红石的手段应用在对付整合包上"
+- **日志验证**：错误报告（错误信息.txt + settings.json + logs/launch-*.log）**有效**——完整捕获崩溃堆栈+系统信息，直接锁定根因
+- **根因（TACZgun 崩）**：Forge 1.20+ 版本 json 的 -p 模块路径用 ${classpath_separator} 连接模块 jar，JavaArgumentsBuilder.BuildTokens 缺此 token → 整串未替换 → java 模块系统当单一路径解析 → InvalidPathException: Illegal char <:> → boot layer 失败。红石（Fabric）不崩是 json 无 -p；**"对付红石的手段"本已全通用（零特判，Explore 证实）**——缺的是 Forge 启动机制。修：BuildTokens 加 ["classpath_separator"] = Path.PathSeparator.ToString()
+- **日志增强**：LaunchProcess.DescribeCommandLine（ArgumentList 语义，空格/引号转义）→ GameLaunchService 启动前 onLog 输出（launch-*.log 首行，VM 零改动）+ 服务端 ServerProcess 存 CommandLine + 开服页日志
+- **1B 显示修复**（用户问"为什么变成 1B"）：某源返回 200+1B 垃圾（WAF 拦截页）时进度 total 读响应头 Content-Length=1 → 显示 "1 B"（文件本身 SHA1 校验已拦截删除）。修：进度 total 用 expectedSize 优先 + ServerInstaller 失败路径防御清理 <1MB 残骸
+- 测试 +1（218/218 全绿，Forge120_ClasspathSeparator_ReplacedInModulePath）；提交 7c96a36；水位 ~40%
