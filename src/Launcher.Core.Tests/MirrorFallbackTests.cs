@@ -39,7 +39,8 @@ public class MirrorFallbackTests
         {
             MaxSourceAttempts = 2,
             BackoffProvider = _ => TimeSpan.Zero,
-        }, Path.GetTempPath());
+        }, Path.GetTempPath(),
+        (_, _) => Task.FromResult(true)); // 跳过真实网络预检——全走 stub（测试不依赖外网）
     }
 
     [Fact]

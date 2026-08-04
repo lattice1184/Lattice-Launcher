@@ -183,6 +183,36 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- 封禁列表（AL2：图形化解封——ban 后玩家不在线，必须有独立入口） -->
+                    <Border Classes="card" Padding="12">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock Text="{Binding BannedCountText}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="刷新" Classes="ghost" Padding="14,5"
+                                        Command="{Binding RefreshBannedCommand}"/>
+                            </Grid>
+                            <TextBlock Text="暂无封禁" Classes="dim" FontSize="12"
+                                       IsVisible="{Binding BannedList.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
+                            <ItemsControl ItemsSource="{Binding BannedList}" IsVisible="{Binding BannedList.Count}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="core:ServerBannedEntry">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
+                                            <TextBlock Text="{Binding Name}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondary}"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1" Text="已封禁" Classes="dim" FontSize="10"
+                                                       VerticalAlignment="Center"/>
+                                            <Button Grid.Column="2" Content="解封" Classes="ghost" FontSize="10" Padding="8,2"
+                                                    Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).UnbanCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    IsEnabled="{Binding $parent[Border].((vm:ServerViewModel)DataContext).IsRunning}"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
                     <!-- server.properties 图形化（2 列网格，消灭大柱子） -->
                     <Border Classes="card" Padding="12">
                         <StackPanel Spacing="8">
