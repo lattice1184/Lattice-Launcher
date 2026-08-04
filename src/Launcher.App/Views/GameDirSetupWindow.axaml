@@ -6,7 +6,7 @@
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgSurface}">
 
-    <StackPanel Margin="28,24" Spacing="14">
+    <StackPanel x:Name="Root" Margin="28,24" Spacing="14">
         <TextBlock Text="欢迎使用 YanKa Launcher" FontSize="22" FontWeight="Bold"/>
         <TextBlock Text="游戏版本、模组、存档将存放在下面的文件夹。建议放在剩余空间充足的盘（如 D 盘）；以后也可手动修改。"
                    Classes="sub" FontSize="13" TextWrapping="Wrap"/>
