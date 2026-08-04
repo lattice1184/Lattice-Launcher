@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using Avalonia;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Controls.Shapes;
@@ -10,13 +13,16 @@ using Avalonia.VisualTree;
 namespace Launcher.App.Animations;
 
 /// <summary>
-/// Material 涟漪（点击波纹）：PointerPressed 时从按压点扩散半透明圆并淡出。
-/// 由 Button.nav 自定义模板内的 RippleHost(Canvas) 承载；全局样式 Setter 挂载。
+/// Google Material 涟漪：PointerPressed 时从按压点扩散"点击后的颜色"（BgActive 压暗色）覆盖按钮。
+/// RippleHost 通过 TemplateApplied 时模板内 FindName 缓存（防 FindDescendantOfType 找错 Content 内 Canvas）。
+/// 全局 Button 样式 Setter 挂载（模板内置 RippleHost Canvas）。
 /// </summary>
 public static class RippleBehavior
 {
     public static readonly AttachedProperty<bool> EnabledProperty =
         AvaloniaProperty.RegisterAttached<Visual, bool>("Enabled", typeof(RippleBehavior));
+
+    private static readonly ConcurrentDictionary<Control, Canvas?> Hosts = new();
 
     static RippleBehavior()
     {
@@ -28,31 +34,55 @@ public static class RippleBehavior
 
     private static void OnEnabledChanged(Control c, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.NewValue is true) c.PointerPressed += OnPressed;
-        else c.PointerPressed -= OnPressed;
+        if (e.NewValue is true)
+        {
+            c.PointerPressed += OnPressed;
+            if (c is TemplatedControl tc) tc.TemplateApplied += OnTemplateApplied;
+        }
+        else
+        {
+            c.PointerPressed -= OnPressed;
+            if (c is TemplatedControl tc) tc.TemplateApplied -= OnTemplateApplied;
+        }
     }
+
+    /// <summary>模板应用后缓存 RippleHost（模板内唯一 Canvas；兜底才全树找）</summary>
+    private static void OnTemplateApplied(object? s, TemplateAppliedEventArgs e)
+    {
+        if (s is not TemplatedControl c) return;
+        Hosts[c] = FindHost(c);
+    }
+
+    // Avalonia 12 无 ControlTemplate 类（FindName 不可用）——视觉树找第一个 Canvas
+    // （模板内唯一 Canvas 即 RippleHost；现有按钮 Content 均无 Canvas，安全）
+    private static Canvas? FindHost(TemplatedControl c) => c.FindDescendantOfType<Canvas>();
 
     private static void OnPressed(object? s, PointerPressedEventArgs e)
     {
-        if (s is not Button btn) return;
-        // 模板内唯一 Canvas 即 RippleHost（GetTemplateChild 受保护，走视觉树）
-        if (btn.FindDescendantOfType<Canvas>() is not { } host) return;
+        if (s is not TemplatedControl c) return;
+        if (!Hosts.TryGetValue(c, out var host) || host is null)
+        {
+            host = FindHost(c);
+            if (host is null) return;
+            Hosts[c] = host;
+        }
         if (host.Bounds.Width <= 0 || host.Bounds.Height <= 0) return;
 
         var pos = e.GetPosition(host);
         var maxR = Math.Max(host.Bounds.Width, host.Bounds.Height) * 1.2;
+        // Google 涟漪：扩散色 = 点击后的压暗色（BgActive #2A3240，与 Button:pressed 背景一致）
         var ellipse = new Ellipse
         {
             Width = 0,
             Height = 0,
-            Fill = new SolidColorBrush(Color.Parse("#33FFFFFF")),
+            Fill = new SolidColorBrush(Color.Parse("#2A3240")),
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(ellipse, pos.X);
         Canvas.SetTop(ellipse, pos.Y);
         host.Children.Add(ellipse);
 
-        // 扩散 + 淡出（~390ms 放慢到能看清；结束移除避免累积椭圆）
+        // 扩散 + 淡出（~390ms 能看清；结束移除避免累积椭圆）
         var steps = 26;
         var i = 0;
         var ease = new CubicEaseOut();
@@ -67,7 +97,7 @@ public static class RippleBehavior
             ellipse.Height = r * 2;
             Canvas.SetLeft(ellipse, pos.X - r);
             Canvas.SetTop(ellipse, pos.Y - r);
-            ellipse.Opacity = 1 - e2;
+            ellipse.Opacity = 0.9 * (1 - e2); // 起始近乎不透明，扩散中淡出
             if (t >= 1.0)
             {
                 timer.Stop();
