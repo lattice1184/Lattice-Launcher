@@ -15,9 +15,26 @@ public sealed class ServerInstaller
     public ServerInstaller(DownloadService? downloads = null)
         => _downloads = downloads ?? new DownloadService();
 
-    /// <summary>服务端目录（servers/{versionId}）</summary>
+    /// <summary>服务端目录（启动器目录树下 servers/{versionId}——AE3 归位，不在游戏目录内）</summary>
     public static string ServerDir(string gameDir, string versionId)
-        => Path.Combine(gameDir, "servers", versionId);
+    {
+        var parent = Path.GetDirectoryName(gameDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        return Path.Combine(string.IsNullOrEmpty(parent) ? gameDir : parent, "servers", versionId);
+    }
+
+    /// <summary>一次性迁移：旧位置 {gameDir}\servers → 启动器目录树 {父级}\servers（AE3；失败下次再试）</summary>
+    public static void MigrateLegacy(string gameDir)
+    {
+        try
+        {
+            var old = Path.Combine(gameDir, "servers");
+            if (!Directory.Exists(old)) return;
+            var newRoot = ServerDir(gameDir, ""); // 取根
+            if (Directory.EnumerateFileSystemEntries(old).Any() && !Directory.Exists(newRoot))
+                Directory.Move(old, newRoot);
+        }
+        catch { /* 迁移失败不影响使用 */ }
+    }
 
     /// <summary>从已装版本安装服务端 → server.jar 路径（幂等：已存在且大小正确则跳过）</summary>
     public async Task<string> InstallAsync(string versionId, string gameDir,
@@ -29,16 +46,28 @@ public sealed class ServerInstaller
 
         var version = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(versionPath, ct))
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {versionId}");
-        var serverUrl = version.Downloads?.Server?.Url;
+        // 解析 inheritsFrom 链（Fabric/Forge 等加载器 profile 无 downloads.server，继承原版）——
+        // 不解析则服务端 URL 永远拿不到，每次下载失败 → 开服无限套娃（AE1 根因）
+        var merged = VersionJsonMerger.ResolveChain(version, id => LoadParent(gameDir, id));
+        var serverUrl = merged.Downloads?.Server?.Url;
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidDataException($"版本 {versionId} 没有服务端下载链接（不支持开服）");
-        var size = version.Downloads!.Server!.Size ?? 0;
+        var size = merged.Downloads!.Server!.Size ?? 0;
 
         var dir = ServerDir(gameDir, versionId);
         Directory.CreateDirectory(dir);
         var jarPath = Path.Combine(dir, "server.jar");
         await _downloads.DownloadFileAsync(serverUrl, jarPath, null, size, progress, ct);
         return jarPath;
+    }
+
+    /// <summary>加载父版本 json（inheritsFrom 链解析用）；缺失/损坏返回 null</summary>
+    private static VersionJson? LoadParent(string gameDir, string id)
+    {
+        var p = Path.Combine(gameDir, "versions", id, $"{id}.json");
+        if (!File.Exists(p)) return null;
+        try { return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(p)); }
+        catch { return null; }
     }
 
     /// <summary>同意 EULA（写入 eula.txt）</summary>

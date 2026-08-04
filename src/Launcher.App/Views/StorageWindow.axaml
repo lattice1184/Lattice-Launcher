@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.App.Views"
+        x:Class="Launcher.App.Views.StorageWindow"
+        x:DataType="vm:StorageWindow"
+        Width="620" SizeToContent="Height" MinHeight="340" MaxHeight="680"
+        CanResize="False" WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgSurface}">
+
+    <DockPanel Margin="22,18">
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
+            <TextBlock Text="存储空间" FontSize="16" FontWeight="SemiBold"/>
+            <TextBlock Text="启动器文件的位置与占用（计算中…）。红色「删除」可清理：日志、缓存、崩溃报告、服务端"
+                       Classes="sub" FontSize="11" TextWrapping="Wrap"/>
+        </StackPanel>
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:StorageItemVM">
+                        <Grid ColumnDefinitions="76,*,Auto" ColumnSpacing="10" Margin="0,3" MinHeight="26">
+                            <TextBlock Text="{Binding SizeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Path}" FontSize="11" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}"/>
+                            <Button Grid.Column="2" Content="删除" Classes="danger" FontSize="11" Padding="12,3"
+                                    Command="{Binding DeleteCommand}" IsVisible="{Binding CanDelete}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

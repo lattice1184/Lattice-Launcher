@@ -196,6 +196,8 @@ public partial class HomeViewModel : ViewModelBase
         _accounts.Load();
         RefreshPlayer();
         RefreshConfigText();
+        // 目录树重构（AE3）：旧 .minecraft\servers 一次性迁移到启动器目录树 servers\
+        Launcher.Core.Server.ServerInstaller.MigrateLegacy(GameDirectory.InstallDir());
         await RefreshVersionsAsync();
     }
 

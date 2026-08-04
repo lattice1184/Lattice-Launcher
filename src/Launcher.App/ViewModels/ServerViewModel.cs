@@ -382,6 +382,7 @@ public partial class ServerViewModel : ViewModelBase
             // 自动跳到下载板块"下载记录"tab（角标已随 ActiveCountChanged 亮起）
             MainViewModel.Current?.NavigateToDownloadQueue();
             await task.Completion;
+            VerifyServerJar(ServerDir); // 不完整则抛异常（进 catch 显式报错，防套娃）
             ServerDirText = ServerDir ?? "";
             LoadProperties();
             Status = "服务端下载完成，可启动";
@@ -391,6 +392,10 @@ public partial class ServerViewModel : ViewModelBase
         {
             Status = $"下载失败: {ex.Message}";
             NotificationService.Error(ex.Message);
+            // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
+            if (DialogService.MainWindow() is { } dlg)
+                await DialogService.Warn(dlg, "服务端下载失败",
+                    ex.Message + "\n\n可稍后重试「下载服务端」。", "下载失败", "知道了", "");
         }
         finally
         {
@@ -422,6 +427,7 @@ public partial class ServerViewModel : ViewModelBase
             // 自动跳到下载板块"下载记录"tab（与 DownloadServer 一致）
             MainViewModel.Current?.NavigateToDownloadQueue();
             await task.Completion;
+            VerifyServerJar(ServerDir); // 不完整则抛异常（进 catch 显式报错，防套娃）
             ServerDirText = ServerDir ?? "";
             LoadProperties();
             Status = "服务端下载完成，正在启动…";
@@ -431,6 +437,10 @@ public partial class ServerViewModel : ViewModelBase
         {
             Status = $"下载失败: {ex.Message}";
             NotificationService.Error(ex.Message);
+            // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
+            if (DialogService.MainWindow() is { } dlg)
+                await DialogService.Warn(dlg, "服务端下载失败",
+                    ex.Message + "\n\n可稍后重试「下载服务端」。", "下载失败", "知道了", "");
         }
         finally
         {
@@ -461,12 +471,12 @@ public partial class ServerViewModel : ViewModelBase
             }
             return;
         }
-        if (IsRunning) return;
+        if (IsRunning || IsInstalling) return;
 
         ServerInstaller.AcceptEula(dir);
         var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
             ? custom
-            : JavaSelector.Pick(17);
+            : PickServerJava(version.Name);
         var mem = LauncherSettings.Current.MemoryMb > 0
             ? LauncherSettings.Current.MemoryMb
             : 2048;
@@ -487,6 +497,40 @@ public partial class ServerViewModel : ViewModelBase
     }
 
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
+    /// <summary>服务端 Java 按版本选择（26.x 需 Java 21+——修复 Java 17 硬编码启动即崩）；找不到降级 21/17</summary>
+    private static string PickServerJava(string versionId)
+    {
+        var major = 17;
+        try
+        {
+            var p = Path.Combine(GameDirectory.InstallDir(), "versions", versionId, $"{versionId}.json");
+            if (File.Exists(p))
+            {
+                var v = System.Text.Json.JsonSerializer.Deserialize<Launcher.Core.Model.Mojang.VersionJson>(File.ReadAllText(p));
+                if (v?.JavaVersion?.MajorVersion is { } m && m > 0) major = m;
+            }
+        }
+        catch { }
+        foreach (var cand in new[] { major, 21, 17 })
+        {
+            try
+            {
+                var picked = JavaSelector.Pick(cand);
+                if (!string.IsNullOrEmpty(picked)) return picked;
+            }
+            catch { }
+        }
+        throw new InvalidOperationException("未找到可用 Java（可在设置页指定 Java 路径）");
+    }
+
+    /// <summary>验证 server.jar 下载完整（缺失或 <1MB 视为失败，抛异常终止后续启动）</summary>
+    private static void VerifyServerJar(string? dir)
+    {
+        var jar = Path.Combine(dir ?? "", "server.jar");
+        if (!File.Exists(jar) || new FileInfo(jar).Length < 1024 * 1024)
+            throw new InvalidDataException("服务端文件下载不完整（server.jar 缺失或过小），请重试");
+    }
+
     /// <summary>一键进服：启动客户端并自动连接本地服务端（复用主页完整启动链路：阶段指示/日志/退出处理）</summary>
     [RelayCommand]
     private async Task JoinGame()

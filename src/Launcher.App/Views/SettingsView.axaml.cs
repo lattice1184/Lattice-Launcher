@@ -85,6 +85,18 @@ public partial class SettingsView : UserControl
             Vm!.DownloadTierIndex = i;
     }
 
+    // ---------- 存储空间 ----------
+
+    /// <summary>打开存储空间窗口（列出全部启动器文件位置与占用，可清理）</summary>
+    private void OnOpenStorage(object? sender, RoutedEventArgs e)
+    {
+        var win = new StorageWindow();
+        if (Launcher.App.Services.DialogService.MainWindow() is { } owner && owner.IsVisible)
+            win.ShowDialog(owner);
+        else
+            win.Show();
+    }
+
     // ---------- 卸载 ----------
 
     /// <summary>

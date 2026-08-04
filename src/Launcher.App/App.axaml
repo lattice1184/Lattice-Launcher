@@ -131,7 +131,7 @@
         <Style Selector="Button.danger">
             <Setter Property="Foreground" Value="{StaticResource Danger}"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="#22E05A5A"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="#8C2F2F"/>
             <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{StaticResource Danger}"/>
         </Style>
 
