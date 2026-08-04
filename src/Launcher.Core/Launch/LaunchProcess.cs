@@ -52,7 +52,11 @@ public sealed class LaunchProcess
         catch { return -1; }
     }
 
-    /// <summary>综合退出码：进程 ExitCode 非 0（JVM 崩溃/OOM/被杀）优先，否则游戏写入的 exitStatus</summary>
+    /// <summary>
+    /// 综合退出码：进程 ExitCode 非 0（JVM 崩溃/OOM/被杀）优先；
+    /// ExitCode==0 时读 exitStatus 文件补充——本项目裸 Java 启动不写该文件（官方启动器包装器才写），
+    /// 文件缺失即正常退出返回 0（修复"主界面退出游戏被误报异常退出(-1)"）；文件存在非 0 才视为异常。
+    /// </summary>
     public static int GetExitCode(LaunchResult result)
     {
         try
@@ -61,6 +65,7 @@ public sealed class LaunchProcess
                 return result.Process.ExitCode;
         }
         catch { }
-        return ReadExitStatus(result.ExitStatusFilePath);
+        var fileCode = ReadExitStatus(result.ExitStatusFilePath);
+        return fileCode > 0 ? fileCode : 0; // 缺失/解析失败/为 0 → 正常退出
     }
 }

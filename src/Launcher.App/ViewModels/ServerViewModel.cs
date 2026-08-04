@@ -252,10 +252,14 @@ public partial class ServerViewModel : ViewModelBase
 
     /// <summary>应用建议配置（读建议编辑框值）：写 server.properties（视距/玩家）+ 更新全局内存</summary>
     [RelayCommand]
-    private void ApplySuggestion()
+    private async Task ApplySuggestion()
     {
         var dir = ServerDir;
-        if (dir is null) { Status = "请先选择版本"; return; }
+        if (dir is null)
+        {
+            await WarnNoVersion();
+            return;
+        }
         var xmxMb = long.TryParse(SuggestionMemoryText, out var m) && m >= 512 ? m : 2048;
         var view = int.TryParse(SuggestionViewText, out var v) && v >= 2 && v <= 32 ? v : 10;
         var players = int.TryParse(SuggestionPlayersText, out var p) && p >= 1 && p <= 1000 ? p : 20;
@@ -339,7 +343,11 @@ public partial class ServerViewModel : ViewModelBase
     private async Task DownloadServer()
     {
         var version = SelectedVersion;
-        if (version is null) { Status = "请先选择版本"; return; }
+        if (version is null)
+        {
+            await WarnNoVersion();
+            return;
+        }
         if (IsInstalling) return;
         if (DialogService.MainWindow() is { } owner
             && !await DialogService.Confirm(owner,
@@ -369,16 +377,58 @@ public partial class ServerViewModel : ViewModelBase
         }
     }
 
-    /// <summary>启动服务端（自动同意 EULA；Java 自动选配 + 设置页内存）</summary>
+    /// <summary>前提不满足警告：未选版本（红字加粗原因 + 说明）</summary>
+    private static async Task WarnNoVersion() =>
+        await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
+            "请在顶部选择要开服的已安装版本，再继续操作。", "无法继续", "知道了", "");
+
+    /// <summary>下载服务端并自动启动（弹窗"立即下载并启动"确认后走这里；下载完成前提已满足直接 StartServer）</summary>
+    private async Task DownloadAndStartAsync()
+    {
+        var version = SelectedVersion;
+        if (version is null || IsInstalling) return;
+        IsInstalling = true;
+        Status = "正在下载服务端…";
+        try
+        {
+            var dir = await _installer.InstallAsync(version.Name, GameDirectory.InstallDir(), null, CancellationToken.None);
+            ServerDirText = ServerDir ?? "";
+            LoadProperties();
+            Status = "服务端下载完成，正在启动…";
+            StartServer(); // 前提已满足（jar 就位）
+        }
+        catch (Exception ex)
+        {
+            Status = $"下载失败: {ex.Message}";
+            NotificationService.Error(ex.Message);
+        }
+        finally
+        {
+            IsInstalling = false;
+        }
+    }
+
+    /// <summary>启动服务端（自动同意 EULA；Java 自动选配 + 设置页内存）；前提不满足弹红字警告对话框</summary>
     [RelayCommand]
-    private void StartServer()
+    private async Task StartServer()
     {
         var version = SelectedVersion;
         var dir = ServerDir;
-        if (version is null || dir is null) { Status = "请先选择版本"; return; }
+        if (version is null || dir is null)
+        {
+            await WarnNoVersion();
+            return;
+        }
         if (!File.Exists(Path.Combine(dir, "server.jar")))
         {
-            Status = "尚未下载服务端，请先下载";
+            // 红字警告：未安装服务端 → 提供"立即下载并启动"
+            if (DialogService.MainWindow() is { } owner
+                && await DialogService.Warn(owner, "未安装服务端",
+                    $"「{version.Name}」的服务端尚未下载。可立即下载并启动，或先取消。", "无法启动服务端",
+                    "立即下载并启动", "取消"))
+            {
+                await DownloadAndStartAsync();
+            }
             return;
         }
         if (IsRunning) return;
