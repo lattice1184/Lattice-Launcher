@@ -107,3 +107,12 @@ Toast 滑入 + 涟漪深色 + 版本页小屏 + 发布脚本自动杀进程
 - AC4 服务端下载进队列：DownloadServer/DownloadAndStartAsync 改 DownloadManager.EnqueueGroup（ctx.AddChild 包 ServerInstaller——Core 不动）+ NavigateToDownloadQueue（原裸下载不进下载记录不跳转）
 - 坑：GameDirectory.EnsureDefault() 是 void（创建目录）；取默认路径用 Detect()；Avalonia Application 无 Shutdown()——关主窗口即可
 - 提交 7f5b9ff；192/192 全绿
+
+## AD 批次（2026-08-04 16:09 发布 185.8MB）
+hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文诊断
+- AD1 **HoverBrushBehavior（新建）**：AC1 删 Transitions 仍无效 → 根因坐实=样式伪类 Setter 对模板 TemplateBinding 的驱动不可靠；hover 全部改本地值驱动（Enter 设 HoverBrush 本地值 / Exit ClearValue 回落样式值——ClearValue 免记原色）。App.axaml 删全部 Button :hover 伪类样式，类样式 Setter 配 HoverBrush（primary=AccentHover、danger=#22E05A5A+红字、ghost=BgRaised+白字、tab=默认 BgHover）；nav 按钮 XAML 显式 Enabled=False（code-behind 管，防互踩）
+- AD2 服务端诊断：LogDiagnostics（16 条错误模式正则→中文说明+建议，可扩展）；ServerViewModel Exited 非 0 → Task.Delay(300) 等缓冲刷完 → Diagnose(已收集 Logs) → Warn 弹窗（红字"服务端启动失败"+逐条中文原因）+ 控制台 § 诊断行
+- AD2 一键进服：JavaArgumentsBuilder.Build + GameLaunchService.LaunchAsync 加 extraGameArgs（追加 arguments.game 之后）；HomeViewModel 重构 LaunchCoreAsync(overrideVersion, overrideGameDir, extraGameArgs)（LaunchAsync 变薄壳）+ RequestLaunchWithServerAsync；ServerViewModel.JoinGameCommand 读 server.properties server-port（默认 25565）→ 复用主页完整启动链路（阶段/日志/退出处理）
+- AD3 导出报告：LogExportHelper 生成 诊断说明.txt（系统信息+包含文件清单+动态中文错误列表）入 zip
+- 坑：Background/ForegroundProperty 在 TemplatedControl 不在 Control；IClipboard 在 Avalonia.Input.Platform（上批记录）
+- 提交 e9a23c8（git 显示）；192/192 全绿
