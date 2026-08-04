@@ -110,7 +110,7 @@ public partial class ServerViewModel : ViewModelBase
                 main.RunningVersion = null;
         }
         if (value) RefreshLanAddress();
-        else LanAddressText = "";
+        else { LanAddressText = ""; LocalAddressText = ""; }
     }
 
     [ObservableProperty]
@@ -130,8 +130,17 @@ public partial class ServerViewModel : ViewModelBase
         ? null
         : ServerInstaller.ServerDir(GameDirectory.InstallDir(), SelectedVersion.Name);
 
+    /// <summary>授予 OP 的玩家名（AH1：预填当前登录账号；可改任意名，无需在线）</summary>
+    [ObservableProperty]
+    public partial string OpNameText { get; set; } = "";
+
+    /// <summary>授予 OP 操作反馈（成功/错误提示行）</summary>
+    [ObservableProperty]
+    public partial string OpStatusText { get; set; } = "";
+
     public ServerViewModel()
     {
+        OpNameText = Launcher.Core.Account.AccountService.Shared.Current?.Name ?? "";
         _process.OutputReceived += line => AppendLog(line);
         _process.Exited += code =>
         {
@@ -545,12 +554,17 @@ public partial class ServerViewModel : ViewModelBase
         throw new InvalidOperationException("未找到可用 Java（可在设置页指定 Java 路径）");
     }
 
-    // ---------- 局域网地址（AG3：服务端运行中显示，朋友可连） ----------
+    // ---------- 连接信息（AG3 + AH1：服务端运行中显示本机/局域网地址，朋友可连） ----------
 
+    /// <summary>局域网地址行（ip:port，复制给局域网朋友）</summary>
     [ObservableProperty]
     public partial string LanAddressText { get; set; } = "";
 
-    /// <summary>刷新局域网地址（读 server.properties 端口；无内网 IP 时留空）</summary>
+    /// <summary>本机地址行（127.0.0.1:port，一键进服用）</summary>
+    [ObservableProperty]
+    public partial string LocalAddressText { get; set; } = "";
+
+    /// <summary>刷新连接信息（读 server.properties 端口；无内网 IP 时局域网行留空）</summary>
     private void RefreshLanAddress()
     {
         var port = 25565;
@@ -561,8 +575,9 @@ public partial class ServerViewModel : ViewModelBase
                 port = ServerProperties.Load(Path.Combine(dir, "server.properties")).GetInt("server-port", 25565);
         }
         catch { }
+        LocalAddressText = $"本机 127.0.0.1:{port}";
         var ip = FindLanIp();
-        LanAddressText = ip is null ? "" : $"局域网地址：{ip}:{port}";
+        LanAddressText = ip is null ? "" : $"局域网 {ip}:{port}";
     }
 
     /// <summary>复制局域网地址（去掉前缀标签，直接得到 ip:port）</summary>
@@ -574,7 +589,7 @@ public partial class ServerViewModel : ViewModelBase
         if (top is null) return;
         var cb = Avalonia.Controls.TopLevel.GetTopLevel(top)?.Clipboard;
         if (cb is null) return;
-        await cb.SetTextAsync(LanAddressText.Replace("局域网地址：", ""));
+        await cb.SetTextAsync(LanAddressText.Replace("局域网 ", ""));
         NotificationService.Success("局域网地址已复制");
     }
 
@@ -664,6 +679,17 @@ public partial class ServerViewModel : ViewModelBase
         if (!IsRunning) return;
         _process.SendCommand(command);
         NotificationService.Success(doneText);
+    }
+
+    /// <summary>授予任意玩家 OP（AH1：不需要玩家在线——MC 的 op 命令写 ops.json，上线即生效）</summary>
+    [RelayCommand]
+    private void GrantOp()
+    {
+        var name = OpNameText.Trim();
+        if (!IsRunning) { OpStatusText = "先启动服务端再授予 OP"; return; }
+        if (name.Length == 0) { OpStatusText = "先输入玩家名"; return; }
+        _process.SendCommand($"op {name}");
+        OpStatusText = $"已授予 {name} OP——玩家上线即生效";
     }
 
     /// <summary>日志行玩家解析（joined/left 实时增删；list 输出整体重置）</summary>

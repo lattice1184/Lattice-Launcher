@@ -64,4 +64,38 @@ public class ServerPropertiesTests
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void WriteDefaultProperties_WritesOfflineDefaults()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"props-{Guid.NewGuid():N}");
+        try
+        {
+            ServerInstaller.WriteDefaultProperties(dir);
+            var path = Path.Combine(dir, "server.properties");
+            Assert.True(File.Exists(path));
+            var props = ServerProperties.Load(path);
+            Assert.False(props.GetBool("online-mode")); // 新服默认离线
+            Assert.Equal("25565", props.Get("server-port"));
+            Assert.Equal("20", props.Get("max-players"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void WriteDefaultProperties_DoesNotOverwriteExisting()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"props-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "server.properties");
+            File.WriteAllText(path, "online-mode=true\nserver-port=12345\n");
+            ServerInstaller.WriteDefaultProperties(dir);
+            var props = ServerProperties.Load(path);
+            Assert.True(props.GetBool("online-mode")); // 已有配置不受影响
+            Assert.Equal("12345", props.Get("server-port"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }

@@ -52,14 +52,45 @@
                             <TextBlock Text="{Binding MachineStatusText}" Classes="sub" FontSize="12"
                                        TextWrapping="Wrap" LineHeight="20"/>
 
-                            <!-- 局域网地址（服务端运行中显示；复制给局域网朋友） -->
-                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsRunning}">
-                                <TextBlock Text="{Binding LanAddressText}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource Accent}" VerticalAlignment="Center"/>
-                                <Button Content="复制" Classes="ghost" FontSize="11" Padding="10,2"
-                                        Command="{Binding CopyLanAddressCommand}"
-                                        IsVisible="{Binding LanAddressText, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                            </StackPanel>
+                            <!-- 连接信息（服务端运行中显示：本机一键进服 + 局域网复制给朋友） -->
+                            <Border CornerRadius="6" Padding="10,8" Background="#22332F3F"
+                                    IsVisible="{Binding IsRunning}">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="连接信息" FontSize="12" FontWeight="SemiBold"/>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="本机" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding LocalAddressText}" FontSize="12"
+                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="（点上方「进入服务器」自动连接）" Classes="dim"
+                                                   FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="局域网" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding LanAddressText}" FontSize="12"
+                                                   FontWeight="SemiBold" Foreground="{StaticResource Accent}"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Grid.Column="2" Content="复制" Classes="ghost" FontSize="11" Padding="10,2"
+                                                Command="{Binding CopyLanAddressCommand}"
+                                                IsVisible="{Binding LanAddressText, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 管理员（OP）：运行中随时授予，无需玩家在线，上线即生效 -->
+                            <Border CornerRadius="6" Padding="10,8" Background="#22332F3F"
+                                    IsVisible="{Binding IsRunning}">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="管理员（OP）" FontSize="12" FontWeight="SemiBold"/>
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBox Grid.Column="0" Text="{Binding OpNameText, Mode=TwoWay}"
+                                                 Watermark="玩家名（默认当前登录账号）" FontSize="12"/>
+                                        <Button Grid.Column="1" Content="授予 OP" Classes="primary" FontSize="12"
+                                                Padding="14,6" Command="{Binding GrantOpCommand}"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding OpStatusText}" Classes="dim" FontSize="11"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
 
                             <!-- 建议配置编辑（不用跳设置页） -->
                             <StackPanel Spacing="6" Margin="0,4,0,0">
