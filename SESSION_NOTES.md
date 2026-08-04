@@ -88,3 +88,13 @@ Toast 滑入 + 涟漪深色 + 版本页小屏 + 发布脚本自动杀进程
 - 主页未选版本/未登录 → 警告框（LaunchStatus 保留）
 - 修复"主界面退出游戏被报异常退出"：LaunchProcess.GetExitCode 根因=ExitCode==0 时去读官方包装器才写的 exitStatus 文件（裸 Java 启动不写）→ -1；改为缺失/为 0 一律返回 0（正常退出），文件非 0 才异常
 - 提交 4c5bed6；192/192 全绿
+
+## AB 批次（2026-08-04 发布，导航栏重做）
+用户反馈 nav hover 无变色 + 点击白影（多轮补丁无效）→ 用户拍板"别缠斗，删掉重做"
+- **根因总结**：nav 视觉全靠样式伪类（Button.nav:hover 等）+ 模板 TemplateBinding——Avalonia 12 下该组合不可靠（多轮尝试 TemplateBinding→TemplatedParent 等均失败）
+- **重做方案**：删掉 App.axaml 全部 Button.nav 系列样式；nav 视觉改 **code-behind 本地值驱动**（Avalonia 优先级：本地值 > 样式 Setter，模板绑定实时跟随，原理上无失效路径）：
+  - MainWindow.axaml：5 个导航按钮去 Classes.nav/Classes.active，挂 PointerEntered/Exited/Pressed/Released + SpringScale 禁用
+  - MainWindow.axaml.cs：_navButtons 注册表 + ApplyNavVisuals（active=深青 #12332F + 白字 + 左 Accent 色条 3px）+ NavEnter(BgHover #2C3544 变色)/NavExit/NavPress(#1A2029 按下变深)/NavRelease 三态互斥 + VM.PropertyChanged 订阅 IsXxxActive（覆盖点击/GoRepair 跳转等所有路径）
+- **白影根因**：Button:pressed 背景 BgActive #2A3240 比 BgRaised #242A36 亮 → 全局改为 #1A2029（按下=变深）
+- 坑：PointerPressed/PointerReleased 是路由事件（PointerPressedEventArgs），PointerEntered/Exited 是直接事件（PointerEventArgs）——签名别混
+- 提交 e942b72；192/192 全绿
