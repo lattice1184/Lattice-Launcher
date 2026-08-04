@@ -16,7 +16,7 @@
         <!-- 操作条：版本选择 + 下载/启动 单行（不再堆叠卡片） -->
         <Border DockPanel.Dock="Top" Classes="card" Padding="12" Margin="0,0,0,10">
             <StackPanel Spacing="6">
-                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                     <ComboBox Grid.Column="0" ItemsSource="{Binding InstalledVersions}"
                               SelectedItem="{Binding SelectedVersion}"
                               PlaceholderText="选择已安装版本">
@@ -26,17 +26,19 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button Grid.Column="1" Content="刷新" Classes="ghost" Padding="12,8"
+                    <Button Grid.Column="1" Content="一键开服" Classes="primary" Padding="20,8"
+                            Command="{Binding OneClickStartCommand}" IsVisible="{Binding !IsRunning}"/>
+                    <Button Grid.Column="2" Content="刷新" Classes="ghost" Padding="12,8"
                             Command="{Binding RefreshVersionsCommand}"/>
-                    <Button Grid.Column="2" Content="下载服务端" Classes="primary" Padding="16,8"
+                    <Button Grid.Column="3" Content="下载服务端" Classes="ghost" Padding="16,8"
                             Command="{Binding DownloadServerCommand}" IsEnabled="{Binding !IsInstalling}"/>
-                    <Button Grid.Column="3" Content="启动" Classes="primary" Padding="24,8"
+                    <Button Grid.Column="4" Content="启动" Classes="ghost" Padding="24,8"
                             Command="{Binding StartServerCommand}" IsVisible="{Binding !IsRunning}"/>
-                    <Button Grid.Column="4" Content="停止" Padding="24,8"
+                    <Button Grid.Column="5" Content="停止" Padding="24,8"
                             Command="{Binding StopServerCommand}" IsVisible="{Binding IsRunning}"/>
-                    <Button Grid.Column="5" Content="进入服务器" Classes="ghost" Padding="16,8"
+                    <Button Grid.Column="6" Content="进入服务器" Classes="ghost" Padding="16,8"
                             Command="{Binding JoinGameCommand}" IsEnabled="{Binding IsRunning}"/>
-                    <Button Grid.Column="6" Content="生成世界" Classes="ghost" Padding="16,8"
+                    <Button Grid.Column="7" Content="生成世界" Classes="ghost" Padding="16,8"
                             Command="{Binding GenerateWorldCommand}" IsVisible="{Binding !IsRunning}"/>
                 </Grid>
                 <TextBlock Text="{Binding ServerDirText}" Classes="dim" FontSize="11" TextTrimming="CharacterEllipsis"/>
