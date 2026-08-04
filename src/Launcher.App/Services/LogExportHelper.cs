@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using Launcher.Core.Diagnostics;
 
 namespace Launcher.App.Services;
 
