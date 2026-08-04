@@ -52,13 +52,16 @@ public sealed class ServerInstaller
         var serverUrl = merged.Downloads?.Server?.Url;
         if (string.IsNullOrEmpty(serverUrl))
             throw new InvalidDataException($"版本 {versionId} 没有服务端下载链接（不支持开服）");
-        var size = merged.Downloads!.Server!.Size ?? 0;
+        // size 无效（缺失/≤0）时传 null——不校验大小，由 IsValidServerJar 兜底（AL3）
+        long? expectedSize = merged.Downloads!.Server!.Size is { } sz && sz > 0 ? sz : null;
 
         var dir = ServerDir(gameDir, versionId);
         Directory.CreateDirectory(dir);
         var jarPath = Path.Combine(dir, "server.jar");
         // 候选下载链（AL2 三源）：官方 piston-data → launcher.mojang.com 旧域名 → BMCLAPI 镜像。
-        // 官方直连国内不稳（"下载服务端基本失败"根因）；BMCLAPI 签名 CDN 也可能挂——逐源尝试直到成功
+        // 官方直连国内不稳（"下载服务端基本失败"根因）；BMCLAPI 签名 CDN 也可能挂——逐源尝试直到成功。
+        // AL3 彻查：候选 2/3 无 size 校验，BMCLAPI WAF 等可能返回 200 错误内容被当成功 → "缺少或过小"——
+        // 每候选下载后统一校验（≥1MB 且 zip 魔数），无效删除文件继续下一候选
         var candidates = new List<string> { serverUrl };
         if (serverUrl.Contains("piston-data.mojang.com"))
             candidates.Add(serverUrl.Replace("piston-data.mojang.com", "launcher.mojang.com"));
@@ -68,15 +71,34 @@ public sealed class ServerInstaller
         {
             try
             {
-                await _downloads.DownloadFileAsync(url, jarPath, null, size, progress, ct);
-                last = null;
-                break;
+                await _downloads.DownloadFileAsync(url, jarPath, null, expectedSize, progress, ct);
+                if (IsValidServerJar(jarPath))
+                {
+                    last = null;
+                    break;
+                }
+                var len = new FileInfo(jarPath).Length;
+                File.Delete(jarPath);
+                last = new InvalidDataException($"「{url}」返回内容无效（{len} 字节，非服务端 jar）");
             }
             catch (Exception ex) { last = ex; }
         }
         if (last is not null) throw last;
         WriteDefaultProperties(dir);
         return jarPath;
+    }
+
+    /// <summary>服务端 jar 有效性：≥1MB 且 zip 魔数（PK）——拦 200 错误页/挑战页</summary>
+    private static bool IsValidServerJar(string path)
+    {
+        try
+        {
+            var fi = new FileInfo(path);
+            if (!fi.Exists || fi.Length < 1024 * 1024) return false;
+            using var fs = File.OpenRead(path);
+            return fs.ReadByte() == 0x50 && fs.ReadByte() == 0x4B;
+        }
+        catch { return false; }
     }
 
     /// <summary>

@@ -50,7 +50,7 @@ public class ServerInstallerTests
         Directory.CreateDirectory(vdir);
         File.WriteAllText(Path.Combine(vdir, "1.21.10.json"), """
             {"id":"1.21.10","type":"release","mainClass":"net.minecraft.server.Main",
-             "downloads":{"server":{"url":"https://piston-data.mojang.com/v1/objects/abc/server.jar","sha1":"s","size":5}}}
+             "downloads":{"server":{"url":"https://piston-data.mojang.com/v1/objects/abc/server.jar","sha1":"s"}}}
             """);
         return dir;
     }
@@ -62,12 +62,20 @@ public class ServerInstallerTests
         if (root is not null && Directory.Exists(root)) Directory.Delete(root, true);
     }
 
+    /// <summary>有效服务端 jar 内容（≥1MB + zip 魔数 PK）——通过 ServerInstaller 的 IsValidServerJar 校验</summary>
+    private static byte[] FakeJar()
+    {
+        var b = new byte[1024 * 1024 + 16];
+        b[0] = 0x50; b[1] = 0x4B;
+        return b;
+    }
+
     [Fact]
     public async Task InstallAsync_OfficialFails_FallsBackToBmclapi()
     {
         var handler = new HostStubHandler();
         handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 500, []);
-        handler.RouteBytes("bmclapi2.bangbang93.com/version/1.21.10/server", 200, "12345"u8.ToArray());
+        handler.RouteBytes("bmclapi2.bangbang93.com/version/1.21.10/server", 200, FakeJar());
         var installer = new ServerInstaller(CreateService(handler));
         var dir = MakeGameDir();
         try
@@ -75,7 +83,7 @@ public class ServerInstallerTests
             var jar = await installer.InstallAsync("1.21.10", dir);
 
             Assert.True(File.Exists(jar));
-            Assert.Equal("12345", File.ReadAllText(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
             Assert.Contains(handler.Requests, r => r.Contains("piston-data.mojang.com"));
             Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com/version/1.21.10/server"));
         }
@@ -86,7 +94,7 @@ public class ServerInstallerTests
     public async Task InstallAsync_OfficialOk_NoMirrorRequest()
     {
         var handler = new HostStubHandler();
-        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, "12345"u8.ToArray());
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
         var installer = new ServerInstaller(CreateService(handler));
         var dir = MakeGameDir();
         try
@@ -94,6 +102,7 @@ public class ServerInstallerTests
             var jar = await installer.InstallAsync("1.21.10", dir);
 
             Assert.True(File.Exists(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
             Assert.DoesNotContain(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com"));
         }
         finally { CleanUp(dir); }
@@ -105,7 +114,7 @@ public class ServerInstallerTests
     {
         var handler = new HostStubHandler();
         handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 500, []);
-        handler.RouteBytes("launcher.mojang.com/v1/objects/abc/server.jar", 200, "12345"u8.ToArray());
+        handler.RouteBytes("launcher.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
         var installer = new ServerInstaller(CreateService(handler));
         var dir = MakeGameDir();
         try
@@ -113,9 +122,32 @@ public class ServerInstallerTests
             var jar = await installer.InstallAsync("1.21.10", dir);
 
             Assert.True(File.Exists(jar));
-            Assert.Equal("12345", File.ReadAllText(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
             Assert.Contains(handler.Requests, r => r.Contains("launcher.mojang.com/v1/objects/abc/server.jar"));
             Assert.DoesNotContain(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com"));
+        }
+        finally { CleanUp(dir); }
+    }
+
+    /// <summary>AL3：候选返回 200 错误内容（如 BMCLAPI WAF 挑战页）→ 校验拒绝、删除、继续下一候选</summary>
+    [Fact]
+    public async Task InstallAsync_InvalidSmallContent_SkipsToNextCandidate()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 500, []);
+        handler.RouteBytes("launcher.mojang.com/v1/objects/abc/server.jar", 200,
+            "<html>Just a moment... challenge</html>"u8.ToArray()); // 200 错误页（过小）
+        handler.RouteBytes("bmclapi2.bangbang93.com/version/1.21.10/server", 200, FakeJar());
+        var installer = new ServerInstaller(CreateService(handler));
+        var dir = MakeGameDir();
+        try
+        {
+            var jar = await installer.InstallAsync("1.21.10", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
+            Assert.Contains(handler.Requests, r => r.Contains("launcher.mojang.com"));
+            Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com/version/1.21.10/server"));
         }
         finally { CleanUp(dir); }
     }
