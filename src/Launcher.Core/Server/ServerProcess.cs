@@ -18,6 +18,9 @@ public sealed class ServerProcess : IDisposable
         get { lock (_lock) return _process is { HasExited: false }; }
     }
 
+    /// <summary>启动命令参数（AL8：供日志/诊断展示；Start 后可用）</summary>
+    public string[]? CommandLine { get; private set; }
+
     /// <summary>输出行（stdout/stderr 合并）</summary>
     public event Action<string>? OutputReceived;
 
@@ -49,6 +52,7 @@ public sealed class ServerProcess : IDisposable
             psi.ArgumentList.Add("-jar");
             psi.ArgumentList.Add("server.jar");
             psi.ArgumentList.Add("nogui");
+            CommandLine = [.. psi.ArgumentList]; // AL8：记录启动命令供日志展示
 
             _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
             _process.OutputDataReceived += (_, e) => { if (e.Data is { } line) OutputReceived?.Invoke(line); };

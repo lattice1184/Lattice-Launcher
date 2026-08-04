@@ -174,6 +174,44 @@ public class JavaArgumentsBuilderTests
         Assert.Equal("net.fabricmc.loader.impl.launch.knot.KnotClient", p.MainClass);
     }
 
+    /// <summary>AL8：Forge 1.20+ 的 -p 模块路径含 ${classpath_separator}——token 缺失则整串未替换，
+    /// java 模块系统把路径串当单一文件解析 → InvalidPathException（TACZgun 崩溃根因）</summary>
+    [Fact]
+    public void Forge120_ClasspathSeparator_ReplacedInModulePath()
+    {
+        var json = """
+            {
+              "id":"TACZgun","type":"release","mainClass":"cpw.mods.bootstraplauncher.BootstrapLauncher",
+              "arguments":{"jvm":[
+                "-p",
+                "${library_directory}/cpw/mods/bootstraplauncher/1.1.2/bootstraplauncher-1.1.2.jar${classpath_separator}${library_directory}/cpw/mods/securejarhandler/2.1.10/securejarhandler-2.1.10.jar",
+                "-DlibraryDirectory=${library_directory}",
+                "-cp",
+                "${classpath}",
+                "--add-modules",
+                "ALL-MODULE-PATH"
+              ]}
+            }
+            """;
+        var p = Build(JsonSerializer.Deserialize<VersionJson>(json)!, @"C:\mc", versionIsolation: false);
+
+        // -p 的值：${classpath_separator} 已替换为路径分隔符、library_directory 已替换、无残留占位符
+        var idx = Array.IndexOf(p.JvmArgs, "-p");
+        Assert.True(idx >= 0, "-p 模块路径参数应存在");
+        var modulePath = p.JvmArgs[idx + 1];
+        Assert.DoesNotContain("${classpath_separator}", modulePath);
+        Assert.Contains(
+            "C:/mc/libraries/cpw/mods/bootstraplauncher/1.1.2/bootstraplauncher-1.1.2.jar" + Path.PathSeparator
+            + "C:/mc/libraries/cpw/mods/securejarhandler/2.1.10/securejarhandler-2.1.10.jar", modulePath);
+        Assert.DoesNotContain(p.JvmArgs, a => a.Contains("${"));
+        // -DlibraryDirectory 已替换
+        Assert.Contains("-DlibraryDirectory=C:/mc/libraries", p.JvmArgs);
+        // json 的 -cp ${classpath} 被过滤，classpath 由构建器末尾追加
+        Assert.Equal("-cp", p.JvmArgs[^2]);
+        Assert.Equal(p.ClassPath, p.JvmArgs[^1]);
+        Assert.Equal("cpw.mods.bootstraplauncher.BootstrapLauncher", p.MainClass);
+    }
+
     /// <summary>AK：混搭 profile（部分带 downloads）——两类库都在 classpath（带 downloads 行为不回归）</summary>
     [Fact]
     public void MixedLibraries_BothIncluded()

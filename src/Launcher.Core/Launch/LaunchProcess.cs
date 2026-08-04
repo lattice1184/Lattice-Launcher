@@ -9,6 +9,21 @@ public sealed class LaunchProcess
 {
     public sealed record LaunchResult(Process Process, string ExitStatusFilePath);
 
+    /// <summary>启动命令行描述（AL8 日志增强：launch-*.log 首行记录，崩溃时根因一眼可见）。
+    /// 按 ArgumentList 语义拼接——含空格/引号的参数用双引号包裹转义，日志可直接复现。</summary>
+    public static string DescribeCommandLine(JavaArgumentsBuilder.LaunchProfile profile)
+        => DescribeCommandLine(profile.JavaPath,
+            profile.JvmArgs.Append(profile.MainClass).Concat(profile.GameArgs));
+
+    /// <summary>通用重载（服务端等无 LaunchProfile 的场景）</summary>
+    public static string DescribeCommandLine(string exe, IEnumerable<string> args)
+        => string.Join(' ', new[] { exe }.Concat(args).Select(QuoteArg));
+
+    private static string QuoteArg(string arg)
+        => arg.Contains(' ') || arg.Contains('"')
+            ? "\"" + arg.Replace("\"", "\\\"") + "\""
+            : arg;
+
     /// <summary>启动游戏进程。日志行通过 onLog 回调实时输出。</summary>
     public static LaunchResult Start(
         JavaArgumentsBuilder.LaunchProfile profile,
