@@ -93,7 +93,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>界面密度（默认紧凑）</summary>
     [ObservableProperty]
-    public partial int DensityIndex { get; set; } = 0;
+    public partial int DensityIndex { get; set; } = 1; // AL7：默认标准（0=紧凑 1=标准 2=舒适）
 
     /// <summary>外观变化（MainWindow/App 应用透明度/强调色/密度）</summary>
     public event Action? AppearanceChanged;
@@ -210,7 +210,7 @@ public partial class SettingsViewModel : ViewModelBase
         }
         WindowOpacity = 0.9;
         AccentColor = "#2DD4BF";
-        DensityIndex = 0; // 默认紧凑
+        DensityIndex = 1; // 默认标准（AL7：不再默认紧凑缩小 10%）
         PreviewChanged?.Invoke();
         NotificationService.Success("已重置为默认外观（点击「保存并应用」生效）");
     }

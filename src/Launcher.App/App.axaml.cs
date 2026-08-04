@@ -26,7 +26,7 @@ public partial class App : Application
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
             // 应用个性化强调色（设置页可改，运行时可换）
-            ApplyAccentColor();
+            ApplyAccentColor(LauncherSettings.Current.AccentColor);
 
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
@@ -40,11 +40,12 @@ public partial class App : Application
             {
                 DataContext = new MainViewModel(),
             };
-            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色
+            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色。
+            // AL7：预览必须传 VM 值（Settings 未写盘时读不到新值——旧版预览永远不生效）
             if (desktop.MainWindow.DataContext is MainViewModel mainVm)
             {
-                mainVm.Settings.AppearanceChanged += ApplyAccentColor;
-                mainVm.Settings.PreviewChanged += ApplyAccentColor;
+                mainVm.Settings.AppearanceChanged += () => ApplyAccentColor(LauncherSettings.Current.AccentColor);
+                mainVm.Settings.PreviewChanged += () => ApplyAccentColor(mainVm.Settings.AccentColor);
             }
             desktop.MainWindow.Show();
 
@@ -111,11 +112,10 @@ public partial class App : Application
     }
 
     /// <summary>应用强调色：替换 Accent/AccentHover 资源（按钮/进度条/激活态全跟随）</summary>
-    private void ApplyAccentColor()
+    private void ApplyAccentColor(string hex)
     {
         try
         {
-            var hex = LauncherSettings.Current.AccentColor;
             if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#')) hex = "#2DD4BF";
             var accent = Avalonia.Media.Color.Parse(hex);
             Resources["Accent"] = accent;

@@ -98,6 +98,11 @@
         <Style Selector="TextBlock.dim">
             <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
         </Style>
+        <!-- AL7 红字规范：关键性/难以挽回的错误信息红字标注（失败 Status 等） -->
+        <Style Selector="TextBlock.status-error">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
         <Style Selector="TextBlock.page-title">
             <Setter Property="FontSize" Value="17"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -121,10 +126,10 @@
 
         <!-- 主操作按钮（唯一饱和面；hover 亮青绿由行为驱动） -->
         <Style Selector="Button.primary">
-            <Setter Property="Background" Value="{StaticResource Accent}"/>
+            <Setter Property="Background" Value="{DynamicResource Accent}"/>
             <Setter Property="Foreground" Value="{StaticResource OnAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource AccentHover}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource AccentHover}"/>
         </Style>
 
         <!-- 危险按钮（红字；hover 红底浅红字由行为驱动） -->
@@ -234,7 +239,7 @@
 
         <!-- 进度条（值变化平滑过渡） -->
         <Style Selector="ProgressBar">
-            <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
             <Setter Property="Background" Value="{StaticResource BorderColor}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}"/>
             <Setter Property="Transitions">

@@ -34,17 +34,18 @@ public partial class MainWindow : Window
         {
             RestoreWindowSize();
             ApplyOpacityFallback();
-            ApplyAppearance();
+            ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
             ApplyNavVisuals(); // 兜底：DataContext 若早于挂载，这里补一次
             // 页面切换：平滑滑入淡出
             PageHost.PageTransition = new UiAnim.FadeSlideTransition { Duration = TimeSpan.FromMilliseconds(180) };
             // Toast 出现时右侧滑入（NVIDIA 浮窗风；Opacity 淡入淡出由绑定驱动）
             ToastsHost.ContainerPrepared += (_, e) => UiAnim.SlideInX(e.Container);
-            // 外观实时跟随设置页改动（保存应用 + 预览）
+            // 外观实时跟随设置页改动（保存应用 + 预览）。
+            // AL7：预览必须传 VM 值——Settings 未写盘时读不到新值，旧版预览/即时生效永远不变化
             if (DataContext is MainViewModel main)
             {
-                main.Settings.AppearanceChanged += ApplyAppearance;
-                main.Settings.PreviewChanged += ApplyAppearance;
+                main.Settings.AppearanceChanged += () => ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
+                main.Settings.PreviewChanged += () => ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
             }
         };
         Closing += (_, _) => SaveWindowSize();
@@ -92,7 +93,10 @@ public partial class MainWindow : Window
             {
                 btn.Background = new SolidColorBrush(Color.Parse("#12332F"));
                 btn.Foreground = Brushes.White;
-                btn.BorderBrush = new SolidColorBrush(Color.Parse("#2DD4BF")); // Accent 左色条
+                // AL7：左色条跟随个性化强调色（旧版硬编码青绿，改设置后导航不变）
+                var accentHex = LauncherSettings.Current.AccentColor;
+                btn.BorderBrush = new SolidColorBrush(Color.Parse(
+                    string.IsNullOrWhiteSpace(accentHex) || !accentHex.StartsWith('#') ? "#2DD4BF" : accentHex));
                 btn.BorderThickness = new Thickness(3, 0, 0, 0);
             }
             else
@@ -145,24 +149,23 @@ public partial class MainWindow : Window
         NavSurface.IsVisible = false;
     }
 
-    /// <summary>应用外观设置：窗口透明度 + 界面密度（强调色由 App 应用）</summary>
-    private void ApplyAppearance()
+    /// <summary>应用外观设置：窗口透明度 + 界面密度（强调色由 App 应用）。
+    /// AL7：参数化——预览传 VM 值（未写盘），保存传 Settings 值</summary>
+    private void ApplyAppearance(double opacity, DensityMode density)
     {
-        var s = LauncherSettings.Current;
-
         // 透明度：亚克力 TintOpacity 随设置（0.7-1.0 → 0.40-1.0 映射）
         if (RootSurface?.Material is ExperimentalAcrylicMaterial m)
         {
-            m.TintOpacity = 0.40 + (s.WindowOpacity - 0.7) * 2.0; // 0.7→0.40，1.0→1.0
+            m.TintOpacity = 0.40 + (opacity - 0.7) * 2.0; // 0.7→0.40，1.0→1.0
         }
 
-        // 密度：整 UI 缩放（紧凑 0.9 / 标准 1.0 / 舒适 1.1）
+        // 密度：整 UI 缩放（AL7 上调：紧凑 0.95 / 标准 1.0 / 舒适 1.15——旧 0.9 默认把整 UI 缩 10%，字太小主因）
         if (ContentSurface?.RenderTransform is Avalonia.Media.ScaleTransform scaleTransform)
         {
-            var scale = s.Density switch
+            var scale = density switch
             {
-                DensityMode.Compact => 0.9,
-                DensityMode.Comfortable => 1.1,
+                DensityMode.Compact => 0.95,
+                DensityMode.Comfortable => 1.15,
                 _ => 1.0,
             };
             scaleTransform.ScaleX = scale;
