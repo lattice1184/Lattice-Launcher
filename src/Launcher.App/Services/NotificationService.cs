@@ -28,6 +28,11 @@ public partial class ToastItem : ObservableObject
         _ => new SolidColorBrush(Color.Parse("#332DD4BF")),
     };
 
+    /// <summary>文字色（AL7 红字规范：Error Toast 红字，其余主色）</summary>
+    public IBrush MessageBrush => Type == ToastType.Error
+        ? new SolidColorBrush(Color.Parse("#E05A5A"))
+        : new SolidColorBrush(Color.Parse("#E8EAF0"));
+
     /// <summary>透明度（视图 DoubleTransition 绑定；初始 0 淡入）</summary>
     [ObservableProperty]
     public partial double Opacity { get; set; } = 0;

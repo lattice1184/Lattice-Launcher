@@ -95,6 +95,23 @@ public partial class ServerViewModel : ViewModelBase
     [ObservableProperty]
     public partial string Status { get; set; } = "选一个版本开服";
 
+    /// <summary>Status 是否错误态（AL7 红字规范：关键性/难以挽回的失败红字加粗）</summary>
+    [ObservableProperty]
+    public partial bool StatusIsError { get; set; }
+
+    /// <summary>SetStatus 的错误标记（Status 赋值瞬间被 OnStatusChanged 读取后复位）</summary>
+    private bool _statusSetError;
+
+    /// <summary>Status 统一入口：error=true 时红字标注；普通赋值自动重置红字</summary>
+    private void SetStatus(string text, bool error = false)
+    {
+        _statusSetError = error;
+        Status = text;
+        _statusSetError = false;
+    }
+
+    partial void OnStatusChanged(string value) => StatusIsError = _statusSetError;
+
     [ObservableProperty]
     public partial bool IsRunning { get; set; }
 
@@ -125,10 +142,17 @@ public partial class ServerViewModel : ViewModelBase
 
     public string CommandInput { get; set; } = "";
 
+    /// <summary>
+    /// 所选版本所在的游戏目录（AL7 主根因修复）：版本可能来自 PCL/官方等外部源（列表跨源扫描），
+    /// 操作必须落到版本实际所在目录，而不是启动器自建目录——否则"版本未安装"、下载从未真正开始
+    /// </summary>
+    private static string VersionGameDir(VersionInstanceVM? v) =>
+        string.IsNullOrEmpty(v?.GameDir) ? GameDirectory.InstallDir() : v!.GameDir;
+
     /// <summary>当前服务端目录（servers/{versionId}）</summary>
     private string? ServerDir => SelectedVersion is null
         ? null
-        : ServerInstaller.ServerDir(GameDirectory.InstallDir(), SelectedVersion.Name);
+        : ServerInstaller.ServerDir(VersionGameDir(SelectedVersion), SelectedVersion.Name);
 
     /// <summary>授予 OP 的玩家名（AH1：预填当前登录账号；可改任意名，无需在线）</summary>
     [ObservableProperty]
@@ -172,7 +196,8 @@ public partial class ServerViewModel : ViewModelBase
                     return;
                 }
                 AppendLog(code == 0 ? "§ 服务端已停止" : $"§ 服务端异常退出（exitCode={code}）");
-                Status = code == 0 ? "服务端已停止" : "服务端异常退出，请查看日志";
+                if (code == 0) Status = "服务端已停止";
+                else SetStatus("服务端异常退出，请查看日志", error: true);
                 if (code != 0)
                 {
                     // 动态诊断：等 stdout 缓冲刷完，用已收集日志匹配已知错误模式 → 中文原因弹窗
@@ -236,7 +261,7 @@ public partial class ServerViewModel : ViewModelBase
             await svc.RefreshAsync();
             InstalledVersions.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                InstalledVersions.Add(new VersionInstanceVM(e.Id));
+                InstalledVersions.Add(new VersionInstanceVM(e.Id, GameDir: e.GameDirectory)); // AL7：带版本所在目录
             // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ PCL/官方扫描源
             foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
             {
@@ -247,7 +272,7 @@ public partial class ServerViewModel : ViewModelBase
                     var id = Path.GetFileName(d);
                     if (InstalledVersions.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(d, $"{id}.json")))
-                        InstalledVersions.Add(new VersionInstanceVM(id));
+                        InstalledVersions.Add(new VersionInstanceVM(id, GameDir: dir)); // AL7：带版本所在目录
                 }
             }
             if (InstalledVersions.Count > 0 && SelectedVersion is null) SelectedVersion = InstalledVersions[0];
@@ -267,7 +292,7 @@ public partial class ServerViewModel : ViewModelBase
     partial void OnSelectedVersionChanged(VersionInstanceVM? value)
     {
         if (value is null) return;
-        var dir = ServerInstaller.ServerDir(GameDirectory.InstallDir(), value.Name);
+        var dir = ServerInstaller.ServerDir(VersionGameDir(value), value.Name);
         ServerDirText = dir;
         Status = File.Exists(Path.Combine(dir, "server.jar")) ? "服务端就绪，可启动" : "还没下载服务端";
         LoadProperties();
@@ -292,7 +317,7 @@ public partial class ServerViewModel : ViewModelBase
             {
                 var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;      // 可用物理内存
                 var total = TotalPhysicalMemory();                               // 总物理内存
-                var diskFree = FreeDiskGb(GameDirectory.InstallDir());
+                var diskFree = FreeDiskGb(VersionGameDir(SelectedVersion));
                 var cpu = CpuUsagePercent();                                     // 实时 CPU 使用率（失败 -1）
 
                 var cpuText = cpu >= 0 ? $"{cpu:0.#}%" : $"{Environment.ProcessorCount} 核";
@@ -437,7 +462,7 @@ public partial class ServerViewModel : ViewModelBase
         try
         {
             var installer = _installer;
-            var dir = GameDirectory.InstallDir();
+            var dir = VersionGameDir(version);
             var task = DownloadManager.Instance.EnqueueGroup($"下载服务端 {version.Name}", (ctx, ct) =>
             {
                 ctx.AddChild("server.jar", 1, (progress, c) => installer.InstallAsync(version.Name, dir, progress, c));
@@ -454,8 +479,10 @@ public partial class ServerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Status = $"下载失败: {ex.Message}";
+            SetStatus($"下载失败: {ex.Message}", error: true);
             NotificationService.Error(ex.Message);
+            // AL7：失败切回开服页（下载中自动跳去了下载板块，不切回用户看不到红字原因）
+            MainViewModel.Current?.NavigateToServer();
             // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
             if (DialogService.MainWindow() is { } dlg)
                 await DialogService.Warn(dlg, "服务端下载失败",
@@ -482,7 +509,7 @@ public partial class ServerViewModel : ViewModelBase
         try
         {
             var installer = _installer;
-            var dir = GameDirectory.InstallDir();
+            var dir = VersionGameDir(version);
             var task = DownloadManager.Instance.EnqueueGroup($"下载服务端 {version.Name}", (ctx, ct) =>
             {
                 ctx.AddChild("server.jar", 1, (progress, c) => installer.InstallAsync(version.Name, dir, progress, c));
@@ -499,8 +526,10 @@ public partial class ServerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Status = $"下载失败: {ex.Message}";
+            SetStatus($"下载失败: {ex.Message}", error: true);
             NotificationService.Error(ex.Message);
+            // AL7：失败切回开服页（下载中自动跳去了下载板块，不切回用户看不到红字原因）
+            MainViewModel.Current?.NavigateToServer();
             // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
             if (DialogService.MainWindow() is { } dlg)
                 await DialogService.Warn(dlg, "服务端下载失败",
@@ -545,14 +574,14 @@ public partial class ServerViewModel : ViewModelBase
             try { using var probe = File.Open(latest, FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
             catch
             {
-                Status = $"日志文件被其他程序占用，无法启动服务端：\n{latest}\n\n最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或编辑器打开着日志。";
+                SetStatus($"日志文件被其他程序占用，无法启动服务端：\n{latest}\n\n最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或编辑器打开着日志。", error: true);
                 NotificationService.Error("日志文件被占用（可结束残留 java.exe 或关闭打开的日志后重试）");
                 return;
             }
         }
         var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
             ? custom
-            : PickServerJava(version.Name);
+            : PickServerJava(VersionGameDir(version), version.Name);
         var mem = LauncherSettings.Current.MemoryMb > 0
             ? LauncherSettings.Current.MemoryMb
             : 2048;
@@ -569,19 +598,19 @@ public partial class ServerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Status = $"启动失败: {ex.Message}";
+            SetStatus($"启动失败: {ex.Message}", error: true);
             NotificationService.Error(ex.Message);
         }
     }
 
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
     /// <summary>服务端 Java 按版本选择（26.x 需 Java 21+——修复 Java 17 硬编码启动即崩）；找不到降级 21/17</summary>
-    private static string PickServerJava(string versionId)
+    private static string PickServerJava(string gameDir, string versionId)
     {
         var major = 17;
         try
         {
-            var p = Path.Combine(GameDirectory.InstallDir(), "versions", versionId, $"{versionId}.json");
+            var p = Path.Combine(gameDir, "versions", versionId, $"{versionId}.json");
             if (File.Exists(p))
             {
                 var v = System.Text.Json.JsonSerializer.Deserialize<Launcher.Core.Model.Mojang.VersionJson>(File.ReadAllText(p));
@@ -677,7 +706,7 @@ public partial class ServerViewModel : ViewModelBase
         var port = props.GetInt("server-port", 25565);
         Status = "正在拉起客户端并连接服务器…";
         if (MainViewModel.Current is { } main)
-            await main.Home.RequestLaunchWithServerAsync(version.Name, GameDirectory.InstallDir(), "127.0.0.1", port);
+            await main.Home.RequestLaunchWithServerAsync(version.Name, VersionGameDir(version), "127.0.0.1", port);
     }
 
     [RelayCommand]
@@ -909,7 +938,7 @@ public partial class ServerViewModel : ViewModelBase
             await DownloadServerCoreAsync();
             if (!File.Exists(Path.Combine(dir, "server.jar")))
             {
-                Status = "服务端下载失败，一键开服中止";
+                SetStatus("服务端下载失败，一键开服中止", error: true);
                 _oneClickActive = false;
                 return;
             }
@@ -925,7 +954,7 @@ public partial class ServerViewModel : ViewModelBase
             while (IsRunning) await Task.Delay(400);
             if (!Directory.Exists(Path.Combine(dir, CurrentLevelName())))
             {
-                Status = "世界生成失败，一键开服中止（可查看控制台日志）";
+                SetStatus("世界生成失败，一键开服中止（可查看控制台日志）", error: true);
                 _oneClickActive = false;
                 return;
             }
@@ -958,7 +987,7 @@ public partial class ServerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Status = $"进服失败：{ex.Message}（服务端仍在运行，可手动点「进入服务器」）";
+            SetStatus($"进服失败：{ex.Message}（服务端仍在运行，可手动点「进入服务器」）", error: true);
         }
         finally
         {

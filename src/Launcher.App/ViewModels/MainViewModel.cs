@@ -62,6 +62,9 @@ public partial class MainViewModel : ViewModelBase
         Downloads.NavigateToGame();
     }
 
+    /// <summary>跳到开服页（AL7：下载服务端失败后切回，配合 Status 红字让用户看到失败原因）</summary>
+    public void NavigateToServer() => Navigate("server");
+
     /// <summary>从版本页启动某版本：切主页并自动启动（版本页行 [启动] 按钮）</summary>
     public void LaunchVersion(string versionId, string gameDir)
     {

@@ -10,6 +10,7 @@
         <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,10">
             <TextBlock Text="开服" FontSize="18" FontWeight="Bold"/>
             <TextBlock Grid.Column="1" Text="{Binding Status}" Classes="sub" FontSize="12"
+                       Classes.status-error="{Binding StatusIsError}"
                        VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
         </Grid>
 
@@ -72,7 +73,7 @@
                                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                                         <TextBlock Text="局域网" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="{Binding LanAddressText}" FontSize="12"
-                                                   FontWeight="SemiBold" Foreground="{StaticResource Accent}"
+                                                   FontWeight="SemiBold" Foreground="{DynamicResource Accent}"
                                                    VerticalAlignment="Center"/>
                                         <Button Grid.Column="2" Content="复制" Classes="ghost" FontSize="11" Padding="10,2"
                                                 Command="{Binding CopyLanAddressCommand}"

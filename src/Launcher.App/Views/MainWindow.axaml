@@ -63,9 +63,9 @@
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="下载"/>
-                                <Border Classes="badge" BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                                <Border Classes="badge" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                         VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
-                                    <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{StaticResource Accent}" FontSize="10"/>
+                                    <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{DynamicResource Accent}" FontSize="10"/>
                                 </Border>
                             </StackPanel>
                         </Button>
@@ -116,7 +116,7 @@
                             </Border.Transitions>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Ellipse Width="8" Height="8" Fill="{Binding Dot}" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Message}" Foreground="{StaticResource TextPrimary}"
+                                <TextBlock Text="{Binding Message}" Foreground="{Binding MessageBrush}"
                                            FontSize="12" TextWrapping="Wrap" MaxWidth="360"/>
                             </StackPanel>
                         </Border>

@@ -21,9 +21,9 @@
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"/>
-                            <Border CornerRadius="3" Padding="6,1" BorderBrush="{StaticResource Accent}" BorderThickness="1"
+                            <Border CornerRadius="3" Padding="6,1" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
                                     VerticalAlignment="Center" IsVisible="{Binding Account.IsLoggedIn}">
-                                <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{StaticResource Accent}"/>
+                                <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{DynamicResource Accent}"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="YanKa Launcher" FontSize="11" Classes="dim"/>
@@ -105,9 +105,9 @@
                             FontSize="12" Padding="12,5" Command="{Binding SwitchLogTabCommand}" CommandParameter="history">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <TextBlock Text="启动记录"/>
-                            <Border BorderBrush="{StaticResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                            <Border BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                     VerticalAlignment="Center">
-                                <TextBlock Text="{Binding HistoryCount}" Foreground="{StaticResource Accent}" FontSize="10"/>
+                                <TextBlock Text="{Binding HistoryCount}" Foreground="{DynamicResource Accent}" FontSize="10"/>
                             </Border>
                         </StackPanel>
                     </Button>
