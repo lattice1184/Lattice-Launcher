@@ -10,7 +10,8 @@ namespace Launcher.Core.Services;
 /// </summary>
 public sealed class VersionManifestService
 {
-    private const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    /// <summary>Mojang 版本清单（AM：ServerInstaller 服务端 URL 推断复用）</summary>
+    public const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 
     private readonly HttpClient _http;
     private readonly string _cacheDirectory;

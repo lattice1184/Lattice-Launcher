@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.Json;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Mojang;
@@ -7,13 +8,21 @@ namespace Launcher.Core.Server;
 /// <summary>
 /// 服务端安装：从版本 JSON 的 downloads.server.url 下载 server.jar 到
 /// {gameDir}/servers/{versionId}/，并写入 eula.txt（同意 EULA）。
+/// 无 downloads.server 的版本（加载器/整合包 profile）自动推断 MC 版本 → Mojang 清单拿服务端链接（AM）。
 /// </summary>
 public sealed class ServerInstaller
 {
     private readonly DownloadService _downloads;
+    private readonly HttpClient _http;
 
-    public ServerInstaller(DownloadService? downloads = null)
-        => _downloads = downloads ?? new DownloadService();
+    /// <summary>静态共享 HttpClient（防句柄泄漏）——manifest/版本 json 拉取用</summary>
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
+
+    public ServerInstaller(DownloadService? downloads = null, HttpClient? http = null)
+    {
+        _downloads = downloads ?? new DownloadService();
+        _http = http ?? SharedHttp;
+    }
 
     /// <summary>服务端目录（启动器目录树下 servers/{versionId}——AE3 归位，不在游戏目录内）</summary>
     public static string ServerDir(string gameDir, string versionId)
@@ -50,15 +59,25 @@ public sealed class ServerInstaller
         // 不解析则服务端 URL 永远拿不到，每次下载失败 → 开服无限套娃（AE1 根因）
         var merged = VersionJsonMerger.ResolveChain(version, id => LoadParent(gameDir, id));
         var serverUrl = merged.Downloads?.Server?.Url;
+        long serverSize = 0;
         if (string.IsNullOrEmpty(serverUrl))
         {
-            // 加载器/整合包版本无 downloads.server——链接来自原版（如 1.21.1-Fabric → 1.21.1）
+            // AM：整合包/加载器版本无 downloads.server——推断 MC 版本 → Mojang 清单拿服务端链接（无需装原版）
+            var mc = InferMcVersion(gameDir, versionId, merged);
+            if (mc is not null)
+            {
+                (serverUrl, serverSize) = await FetchServerInfoAsync(mc, ct);
+            }
+        }
+        if (string.IsNullOrEmpty(serverUrl))
+        {
             throw new InvalidDataException(versionId.Contains('-')
                 ? $"版本 {versionId} 的服务端链接来自原版 {versionId[..versionId.IndexOf('-')]}——请先安装该原版版本再开服"
                 : $"版本 {versionId} 没有服务端下载链接（该版本不支持开服）");
         }
         // size 无效（缺失/≤0）时传 null——不校验大小，由 IsValidServerJar 兜底（AL3）
-        long? expectedSize = merged.Downloads!.Server!.Size is { } sz && sz > 0 ? sz : null;
+        var mergedSize = merged.Downloads?.Server?.Size ?? 0;
+        long? expectedSize = mergedSize > 0 ? mergedSize : serverSize > 0 ? serverSize : null;
 
         var dir = ServerDir(gameDir, versionId);
         Directory.CreateDirectory(dir);
@@ -96,6 +115,62 @@ public sealed class ServerInstaller
         }
         WriteDefaultProperties(dir);
         return jarPath;
+    }
+
+    /// <summary>
+    /// 推断 MC 版本（AM）：① 版本目录 jar 内 version.json 的 id（26.x 原版 jar 内嵌；整合包 jar=原版改名）
+    /// ② 版本 id 前缀数字段（1.21.1-Fabric → 1.21.1）③ libraries 的 net.fabricmc:intermediary:{ver}
+    /// </summary>
+    private static string? InferMcVersion(string gameDir, string versionId, VersionJson merged)
+    {
+        try
+        {
+            var jar = Path.Combine(gameDir, "versions", versionId, $"{versionId}.jar");
+            if (File.Exists(jar))
+            {
+                using var zip = ZipFile.OpenRead(jar);
+                var entry = zip.GetEntry("version.json");
+                if (entry is not null)
+                {
+                    using var r = new StreamReader(entry.Open());
+                    using var doc = JsonDocument.Parse(r.ReadToEnd());
+                    if (doc.RootElement.TryGetProperty("id", out var id)
+                        && id.GetString() is { } s && s.Length > 0)
+                        return s;
+                }
+            }
+        }
+        catch { /* jar 读取失败走下一推断 */ }
+        var m = System.Text.RegularExpressions.Regex.Match(versionId, @"^(\d+\.\d+(\.\d+)?)");
+        if (m.Success) return m.Groups[1].Value;
+        foreach (var lib in merged.Libraries ?? [])
+        {
+            if (lib.Name?.StartsWith("net.fabricmc:intermediary:", StringComparison.Ordinal) == true)
+                return lib.Name["net.fabricmc:intermediary:".Length..];
+        }
+        return null;
+    }
+
+    /// <summary>从 Mojang 版本清单拿指定 MC 版本的服务端下载信息（url/size）</summary>
+    private async Task<(string Url, long Size)> FetchServerInfoAsync(string mcVersion, CancellationToken ct)
+    {
+        var manifest = await _http.GetStringAsync(Launcher.Core.Services.VersionManifestService.ManifestUrl, ct);
+        using var doc = JsonDocument.Parse(manifest);
+        foreach (var v in doc.RootElement.GetProperty("versions").EnumerateArray())
+        {
+            if (v.TryGetProperty("id", out var id) && id.GetString() == mcVersion
+                && v.TryGetProperty("url", out var u) && u.GetString() is { } jsonUrl)
+            {
+                var vj = await _http.GetStringAsync(jsonUrl, ct);
+                using var vdoc = JsonDocument.Parse(vj);
+                var server = vdoc.RootElement.GetProperty("downloads").GetProperty("server");
+                var url = server.GetProperty("url").GetString()
+                    ?? throw new InvalidDataException($"Minecraft {mcVersion} 清单缺少服务端下载链接");
+                var size = server.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var sv) ? sv : 0;
+                return (url, size);
+            }
+        }
+        throw new InvalidDataException($"Mojang 清单中找不到 Minecraft {mcVersion} 的服务端（版本可能过旧/不存在）");
     }
 
     /// <summary>服务端 jar 有效性：≥1MB 且 zip 魔数（PK）——拦 200 错误页/挑战页</summary>
