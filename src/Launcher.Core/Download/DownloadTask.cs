@@ -63,6 +63,13 @@ public partial class DownloadTask : ObservableObject
     [ObservableProperty]
     public partial DownloadTaskState State { get; set; } = DownloadTaskState.Queued;
 
+    /// <summary>
+    /// 同步终态（内部）：State 通过 UI Post 异步生效，而 Completion 同步完成——
+    /// 组任务推导（WhenAll 后查子任务状态）若读 State 会读到旧值（AL5 竞态：子失败误判父完成）。
+    /// 终态在 Post 前同步记录；Retry/Resume 重置。
+    /// </summary>
+    internal volatile DownloadTaskState TerminalState;
+
     [ObservableProperty]
     public partial string Stage { get; set; } = "排队等待…";
 
@@ -151,18 +158,24 @@ public partial class DownloadTask : ObservableObject
                 _watch.Start();
                 SetState(DownloadTaskState.Downloading);
                 await work(Report, _cts.Token);
-                SetState(_cts.IsCancellationRequested
+                // 终态先同步记录（组任务推导依赖），再 Post 到 UI（State 异步生效）
+                var final = _cts.IsCancellationRequested
                     ? (_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled)
-                    : DownloadTaskState.Completed);
+                    : DownloadTaskState.Completed;
+                TerminalState = final;
+                SetState(final);
                 if (!_cts.IsCancellationRequested) Post(() => ProgressPercent = 100);
             });
         }
         catch (OperationCanceledException)
         {
-            SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
+            var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
+            TerminalState = s;
+            SetState(s);
         }
         catch (Exception ex)
         {
+            TerminalState = DownloadTaskState.Failed;
             SetState(DownloadTaskState.Failed);
             Post(() => Error = ex.Message);
         }
@@ -189,7 +202,9 @@ public partial class DownloadTask : ObservableObject
                 await groupWork(ctx, _cts.Token);                 // 编排：创建并等待全部子任务
                 await Task.WhenAll(ctx.Children.Select(c => c.Completion));
 
-                var failed = ctx.Children.FirstOrDefault(c => c.State == DownloadTaskState.Failed);
+                // AL5：用子任务同步终态推导——子任务 State 经 UI Post 异步生效，Completion 同步完成，
+                // WhenAll 返回时读 State 会读到旧值（Downloading）→ 子失败误判父完成（下载历史误报"完成"）
+                var failed = ctx.Children.FirstOrDefault(c => c.TerminalState == DownloadTaskState.Failed);
                 // 任一子任务失败 → 级联取消其余兄弟（停止无效下载/写盘，如版本下载中一个库 404 不再白白下 assets）
                 if (failed is not null && !_cts.IsCancellationRequested)
                 {
@@ -199,15 +214,19 @@ public partial class DownloadTask : ObservableObject
                 // 失败优先（内部级联取消后父任务仍是 Failed）；用户主动取消时子任务全 Canceled → 走 Canceled 分支
                 if (failed is not null)
                 {
+                    TerminalState = DownloadTaskState.Failed;
                     SetState(DownloadTaskState.Failed);
                     Post(() => Error = failed.Error ?? "子任务失败");
                 }
                 else if (_cts.IsCancellationRequested)
                 {
-                    SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
+                    var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
+                    TerminalState = s;
+                    SetState(s);
                 }
                 else
                 {
+                    TerminalState = DownloadTaskState.Completed;
                     SetState(DownloadTaskState.Completed);
                     Post(() => ProgressPercent = 100);
                 }
@@ -215,10 +234,13 @@ public partial class DownloadTask : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            SetState(_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled);
+            var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
+            TerminalState = s;
+            SetState(s);
         }
         catch (Exception ex)
         {
+            TerminalState = DownloadTaskState.Failed;
             SetState(DownloadTaskState.Failed);
             Post(() => Error = ex.Message);
         }
@@ -246,6 +268,7 @@ public partial class DownloadTask : ObservableObject
     {
         if (State != DownloadTaskState.Failed) return;
         _suspendRequested = false;
+        TerminalState = default; // 重置同步终态（重跑后重新记录）
         _cts = new CancellationTokenSource();
         Post(() => Error = null);
         if (IsGroup) Post(() => Children.Clear());
@@ -260,6 +283,7 @@ public partial class DownloadTask : ObservableObject
     {
         if (!_suspendRequested) return;
         _suspendRequested = false;
+        TerminalState = default; // 重置同步终态（重跑后重新记录）
         _cts = new CancellationTokenSource();
         if (IsGroup) Post(() => Children.Clear()); // 清掉暂停的旧子任务，重跑会新建
         if (IsGroup && _groupWork is not null)

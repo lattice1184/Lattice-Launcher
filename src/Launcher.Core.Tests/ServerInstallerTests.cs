@@ -234,6 +234,41 @@ public class ServerInstallerTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
+    /// <summary>AL5：整合包（推断 MC）官方+旧域名都失败 → BMCLAPI 兜底 URL 用 MC 版本而非整合包名（原名必 404）</summary>
+    [Fact]
+    public async Task InstallAsync_ModpackInfer_BmclapiUsesMcVersionNotModpackName()
+    {
+        var handler = new HostStubHandler();
+        RouteManifest(handler, "1.21.10", "abc");
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 500, []);
+        handler.RouteBytes("launcher.mojang.com/v1/objects/abc/server.jar", 500, []);
+        handler.RouteBytes("bmclapi2.bangbang93.com/version/1.21.10/server", 200, FakeJar());
+        var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+        var root = Path.Combine(Path.GetTempPath(), $"srvtest-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, ".minecraft");
+        var vdir = Path.Combine(dir, "versions", "红石生电优化");
+        Directory.CreateDirectory(vdir);
+        try
+        {
+            File.WriteAllText(Path.Combine(vdir, "红石生电优化.json"),
+                """{"id":"红石生电优化","type":"release","mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient","libraries":[]}""");
+            using (var zip = System.IO.Compression.ZipFile.Open(Path.Combine(vdir, "红石生电优化.jar"), System.IO.Compression.ZipArchiveMode.Create))
+            {
+                var entry = zip.CreateEntry("version.json");
+                using var w = new StreamWriter(entry.Open());
+                w.Write("""{"id":"1.21.10","name":"1.21.10"}""");
+            }
+
+            var jar = await installer.InstallAsync("红石生电优化", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
+            Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com/version/1.21.10/server"));
+            Assert.DoesNotContain(handler.Requests, r => r.Contains("%E7%BA%A2%E7%9F%B3")); // 不是整合包名 URL
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     /// <summary>清单中找不到该 MC 版本 → 明确报错</summary>
     [Fact]
     public async Task InstallAsync_ManifestMissingVersion_Throws()
