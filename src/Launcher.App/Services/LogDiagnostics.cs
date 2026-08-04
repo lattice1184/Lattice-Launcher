@@ -47,6 +47,8 @@ public static class LogDiagnostics
             "会话校验失败：服务端仍按正版模式运行。若已在 server.properties 关闭正版验证（online-mode=false），必须重启服务端才生效（配置只在启动时读取一次）；若玩家用的是离线客户端，请确认服务端是离线模式。"),
         (new Regex(@"Unable to delete file|FileSystemException|Being used by another process|另一个程序已锁定|The process cannot access the file", RegexOptions.IgnoreCase),
             "日志文件被占用：服务端启动时要删除旧的 latest.log，但文件被其他程序锁定——最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或你正用编辑器打开着日志。关闭占用后重试。"),
+        (new Regex(@"java\.lang\.ClassNotFoundException", RegexOptions.IgnoreCase),
+            "类加载失败：版本所需库文件未进入启动类路径（常见于 PCL/第三方安装器生成的版本，加载器 jar 缺失）。可在版本页重新下载/修复该版本。"),
     ];
 
     /// <summary>对日志文本诊断：返回「匹配原文 → 中文说明」列表（同模式只报一次）</summary>
