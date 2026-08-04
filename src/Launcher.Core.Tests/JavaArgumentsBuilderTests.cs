@@ -212,6 +212,42 @@ public class JavaArgumentsBuilderTests
         Assert.Equal("cpw.mods.bootstraplauncher.BootstrapLauncher", p.MainClass);
     }
 
+    /// <summary>AL8 修复：--add-opens/--add-exports 等成对参数（选项+值）不能去重——
+    /// 通用去重吃掉第二个选项名 → 值错位 → ClassNotFoundException（TACZgun 崩溃）；
+    /// 自包含 -D 参数仍去重（重复赋值无害）。顺带验证 ${clientid}/${auth_xuid} 替换（1.20.1+ json 带）。</summary>
+    [Fact]
+    public void PairedOptions_NotDeduplicated_ClientIdTokensReplaced()
+    {
+        var json = """
+            {
+              "id":"paired","type":"release","mainClass":"net.minecraft.client.main.Main",
+              "arguments":{"jvm":[
+                "--add-opens","java.base/java.util.jar=cpw.mods.securejarhandler",
+                "--add-opens","java.base/java.lang.invoke=cpw.mods.securejarhandler",
+                "--add-exports","java.base/sun.security.util=cpw.mods.securejarhandler",
+                "--add-exports","jdk.naming.dns/com.sun.jndi.dns=java.naming",
+                "--add-modules","ALL-MODULE-PATH",
+                "-Ddup=1",
+                "-Ddup=1"
+              ],
+              "game":["--clientId","${clientid}","--xuid","${auth_xuid}"]}
+            }
+            """;
+        var p = Build(JsonSerializer.Deserialize<VersionJson>(json)!, @"C:\mc", versionIsolation: false);
+
+        // 成对选项各出现两次（选项名+值一一配对，不被去重）
+        Assert.Equal(2, p.JvmArgs.Count(a => a == "--add-opens"));
+        Assert.Equal(2, p.JvmArgs.Count(a => a == "--add-exports"));
+        var idx = Array.IndexOf(p.JvmArgs, "--add-opens");
+        Assert.Equal("java.base/java.util.jar=cpw.mods.securejarhandler", p.JvmArgs[idx + 1]);
+        Assert.Equal("java.base/java.lang.invoke=cpw.mods.securejarhandler", p.JvmArgs[idx + 3]);
+        // 自包含 -D 仍去重
+        Assert.Single(p.JvmArgs, a => a == "-Ddup=1");
+        // 1.20.1+ game 参数 token 已替换
+        Assert.Contains("0", p.GameArgs);
+        Assert.DoesNotContain(p.GameArgs, a => a.Contains("${clientid}") || a.Contains("${auth_xuid}"));
+    }
+
     /// <summary>AK：混搭 profile（部分带 downloads）——两类库都在 classpath（带 downloads 行为不回归）</summary>
     [Fact]
     public void MixedLibraries_BothIncluded()
