@@ -116,3 +116,14 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - AD3 导出报告：LogExportHelper 生成 诊断说明.txt（系统信息+包含文件清单+动态中文错误列表）入 zip
 - 坑：Background/ForegroundProperty 在 TemplatedControl 不在 Control；IClipboard 在 Avalonia.Input.Platform（上批记录）
 - 提交 e9a23c8（git 显示）；192/192 全绿
+
+## AE 批次（2026-08-04 16:29 发布 185.8MB）
+开服套娃修复 + servers 归位 + MOD 路径 + 管理空间 + danger 实色
+- AE1 **套娃根治**（严重 bug）：根因=ServerInstaller.InstallAsync 不解析 inheritsFrom 链——Fabric/加载器 profile json 无 downloads.server（继承原版）→ serverUrl null → 每次下载失败 → 下次点启动又弹"未安装"→ 无限循环（用户实测 4 次）。修复：VersionJsonMerger.ResolveChain 解析；下载失败改显式红字弹窗（单按钮"知道了"，不再提供"立即下载并启动"）；VerifyServerJar（>1MB）验证；StartServer 加 IsInstalling
+- AE2 服务端 Java 按版本：PickServerJava（读版本 json javaVersion，26.x→21+，降级 21/17）——修复 26.1 服务端 Java 17 硬编码启动即崩
+- AE3 **目录树**：ServerDir = {InstallDir 父级}\servers\{id}（D:\YanKa Launcher\servers）——服务端不再在 .minecraft 内；MigrateLegacy 一次性迁移（启动时检测旧位置 Move）
+- AE4 MOD 下载：InstallAsync 兜底 CreateDirectory（自定义实例名 mods 目录不存在→下载失败/落错位）；安装完成长通知"已安装到：完整路径"
+- AE5 **管理空间**：新建 StorageWindow（应用数据/游戏目录/服务端 逐项路径+大小，后台 Task.Run 防卡；日志/缓存/崩溃报告/服务端可删，确认弹窗）；设置页「管理空间」入口
+- AE6 danger hover #22E05A5A（13% 透明几乎不可见）→ #8C2F2F 实色深红
+- 坑：catch 内 owner 与外层 Confirm owner 冲突（CS0136）；StorageWindow 自 DataContext 需 x:DataType；DownloadGroupTests 并发测试偶发失败（重跑过）
+- 提交 75f4b17；192/192 全绿（首跑 1 个偶发，重跑过）
