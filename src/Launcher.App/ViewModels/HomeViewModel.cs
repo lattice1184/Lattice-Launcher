@@ -34,6 +34,10 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial VersionInstanceVM? SelectedVersion { get; set; }
 
+    /// <summary>主页版本选择是全局权威：同步到 MainViewModel.CurrentVersion（下载/开服页跟随）</summary>
+    partial void OnSelectedVersionChanged(VersionInstanceVM? value)
+        => MainViewModel.Current!.CurrentVersion = value;
+
     [ObservableProperty]
     public partial string LaunchState { get; set; } = "就绪";
 

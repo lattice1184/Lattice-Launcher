@@ -202,6 +202,10 @@ public class CurseForgeServiceTests
             new CurseforgeHashes(sha1, 1), "https://cdn.example.com/files/sodium-0.5.11.jar",
             content.Length, ["1.21.1"], null);
 
+        // 防幂等残留：上一轮运行可能已在共享 mods 留下同名文件（sha1 匹配会跳过下载 → 请求断言失败）
+        var stale = Path.Combine(Path.GetTempPath(), "mods", "sodium-0.5.11.jar");
+        if (File.Exists(stale)) File.Delete(stale);
+
         var dest = await svc.InstallAsync(100, file, $"1.21.1-{Guid.NewGuid():N}", ProjectType.Mod);
 
         Assert.True(File.Exists(dest));

@@ -31,6 +31,17 @@ public partial class EcosystemViewModel : ViewModelBase
         SelectedSort = SortOptions[0];
         SelectedGameVersion = GameVersionOptions[0];
         SelectedSource = SourceOptions[0];
+        // 全局版本绑定：主页切换版本 → 本页实例下拉跟随（AF1）
+        if (MainViewModel.Current is { } main)
+            main.PropertyChanged += OnMainPropertyChanged;
+    }
+
+    private void OnMainPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.CurrentVersion)) return;
+        if (MainViewModel.Current?.CurrentVersion is not { } cur) return;
+        var hit = Instances.FirstOrDefault(i => i.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase));
+        if (hit is not null) SelectedInstance = hit;
     }
 
     /// <summary>tab 显示名（MOD/整合包/材质包/光影包）</summary>
@@ -206,12 +217,14 @@ public partial class EcosystemViewModel : ViewModelBase
     {
         try
         {
+            var all = new List<VersionInstanceVM>();
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            Instances.Clear();
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                Instances.Add(new VersionInstanceVM(e.Id));
-            // 目录补漏：fabric/forge/neoforge/quilt 等不在 manifest 的已装版本
+                all.Add(new VersionInstanceVM(e.Id, e.GameDirectory.Length > 0
+                    ? Launcher.Core.Utils.GameDirectory.SourceLabel(Launcher.Core.Utils.GameDirectory.SourceOf(e.GameDirectory))
+                    : "", e.GameDirectory));
+            // 目录补漏：fabric/forge/neoforge/quilt 等不在 manifest 的已装版本（带来源目录——MOD 落点关键）
             foreach (var (dir, _) in Launcher.Core.Utils.GameDirectory.ScanSourceDirs())
             {
                 var versionsDir = Path.Combine(dir, "versions");
@@ -219,15 +232,29 @@ public partial class EcosystemViewModel : ViewModelBase
                 foreach (var d in Directory.EnumerateDirectories(versionsDir))
                 {
                     var id = Path.GetFileName(d);
-                    if (Instances.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (all.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(d, $"{id}.json")))
-                        Instances.Add(new VersionInstanceVM(id));
+                        all.Add(new VersionInstanceVM(id, Launcher.Core.Utils.GameDirectory.SourceLabel(
+                            Launcher.Core.Utils.GameDirectory.SourceOf(dir)), dir));
                 }
+            }
+            // 分批填充：前 5 立即，剩余每批 8 静默补全（大列表不卡，复用 LoaderChoiceDialog 模式）
+            foreach (var v in all.Take(5)) Instances.Add(v);
+            var rest = all.Skip(5).ToList();
+            for (var i = 0; i < rest.Count; i += 8)
+            {
+                await Task.Delay(25);
+                foreach (var v in rest.Skip(i).Take(8)) Instances.Add(v);
             }
         }
         catch { /* 实例扫描失败不阻塞搜索 */ }
 
-        if (Instances.Count > 0) SelectedInstance = Instances[0];
+        // 全局版本绑定：主页当前版本优先选中（AF1），否则第一个
+        if (Instances.Count > 0)
+            SelectedInstance = MainViewModel.Current?.CurrentVersion is { } cur
+                && Instances.FirstOrDefault(i => i.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase)) is { } hit
+                ? hit
+                : Instances[0];
         await RunSearchAsync(reset: true);
     }
 

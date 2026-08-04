@@ -85,11 +85,12 @@ public sealed class EcosystemService
     /// </summary>
     public async Task<string> InstallAsync(
         string projectId, ModrinthVersion version, string instanceId, ProjectType type,
-        DownloadProgressHandler? progress = null, CancellationToken ct = default)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default, string? gameDirOverride = null)
     {
         var file = PickPrimaryFile(version.Files)
             ?? throw new InvalidOperationException("该版本没有可下载文件");
-        var targetDir = ResolveInstallPath(_gameDirectory, instanceId, type);
+        // gameDirOverride：版本来源目录（PCL/自建）——MOD 必须装进版本真实目录（AF2）
+        var targetDir = ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type);
         // 目标目录兜底创建（自定义实例名时 versions/{name}/mods 可能不存在——否则下载失败/落错位）
         Directory.CreateDirectory(targetDir);
         var destPath = Path.Combine(targetDir, Path.GetFileName(file.FileName));
@@ -143,14 +144,14 @@ public sealed class EcosystemService
     public async Task<DependencyInstallReport> InstallWithDependenciesAsync(
         string projectId, ModrinthVersion version, string instanceId, ProjectType type,
         string? gameVersion, string? loader,
-        DownloadProgressHandler? progress = null, CancellationToken ct = default)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default, string? gameDirOverride = null)
     {
         var report = new DependencyInstallReport();
 
         // 1. 主文件
         try
         {
-            var mainPath = await InstallAsync(projectId, version, instanceId, type, progress, ct);
+            var mainPath = await InstallAsync(projectId, version, instanceId, type, progress, ct, gameDirOverride);
             report.Installed.Add(new InstalledDependency(projectId, version.Id, mainPath));
         }
         catch (Exception ex)
@@ -183,7 +184,7 @@ public sealed class EcosystemService
                     report.Failed.Add(new FailedDependency(dep.ProjectId, "依赖版本已不存在"));
                     continue;
                 }
-                var path = await InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, progress, ct);
+                var path = await InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, progress, ct, gameDirOverride);
                 report.Installed.Add(new InstalledDependency(dep.ProjectId, depVersion.Id, path));
             }
             catch (Exception ex)
@@ -231,9 +232,16 @@ public sealed class EcosystemService
     };
 
     public static string ResolveInstallPath(string gameDirectory, string instanceId, ProjectType type)
-        => type == ProjectType.Modpack
-            ? Path.Combine(gameDirectory, "downloads", "modpacks")
-            : Path.Combine(gameDirectory, "versions", instanceId, ResolveSubDir(type)!);
+    {
+        if (type == ProjectType.Modpack)
+            return Path.Combine(gameDirectory, "downloads", "modpacks");
+        var sub = ResolveSubDir(type)!;
+        // 版本隔离判定：版本目录已存在 → 装版本目录（隔离/PCL 实例）；否则装共享目录（非隔离共享 mods）
+        var versionDir = Path.Combine(gameDirectory, "versions", instanceId);
+        return Directory.Exists(versionDir)
+            ? Path.Combine(versionDir, sub)
+            : Path.Combine(gameDirectory, sub);
+    }
 
     /// <summary>从实例名解析游戏版本：1.21.1 → true/"1.21.1"；1.21.1-Fabric → true；自定义名 → false</summary>
     public static bool TryParseGameVersion(string instanceId, out string version)
