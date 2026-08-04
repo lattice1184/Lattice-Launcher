@@ -50,7 +50,7 @@ public class ServerInstallerTests
         Directory.CreateDirectory(vdir);
         File.WriteAllText(Path.Combine(vdir, "1.21.10.json"), """
             {"id":"1.21.10","type":"release","mainClass":"net.minecraft.server.Main",
-             "downloads":{"server":{"url":"https://piston-data.mojang.com/v1/objects/abc/server.jar","sha1":"s"}}}
+             "downloads":{"server":{"url":"https://piston-data.mojang.com/v1/objects/abc/server.jar"}}}
             """);
         return dir;
     }
@@ -232,6 +232,38 @@ public class ServerInstallerTests
             Assert.Contains(handler.Requests, r => r.Contains("bbb/1.21.10.json")); // jar 推断出 1.21.10
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    /// <summary>AL6：版本 json 带正确 sha1——官方返回"≥1MB+PK 头但 sha1 不符"的错误内容（穿过表面校验的假成功）→ 拒绝换下一候选</summary>
+    [Fact]
+    public async Task InstallAsync_WrongSha1Content_RejectsAndTriesNextCandidate()
+    {
+        var handler = new HostStubHandler();
+        var goodJar = FakeJar();
+        // Mojang sha1 是小写 hex——Sha1MatchesAsync 用 Convert.ToHexStringLower 精确比较（大小写敏感）
+        var goodSha1 = Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(goodJar));
+        var badJar = FakeJar();
+        badJar[16] ^= 0x01; // 内容不同但仍 ≥1MB + PK 头——IsValidServerJar 表面校验会放过
+
+        var root = Path.Combine(Path.GetTempPath(), $"srvtest-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, ".minecraft");
+        var vdir = Path.Combine(dir, "versions", "1.21.10");
+        Directory.CreateDirectory(vdir);
+        // 注意：json 闭合花括号在 $""" 插值 raw string 里会被当插值分隔符——用普通转义字符串（与 RouteManifest 同款）
+        File.WriteAllText(Path.Combine(vdir, "1.21.10.json"),
+            $"{{\"id\":\"1.21.10\",\"type\":\"release\",\"mainClass\":\"net.minecraft.server.Main\",\"downloads\":{{\"server\":{{\"url\":\"https://piston-data.mojang.com/v1/objects/abc/server.jar\",\"sha1\":\"{goodSha1}\"}}}}}}");
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, badJar);  // sha1 不符
+        handler.RouteBytes("launcher.mojang.com/v1/objects/abc/server.jar", 200, goodJar);   // sha1 匹配
+        var installer = new ServerInstaller(CreateService(handler));
+        try
+        {
+            var jar = await installer.InstallAsync("1.21.10", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.Equal(goodSha1, Convert.ToHexStringLower(System.Security.Cryptography.SHA1.HashData(File.ReadAllBytes(jar))));
+            Assert.Contains(handler.Requests, r => r.Contains("launcher.mojang.com")); // 走到下一候选
+        }
+        finally { CleanUp(dir); }
     }
 
     /// <summary>AL5：整合包（推断 MC）官方+旧域名都失败 → BMCLAPI 兜底 URL 用 MC 版本而非整合包名（原名必 404）</summary>

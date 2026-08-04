@@ -60,12 +60,15 @@ public sealed class ServerInstaller
         var merged = VersionJsonMerger.ResolveChain(version, id => LoadParent(gameDir, id));
         var serverUrl = merged.Downloads?.Server?.Url;
         long serverSize = 0;
+        // AL6：服务端 jar 的 SHA1 也传给 DownloadService 做真校验——之前恒传 null，错误内容
+        // （碰巧 ≥1MB + PK 魔数，如误路由的大 zip）可穿过表面校验假成功
+        string? serverSha1 = merged.Downloads?.Server?.Sha1;
         // AM：整合包/加载器版本无 downloads.server——推断 MC 版本 → Mojang 清单拿服务端链接（无需装原版）
         // AL5：mcVersion 提到判空外——候选链（BMCLAPI 兜底）也要用 MC 版本，整合包名拼 URL 必 404
         var mcVersion = string.IsNullOrEmpty(serverUrl) ? InferMcVersion(gameDir, versionId, merged) : null;
         if (mcVersion is not null)
         {
-            (serverUrl, serverSize) = await FetchServerInfoAsync(mcVersion, ct);
+            (serverUrl, serverSize, serverSha1) = await FetchServerInfoAsync(mcVersion, ct);
         }
         if (string.IsNullOrEmpty(serverUrl))
         {
@@ -94,7 +97,7 @@ public sealed class ServerInstaller
         {
             try
             {
-                await _downloads.DownloadFileAsync(url, jarPath, null, expectedSize, progress, ct);
+                await _downloads.DownloadFileAsync(url, jarPath, serverSha1, expectedSize, progress, ct);
                 if (IsValidServerJar(jarPath))
                 {
                     last = null;
@@ -157,8 +160,8 @@ public sealed class ServerInstaller
         return m.Success ? m.Groups[1].Value : versionId;
     }
 
-    /// <summary>从 Mojang 版本清单拿指定 MC 版本的服务端下载信息（url/size）</summary>
-    private async Task<(string Url, long Size)> FetchServerInfoAsync(string mcVersion, CancellationToken ct)
+    /// <summary>从 Mojang 版本清单拿指定 MC 版本的服务端下载信息（url/size/sha1）</summary>
+    private async Task<(string Url, long Size, string? Sha1)> FetchServerInfoAsync(string mcVersion, CancellationToken ct)
     {
         var manifest = await _http.GetStringAsync(Launcher.Core.Services.VersionManifestService.ManifestUrl, ct);
         using var doc = JsonDocument.Parse(manifest);
@@ -173,7 +176,8 @@ public sealed class ServerInstaller
                 var url = server.GetProperty("url").GetString()
                     ?? throw new InvalidDataException($"Minecraft {mcVersion} 清单缺少服务端下载链接");
                 var size = server.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var sv) ? sv : 0;
-                return (url, size);
+                var sha1 = server.TryGetProperty("sha1", out var sh) && sh.GetString() is { Length: > 0 } s ? s : null;
+                return (url, size, sha1);
             }
         }
         throw new InvalidDataException($"Mojang 清单中找不到 Minecraft {mcVersion} 的服务端（版本可能过旧/不存在）");
