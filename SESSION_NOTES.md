@@ -178,3 +178,11 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - StartServer 启动前探测 latest.log 锁（FileShare.None 探测）：占用时直接中文提示（结束残留 java.exe / 关闭编辑器），不再启动即失败
 - LogDiagnostics 加模式：Unable to delete file / FileSystemException / 另一个程序已锁定 → 中文说明
 - 197/197 全绿；水位 ~40%
+
+## AK 批次（2026-08-04 19:20 发布 185.8MB）
+修复 PCL 整合包版本启动崩溃（ClassNotFoundException）
+- 用户报：启动「红石生电优化」（PCL 整合包，Fabric）→ exitCode=1 ClassNotFoundException: KnotClient
+- **根因**：JavaArgumentsBuilder 只把带 downloads.artifact 的库加 classpath；PCL 生成的 profile libraries 无 downloads 字段（fabric-loader 链 7/138 条被跳过）→ jar 都在（PCL libraries 有 fabric-loader-0.19.3.jar）但 classpath 没有 → JVM 找不到主类
+- 修复：有 name 即按 maven 坐标推导进 classpath（与 DownloadService 下载逻辑一致）；自装版本 json 全带 downloads 不受影响
+- LogDiagnostics 加 ClassNotFoundException 诊断
+- 测试 +2（199/199 全绿）；提交 6220ecb（下条确认）；水位 ~40%
