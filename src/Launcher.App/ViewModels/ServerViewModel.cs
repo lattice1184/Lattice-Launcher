@@ -138,6 +138,12 @@ public partial class ServerViewModel : ViewModelBase
     [ObservableProperty]
     public partial string OpStatusText { get; set; } = "";
 
+    /// <summary>预生成世界标志：服务端就绪（Done）后自动 stop（AI 批次）</summary>
+    private bool _autoStopOnReady;
+
+    /// <summary>预生成世界完成标志：Exited 时提示"世界已生成"</summary>
+    private bool _worldGenDone;
+
     public ServerViewModel()
     {
         OpNameText = Launcher.Core.Account.AccountService.Shared.Current?.Name ?? "";
@@ -147,6 +153,18 @@ public partial class ServerViewModel : ViewModelBase
             Dispatcher.UIThread.Post(async () =>
             {
                 IsRunning = false;
+                if (_worldGenDone)
+                {
+                    // 预生成世界流程：世界已落盘，正常结束
+                    _worldGenDone = false;
+                    _autoStopOnReady = false;
+                    var world = CurrentLevelName();
+                    AppendLog($"§ 世界「{world}」生成完成，已自动停止");
+                    Status = $"世界「{world}」已生成——玩家可以直接进了";
+                    NotificationService.Success($"世界「{world}」已生成");
+                    RefreshOps();
+                    return;
+                }
                 AppendLog(code == 0 ? "§ 服务端已停止" : $"§ 服务端异常退出（exitCode={code}）");
                 Status = code == 0 ? "服务端已停止" : "服务端异常退出，请查看日志";
                 if (code != 0)
@@ -161,6 +179,7 @@ public partial class ServerViewModel : ViewModelBase
                             + Environment.NewLine + Environment.NewLine + "完整日志可在控制台复制或导出。",
                             "服务端异常退出", "知道了", "");
                 }
+                RefreshOps(); // 停止后 ops.json 为最终态，刷新 OP 列表
             });
         };
         InitSuggestions();
@@ -519,6 +538,7 @@ public partial class ServerViewModel : ViewModelBase
             Status = "服务端运行中（控制台可输命令）";
             AppendLog($"§ 已启动：{java}");
             AppendLog($"§ 内存 {mem}MB · 世界目录 {dir}");
+            RefreshOps(); // 启动后 ops.json 已就绪（含已授予的 OP）
         }
         catch (Exception ex)
         {
@@ -690,6 +710,94 @@ public partial class ServerViewModel : ViewModelBase
         if (name.Length == 0) { OpStatusText = "先输入玩家名"; return; }
         _process.SendCommand($"op {name}");
         OpStatusText = $"已授予 {name} OP——玩家上线即生效";
+        _ = Task.Run(async () => { await Task.Delay(500); Dispatcher.UIThread.Post(RefreshOps); });
+    }
+
+    // ---------- OP 列表（AI：启动器图形化管理服务器权限——读 ops.json，服务器权限 > 游戏内命令） ----------
+
+    /// <summary>OP 列表（ops.json 展示：名字 + 权限等级）</summary>
+    public ObservableCollection<ServerOpEntry> OpsList { get; } = [];
+
+    /// <summary>OP 列表标题（OP 列表（N））</summary>
+    public string OpsCountText => $"OP 列表（{OpsList.Count}）";
+
+    /// <summary>刷新 OP 列表（读 ops.json；服务端启动/停止后 + 手动刷新）</summary>
+    [RelayCommand]
+    private void RefreshOps()
+    {
+        var dir = ServerDir;
+        OpsList.Clear();
+        if (dir is not null)
+            foreach (var op in ServerOpsFile.Load(dir))
+                OpsList.Add(op);
+        OnPropertyChanged(nameof(OpsCountText));
+    }
+
+    /// <summary>移除 OP（deop 命令；服务端写 ops.json 后自动刷新）</summary>
+    [RelayCommand]
+    private async Task RemoveOp(ServerOpEntry entry)
+    {
+        if (!IsRunning) { OpStatusText = "先启动服务端再移除 OP"; return; }
+        _process.SendCommand($"deop {entry.Name}");
+        OpStatusText = $"已发送 deop {entry.Name}";
+        await Task.Delay(500);
+        RefreshOps();
+    }
+
+    // ---------- 预生成世界（AI：启动服务端 → 日志 Done → 自动 stop，空世界落盘） ----------
+
+    private static readonly Regex ServerReady = new(@"Done \(\d+(\.\d+)?s\)!?", RegexOptions.Compiled);
+
+    /// <summary>当前世界名（server.properties 的 level-name，默认 world）</summary>
+    private string CurrentLevelName()
+    {
+        try
+        {
+            var dir = ServerDir;
+            if (dir is not null
+                && ServerProperties.Load(Path.Combine(dir, "server.properties")).Get("level-name") is { } n
+                && n.Length > 0)
+                return n;
+        }
+        catch { }
+        return "world";
+    }
+
+    /// <summary>预生成空世界：启动服务端 → 就绪（Done）自动停止 → 玩家直接进服</summary>
+    [RelayCommand]
+    private async Task GenerateWorld()
+    {
+        var dir = ServerDir;
+        if (dir is null) { await WarnNoVersion(); return; }
+        if (IsRunning || IsInstalling) { Status = "服务端运行中，停止后再生成世界"; return; }
+        if (!File.Exists(Path.Combine(dir, "server.jar"))) { Status = "先下载服务端再生成世界"; return; }
+        var levelName = CurrentLevelName();
+        if (Directory.Exists(Path.Combine(dir, levelName)))
+        {
+            Status = $"世界「{levelName}」已存在，无需生成";
+            return;
+        }
+        if (DialogService.MainWindow() is not { } owner
+            || !await DialogService.Confirm(owner,
+                $"将启动服务端生成新世界「{levelName}」（首次启动约 1~2 分钟），生成完成后自动停止。继续？",
+                "生成世界", "生成世界", "取消"))
+        {
+            return;
+        }
+        _autoStopOnReady = true;
+        _worldGenDone = false;
+        Status = $"正在生成世界「{levelName}」（完成后自动停止）…";
+        await StartServer();
+    }
+
+    /// <summary>行级检测：预生成世界时服务端就绪（Done）→ 自动 stop</summary>
+    private void ParseServerReady(string line)
+    {
+        if (!_autoStopOnReady || !ServerReady.IsMatch(line)) return;
+        _autoStopOnReady = false;
+        _worldGenDone = true;
+        AppendLog("§ 世界生成完成，自动停止…");
+        _process.SendCommand("stop");
     }
 
     /// <summary>日志行玩家解析（joined/left 实时增删；list 输出整体重置）</summary>
@@ -769,5 +877,6 @@ public partial class ServerViewModel : ViewModelBase
         if (Logs.Count >= MaxLogLines) Logs.RemoveAt(0);
         Logs.Add(line);
         ParsePlayerLine(line); // 玩家在线跟踪（joined/left/list）
+        ParseServerReady(line); // 预生成世界：Done → 自动 stop
     }
 }

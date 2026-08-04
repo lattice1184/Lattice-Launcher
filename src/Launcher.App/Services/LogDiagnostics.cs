@@ -43,6 +43,8 @@ public static class LogDiagnostics
             "JVM 致命错误（hs_err）：底层崩溃，多为驱动或硬件问题。可将崩溃文件一并反馈。"),
         (new Regex(@"The required mods are missing|It appears .* did not load correctly|Failed to load mod", RegexOptions.IgnoreCase),
             "模组加载失败：模组文件损坏或与当前版本不兼容。请检查最近安装的模组。"),
+        (new Regex(@"Invalid session|Failed to verify username", RegexOptions.IgnoreCase),
+            "会话校验失败：服务端仍按正版模式运行。若已在 server.properties 关闭正版验证（online-mode=false），必须重启服务端才生效（配置只在启动时读取一次）；若玩家用的是离线客户端，请确认服务端是离线模式。"),
     ];
 
     /// <summary>对日志文本诊断：返回「匹配原文 → 中文说明」列表（同模式只报一次）</summary>
