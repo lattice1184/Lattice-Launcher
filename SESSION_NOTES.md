@@ -200,3 +200,10 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - **解封**：ServerBannedFile（读 banned-players.json）+ 开服页封禁列表卡（名字+解封 pardon 按钮）+ 封禁/启停后自动刷新；banned-players.json 里用户自己把自己封了（iwasGOD）
 - 测试修复：ServerInstallerTests 目录隔离（ServerDir 取 gameDir 父级——%TEMP%/servers 共享残留导致假成功）+ 跳过真实网络预检（测试不依赖外网）
 - 测试 +6（205/205 全绿）；提交 7216ba7；水位 ~40%
+
+## AL3 批次（2026-08-04 23:19 发布 185.8MB）
+server.jar 下载校验 + 解封文件级 + 字号
+- 彻查"缺少或过小"根因：候选 2/3 传 size=null 无校验，BMCLAPI WAF 等返回 200 错误内容被当成功写盘 → 文件过小。修：每候选下载后校验（≥1MB + zip 魔数 PK），无效删除继续下一候选；size 无效转 null
+- 解封点不动：Unban/RemoveOp 停止时直接改 banned-players.json/ops.json（服务端重启生效）——按钮去掉 IsRunning 禁用，随时可点
+- 封禁/OP 列表字号 10→12/13
+- 测试 +7（209/209 全绿）；提交 5d0a221；水位 ~40%
