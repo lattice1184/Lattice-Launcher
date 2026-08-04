@@ -119,17 +119,45 @@ public static class UiAnim
         timer.Start();
     }
 
-    /// <summary>对话框通用平滑进出挂载：Opened 淡入 + Closing 拦截平滑切出后真正关闭（NVIDIA 浮窗风）</summary>
+    /// <summary>对话框通用平滑进出挂载：整窗淡入（Window.Opacity——背景一起动，防"色块瞬间出现"）+ 内容缩放；关闭整窗淡出后真正关闭（NVIDIA 浮窗风）</summary>
     public static void AttachDialog(Window win, Visual root)
     {
-        win.Opened += (_, _) => PopIn(root);
+        win.Opened += (_, _) =>
+        {
+            win.Opacity = 0;
+            FadeTo(win, 1.0, 200);
+            ElasticIn(root, 0.96);
+        };
         var closing = false;
         win.Closing += (_, e) =>
         {
             if (closing) return;
             e.Cancel = true;
-            SmoothOut(root, () => { closing = true; win.Close(); });
+            FadeTo(win, 0.0, 180, () => { closing = true; win.Close(); });
+            SmoothOut(root, null); // 内容同步收缩（窗口淡出负责关闭）
         };
+    }
+
+    /// <summary>窗口透明度插值（淡入淡出；关闭用 CubicEaseIn，出现用 CubicEaseOut）</summary>
+    private static void FadeTo(Window win, double to, int ms, Action? done = null)
+    {
+        var start = win.Opacity;
+        var steps = Math.Max(1, ms / 15);
+        var i = 0;
+        Avalonia.Animation.Easings.Easing ease = to > start ? new CubicEaseOut() : new CubicEaseIn();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
+        timer.Tick += (_, _) =>
+        {
+            i++;
+            var t = Math.Min(1.0, i / (double)steps);
+            win.Opacity = start + (to - start) * ease.Ease(t);
+            if (t >= 1.0)
+            {
+                timer.Stop();
+                done?.Invoke();
+            }
+        };
+        timer.Start();
     }
 
     /// <summary>平滑切出（关闭对话框）：scale 1→0.97 + 淡出（CubicEaseIn），完成回调后再真正关闭</summary>

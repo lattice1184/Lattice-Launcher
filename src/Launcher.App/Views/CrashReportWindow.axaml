@@ -5,7 +5,7 @@
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource BgSurface}">
 
-    <StackPanel Margin="26,22" Spacing="14">
+    <StackPanel x:Name="Root" Margin="26,22" Spacing="14">
         <StackPanel Spacing="4">
             <TextBlock Text="启动器遇到问题" FontSize="18" FontWeight="Bold"
                        Foreground="{StaticResource Danger}"/>
