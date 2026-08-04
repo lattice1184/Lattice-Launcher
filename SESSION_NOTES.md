@@ -213,3 +213,11 @@ server.jar 下载校验 + 解封文件级 + 字号
 - "下载历史算成功"根因：22:08 版校验在任务外（BMCLAPI 200 错误页写盘→任务 Completed→VerifyServerJar 才报错）；AL3（23:19）已把校验移进任务内（失败标红）——用户需用新版
 - 全候选失败错误汇总："已尝试 N 个源，最后错误：..."；加载器/整合包版本无服务端链接时提示先装原版
 - 209/209 全绿；水位 ~40%
+
+## AM 批次（2026-08-04 23:35 发布 185.8MB）
+服务端 URL 自动推断（一键开服自动补齐）
+- 用户："只能特定版本？红石那个是整合包啊——基于一键再完善，自动补齐"
+- **查证**：红石生电优化 = MC 26.2（jar 内 version.json id=26.2，26.x jar 内嵌）；旧版本 jar 无 version.json → id 前缀（1.21.1-Fabric → 1.21.1）/ intermediary
+- ServerInstaller：无 downloads.server 时推断 MC 版本（jar version.json → id 前缀 → intermediary）→ Mojang manifest（piston-meta version_manifest_v2）拉该版本 server url/size——**无需先装原版**（服务端 jar 只依赖父 json 的 downloads.server 字段）
+- 一键开服/下载服务端自动获益；VersionManifestService.ManifestUrl 公开；构造注入 HttpClient
+- 测试 +3（212/212 全绿）；提交 f5fe4c3；水位 ~40%
