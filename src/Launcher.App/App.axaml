@@ -84,7 +84,8 @@
             </Setter>
         </Style>
         <Style Selector="Button:pressed">
-            <Setter Property="Background" Value="{StaticResource BgActive}"/>
+            <!-- 按下变深（#1A2029 比所有按钮底暗；BgActive 反而比底亮会显"白影"） -->
+            <Setter Property="Background" Value="#1A2029"/>
         </Style>
 
         <!-- 窗口与文本 -->
@@ -152,44 +153,6 @@
         <Style Selector="Button.ghost:hover">
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
-        </Style>
-
-        <!-- 导航按钮：固定尺寸（无弹性缩放，涟漪由全局 Button 挂载）+ 激活态左侧 Accent 色条 -->
-        <Style Selector="Button.nav">
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="False"/>
-            <Setter Property="Template">
-                <ControlTemplate TargetType="Button">
-                    <Border Background="{TemplateBinding Background}"
-                            CornerRadius="{TemplateBinding CornerRadius}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            ClipToBounds="True">
-                        <Grid>
-                            <ContentPresenter Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              HorizontalAlignment="Left" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
-                            <Canvas x:Name="RippleHost" IsHitTestVisible="False"/>
-                        </Grid>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="Button.nav:hover">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-        </Style>
-        <Style Selector="Button.nav.active">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Background" Value="#12332F"/>
-            <Setter Property="BorderThickness" Value="3,0,0,0"/>
-            <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
-        </Style>
-        <Style Selector="Button.nav.active:hover">
-            <Setter Property="Background" Value="#16403A"/>
         </Style>
 
         <!-- 生态 Tab -->

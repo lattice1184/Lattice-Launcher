@@ -13,6 +13,12 @@
 4. **grep 定位优先**：找符号/字符串用 Grep 工具（只返回命中行），不 Read 全文。
 5. **subagent 大输出**：让 subagent 把长结果写文件，只回传路径 + 摘要。
 
+## 防爆关键配置（2026-08-03 查证，可信度高）
+1. **`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70`**（用户已设系统环境变量，验证过 1M 窗口 83% 默认阈值 → 提前到 ~700k 触发压缩）。注意：此变量只能调低不能调高；放 settings.json 的 env 块无效（#63186），必须是真实进程环境变量。
+2. **max_tokens 预留 = 窗口/8**（1M→131072），不可配置。真正治本：中转层把模型 max_tokens clamp 到 64k，或去掉模型串的 1M 标记（Claude Code 按 200K 处理 → max_tokens≈25k → 永不 400，代价是压缩更频繁）。
+3. 状态栏自带上下文百分比（statusline hook 有 context_window.total/used/percent）；/context 显示分类预算；两者数字可能不一致（已知 bug 群）。
+4. Bash 工具输出硬截断 ~30K 字符（不可配）；超长输出照样注入，仍要重定向。
+
 ## 上下文调度（长会话例行）
 1. 每完成一个批次（一组相关改动）→ **更新 `SESSION_NOTES.md`**：时间、做了什么、涉及文件、测试结果、提交 hash（3~8 行/批）。
 2. `SESSION_NOTES.md` 超过 ~50KB → 把精华合并进 `PROJECT_STATE.md`，重置 SESSION_NOTES。
