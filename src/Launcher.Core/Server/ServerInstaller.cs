@@ -57,17 +57,24 @@ public sealed class ServerInstaller
         var dir = ServerDir(gameDir, versionId);
         Directory.CreateDirectory(dir);
         var jarPath = Path.Combine(dir, "server.jar");
-        try
+        // 候选下载链（AL2 三源）：官方 piston-data → launcher.mojang.com 旧域名 → BMCLAPI 镜像。
+        // 官方直连国内不稳（"下载服务端基本失败"根因）；BMCLAPI 签名 CDN 也可能挂——逐源尝试直到成功
+        var candidates = new List<string> { serverUrl };
+        if (serverUrl.Contains("piston-data.mojang.com"))
+            candidates.Add(serverUrl.Replace("piston-data.mojang.com", "launcher.mojang.com"));
+        candidates.Add($"https://bmclapi2.bangbang93.com/version/{Uri.EscapeDataString(versionId)}/server");
+        Exception? last = null;
+        foreach (var url in candidates)
         {
-            // 官方源（piston-data.mojang.com）直连——国内网络不稳，"下载服务端基本失败"根因（AL 批次）
-            await _downloads.DownloadFileAsync(serverUrl, jarPath, null, size, progress, ct);
+            try
+            {
+                await _downloads.DownloadFileAsync(url, jarPath, null, size, progress, ct);
+                last = null;
+                break;
+            }
+            catch (Exception ex) { last = ex; }
         }
-        catch
-        {
-            // 官方失败 → BMCLAPI 镜像服务端接口（302 到 CDN，国内加速；大小未知不校验）
-            var mirror = $"https://bmclapi2.bangbang93.com/version/{Uri.EscapeDataString(versionId)}/server";
-            await _downloads.DownloadFileAsync(mirror, jarPath, null, null, progress, ct);
-        }
+        if (last is not null) throw last;
         WriteDefaultProperties(dir);
         return jarPath;
     }

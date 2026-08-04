@@ -186,6 +186,7 @@ public partial class ServerViewModel : ViewModelBase
                             "服务端异常退出", "知道了", "");
                 }
                 RefreshOps(); // 停止后 ops.json 为最终态，刷新 OP 列表
+                RefreshBanned(); // 停止后 banned-players.json 为最终态，刷新封禁列表
             });
         };
         InitSuggestions();
@@ -564,6 +565,7 @@ public partial class ServerViewModel : ViewModelBase
             AppendLog($"§ 已启动：{java}");
             AppendLog($"§ 内存 {mem}MB · 世界目录 {dir}");
             RefreshOps(); // 启动后 ops.json 已就绪（含已授予的 OP）
+            RefreshBanned(); // 启动后 banned-players.json 已就绪
         }
         catch (Exception ex)
         {
@@ -711,9 +713,13 @@ public partial class ServerViewModel : ViewModelBase
     [RelayCommand]
     private void KickPlayer(ServerPlayerVM player) => PlayerOp($"kick {player.Name}", $"已踢出 {player.Name}");
 
-    /// <summary>封禁玩家</summary>
+    /// <summary>封禁玩家（封禁后 500ms 刷新封禁列表——ban 后玩家不在线，解封入口必须在列表里）</summary>
     [RelayCommand]
-    private void BanPlayer(ServerPlayerVM player) => PlayerOp($"ban {player.Name}", $"已封禁 {player.Name}");
+    private void BanPlayer(ServerPlayerVM player)
+    {
+        PlayerOp($"ban {player.Name}", $"已封禁 {player.Name}");
+        _ = Task.Run(async () => { await Task.Delay(500); Dispatcher.UIThread.Post(RefreshBanned); });
+    }
 
     /// <summary>授予 OP</summary>
     [RelayCommand]
@@ -767,6 +773,37 @@ public partial class ServerViewModel : ViewModelBase
         OpStatusText = $"已发送 deop {entry.Name}";
         await Task.Delay(500);
         RefreshOps();
+    }
+
+    // ---------- 封禁列表（AL2：图形化解封——ban 后玩家不在线，必须有独立入口） ----------
+
+    /// <summary>封禁列表（banned-players.json 展示：名字 + 封禁时间）</summary>
+    public ObservableCollection<ServerBannedEntry> BannedList { get; } = [];
+
+    /// <summary>封禁列表标题（封禁列表（N））</summary>
+    public string BannedCountText => $"封禁列表（{BannedList.Count}）";
+
+    /// <summary>刷新封禁列表（读 banned-players.json；服务端启动/停止后 + 手动刷新）</summary>
+    [RelayCommand]
+    private void RefreshBanned()
+    {
+        var dir = ServerDir;
+        BannedList.Clear();
+        if (dir is not null)
+            foreach (var b in ServerBannedFile.Load(dir))
+                BannedList.Add(b);
+        OnPropertyChanged(nameof(BannedCountText));
+    }
+
+    /// <summary>解封（pardon 命令；服务端写 banned-players.json 后自动刷新）</summary>
+    [RelayCommand]
+    private async Task Unban(ServerBannedEntry entry)
+    {
+        if (!IsRunning) { OpStatusText = "先启动服务端再解封"; return; }
+        _process.SendCommand($"pardon {entry.Name}");
+        OpStatusText = $"已发送 pardon {entry.Name}——该玩家可重新进服";
+        await Task.Delay(500);
+        RefreshBanned();
     }
 
     // ---------- 预生成世界（AI：启动服务端 → 日志 Done → 自动 stop，空世界落盘） ----------
