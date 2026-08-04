@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -13,6 +14,9 @@ namespace Launcher.App.ViewModels;
 
 /// <summary>server.properties 编辑行控件类型</summary>
 public enum PropControlKind { Text, Bool, Number, Choice }
+
+/// <summary>在线玩家行（服务器图形化管理）</summary>
+public sealed record ServerPlayerVM(string Name);
 
 /// <summary>server.properties 编辑行（按类型渲染：文本/开关/数字/下拉）</summary>
 public partial class PropRowVM : ObservableObject
@@ -73,6 +77,16 @@ public partial class ServerViewModel : ViewModelBase
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
     public ObservableCollection<PropRowVM> PropRows { get; } = [];
     public ObservableCollection<string> Logs { get; } = [];
+
+    /// <summary>在线玩家（日志解析 joined/left the game + list 命令回填）</summary>
+    public ObservableCollection<ServerPlayerVM> OnlinePlayers { get; } = [];
+
+    /// <summary>在线玩家标题（在线玩家（N））</summary>
+    public string PlayersCountText => $"在线玩家（{OnlinePlayers.Count}）";
+
+    private static readonly Regex JoinedGame = new(@"]: (.+?) joined the game", RegexOptions.Compiled);
+    private static readonly Regex LeftGame = new(@"]: (.+?) left the game", RegexOptions.Compiled);
+    private static readonly Regex PlayerList = new(@"There are \d+ of a max of \d+ players online: (.+)", RegexOptions.Compiled);
 
     [ObservableProperty]
     public partial VersionInstanceVM? SelectedVersion { get; set; }
@@ -362,6 +376,67 @@ public partial class ServerViewModel : ViewModelBase
         _process.SendCommand(cmd);
     }
 
+    // ---------- 服务器图形化管理 ----------
+
+    /// <summary>机器状态"去更改"→ 设置页（内存/Java 作为单次服务器配置，改后启动即用）</summary>
+    [RelayCommand]
+    private void GoToSettings() => MainViewModel.Current?.NavigateCommand.Execute("settings");
+
+    /// <summary>刷新玩家列表（list 命令 → 日志解析回填）</summary>
+    [RelayCommand]
+    private void RefreshPlayers()
+    {
+        if (!IsRunning) return;
+        _process.SendCommand("list");
+    }
+
+    /// <summary>踢出玩家</summary>
+    [RelayCommand]
+    private void KickPlayer(ServerPlayerVM player) => PlayerOp($"kick {player.Name}", $"已踢出 {player.Name}");
+
+    /// <summary>封禁玩家</summary>
+    [RelayCommand]
+    private void BanPlayer(ServerPlayerVM player) => PlayerOp($"ban {player.Name}", $"已封禁 {player.Name}");
+
+    /// <summary>授予 OP</summary>
+    [RelayCommand]
+    private void OpPlayer(ServerPlayerVM player) => PlayerOp($"op {player.Name}", $"已授予 {player.Name} OP");
+
+    private void PlayerOp(string command, string doneText)
+    {
+        if (!IsRunning) return;
+        _process.SendCommand(command);
+        NotificationService.Success(doneText);
+    }
+
+    /// <summary>日志行玩家解析（joined/left 实时增删；list 输出整体重置）</summary>
+    private void ParsePlayerLine(string line)
+    {
+        if (JoinedGame.Match(line) is { Success: true } j && j.Groups[1].Value is var jn
+            && OnlinePlayers.All(p => p.Name != jn))
+        {
+            OnlinePlayers.Add(new ServerPlayerVM(jn));
+            OnPropertyChanged(nameof(PlayersCountText));
+        }
+        else if (LeftGame.Match(line) is { Success: true } l)
+        {
+            var ln = l.Groups[1].Value;
+            var hit = OnlinePlayers.FirstOrDefault(p => p.Name == ln);
+            if (hit is not null)
+            {
+                OnlinePlayers.Remove(hit);
+                OnPropertyChanged(nameof(PlayersCountText));
+            }
+        }
+        else if (PlayerList.Match(line) is { Success: true } pl)
+        {
+            OnlinePlayers.Clear();
+            foreach (var name in pl.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                OnlinePlayers.Add(new ServerPlayerVM(name));
+            OnPropertyChanged(nameof(PlayersCountText));
+        }
+    }
+
     /// <summary>加载 server.properties 到编辑表单（默认值兜底）</summary>
     private void LoadProperties()
     {
@@ -410,5 +485,6 @@ public partial class ServerViewModel : ViewModelBase
         }
         if (Logs.Count >= MaxLogLines) Logs.RemoveAt(0);
         Logs.Add(line);
+        ParsePlayerLine(line); // 玩家在线跟踪（joined/left/list）
     }
 }
