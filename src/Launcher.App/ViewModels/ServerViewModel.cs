@@ -202,7 +202,7 @@ public partial class ServerViewModel : ViewModelBase
                 {
                     // 动态诊断：等 stdout 缓冲刷完，用已收集日志匹配已知错误模式 → 中文原因弹窗
                     await Task.Delay(300);
-                    var diag = Launcher.App.Services.LogDiagnostics.Diagnose(string.Join(Environment.NewLine, Logs));
+                    var diag = Launcher.Core.Diagnostics.LogDiagnostics.Diagnose(string.Join(Environment.NewLine, Logs));
                     foreach (var d in diag) AppendLog("§ 诊断：" + d.Replace(Environment.NewLine, " "));
                     if (diag.Count > 0 && DialogService.MainWindow() is { } owner)
                         await DialogService.Warn(owner, $"服务端启动失败（exitCode={code}）",

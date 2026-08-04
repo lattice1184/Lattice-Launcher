@@ -3,9 +3,11 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Launcher.App.Services;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.Views;
@@ -16,6 +18,8 @@ namespace Launcher.App.Views;
 public partial class CrashReportWindow : Window
 {
     private string _error = "";
+    private string? _fixVersionId;
+    private string? _fixGameDir;
 
     public CrashReportWindow()
     {
@@ -26,13 +30,32 @@ public partial class CrashReportWindow : Window
     /// <summary>展示崩溃窗口（主窗口存在时作为模态；否则独立）</summary>
     public static void Show(string error) => Show("启动器遇到问题", error, RecentLogs());
 
-    /// <summary>展示崩溃窗口（自定义标题/错误/日志预览——游戏崩溃与启动器崩溃共用）</summary>
-    public static void Show(string title, string error, string logPreview)
+    /// <summary>展示崩溃窗口（自定义标题/错误/日志预览——游戏崩溃与启动器崩溃共用）。
+    /// AL9：可选传入诊断结果（规则命中列表）与修复目标——非纯建议类问题显示「一键修复」按钮。</summary>
+    public static void Show(string title, string error, string logPreview,
+        IReadOnlyList<DiagnosticHit>? diagnostics = null,
+        string? fixVersionId = null, string? fixGameDir = null)
     {
         var win = new CrashReportWindow { _error = error };
         win.Title = title;
         win.ErrorText.Text = error;
         win.LogPreview.Text = logPreview;
+        if (diagnostics is { Count: > 0 })
+        {
+            win.DiagSection.IsVisible = true;
+            var hasFixable = false;
+            foreach (var h in diagnostics)
+            {
+                var fixable = h.Fix != FixKind.AdviceOnly;
+                hasFixable |= fixable;
+                win.DiagList.Items.Add(new DiagLine($"▸ 匹配：{h.Snippet}\n  说明：{h.Explanation}",
+                    fixable ? "· 可自动修复" : "· 需手动处理",
+                    fixable ? new SolidColorBrush(Color.Parse("#5AD07C")) : new SolidColorBrush(Color.Parse("#E8C46B")), h.Fix));
+            }
+            win.RepairBtn.IsVisible = hasFixable && !string.IsNullOrEmpty(fixVersionId);
+            win._fixVersionId = fixVersionId;
+            win._fixGameDir = fixGameDir;
+        }
         if (Application.Current?.ApplicationLifetime is
             Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime { MainWindow: { } main }
             && main.PlatformImpl is not null && main.IsVisible)
@@ -148,4 +171,34 @@ public partial class CrashReportWindow : Window
     }
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
+
+    /// <summary>AL9 一键修复：后台执行（补全重下走下载队列/重解压 natives），完成后提示用户重新启动</summary>
+    private async void OnRepair(object? sender, RoutedEventArgs e)
+    {
+        var versionId = _fixVersionId;
+        var gameDir = _fixGameDir ?? "";
+        if (string.IsNullOrEmpty(versionId)) return;
+        RepairBtn.IsEnabled = false;
+        RepairBtn.Content = "正在修复…";
+        try
+        {
+            var kind = DiagList.Items.OfType<DiagLine>()
+                .FirstOrDefault(l => l.Kind != FixKind.AdviceOnly)?.Kind ?? FixKind.Redownload;
+            var result = await Task.Run(async () =>
+            {
+                try
+                {
+                    return kind == FixKind.ReExtractNatives
+                        ? AutoRepairService.FixNatives(versionId, gameDir)
+                        : await AutoRepairService.FixRedownloadAsync(versionId, gameDir);
+                }
+                catch (Exception ex) { return $"修复失败：{ex.Message}"; }
+            });
+            RepairBtn.Content = result.StartsWith("修复失败") ? "修复失败（看日志）" : "修复完成，请重新启动";
+        }
+        finally { RepairBtn.IsEnabled = true; }
+    }
 }
+
+/// <summary>崩溃窗诊断区单行（AL9；顶层类型——嵌套私有类型 XAML 编译器无法解析）</summary>
+public sealed record DiagLine(string Text, string FixText, IBrush FixBrush, FixKind Kind);

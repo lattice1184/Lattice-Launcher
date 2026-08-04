@@ -62,8 +62,22 @@ public sealed class GameLaunchService
         // log4j 配置兜底：version.json 指定的文件缺失时写入标准模板
         EnsureLog4jConfig(version, gameDirectory);
 
-        // natives 解压：只提取原生库文件（.dll/.so/.dylib）平铺到 natives 根目录（忽略 jar 内目录结构）
-        foreach (var nativeJar in profile.NativeJars)
+        ExtractNatives(profile.NativeJars, profile.NativesDirectory, onLog);
+
+        onStage?.Invoke("启动 JVM");
+        return LaunchProcess.Start(profile, onLog, ct);
+    }
+
+    /// <summary>解压 natives：只提取原生库文件（.dll/.so/.dylib）平铺到 natives 根目录（忽略 jar 内目录结构）。
+    /// AL9 提取为静态方法供自修复（AutoRepairService.FixNatives）复用；clearFirst 先清残留 dll。</summary>
+    public static void ExtractNatives(string[] nativeJars, string nativesDirectory, Action<string>? onLog = null, bool clearFirst = false)
+    {
+        if (clearFirst)
+        {
+            try { if (Directory.Exists(nativesDirectory)) Directory.Delete(nativesDirectory, true); } catch { }
+        }
+        Directory.CreateDirectory(nativesDirectory);
+        foreach (var nativeJar in nativeJars)
         {
             if (!File.Exists(nativeJar)) continue;
             try
@@ -77,15 +91,12 @@ public sealed class GameLaunchService
                         && !name.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
                         && !name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    var dest = Path.Combine(profile.NativesDirectory, name);
+                    var dest = Path.Combine(nativesDirectory, name);
                     entry.ExtractToFile(dest, overwrite: true);
                 }
             }
             catch (Exception ex) { onLog?.Invoke($"§ natives 解压警告 {Path.GetFileName(nativeJar)}: {ex.Message}"); }
         }
-
-        onStage?.Invoke("启动 JVM");
-        return LaunchProcess.Start(profile, onLog, ct);
     }
 
     /// <summary>按 MC 版本推断所需 Java 大版本（version.json 无 javaVersion 时）：1.17+ → 17；更旧 → 8</summary>
