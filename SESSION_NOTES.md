@@ -227,3 +227,11 @@ server.jar 下载校验 + 解封文件级 + 字号
 - **根因 A（历史误报"完成"）**：DownloadTask 组任务状态推导竞态——子任务失败时 SetState(Failed) 经 UI Post **异步**生效，而 Completion **同步**完成；父任务 WhenAll 返回时子任务 State 仍是 Downloading → 误判无失败 → 父任务 Completed → 历史绿色"完成"。**影响所有组任务**（版本下载/加载器/服务端）。修：新增 internal TerminalState 同步终态（Post 前同步记录），组推导改读 TerminalState；Retry/Resume 重置。回归测试 DeferredSyncContext（Post 入队手动 Drain）精确复现——修复前 Actual: Completed
 - **根因 B（还是失败）**：BMCLAPI 兜底候选用 versionId（"红石生电优化"）拼 URL → 必然 404。修：候选 3 用推断出的 MC 版本（mcVersion ?? 数字前缀），官方直连失败时兜底真正可用
 - 测试 +4（216/216 全绿）；提交 084af72；水位 ~40%
+
+## AL6 批次（2026-08-04 23:52 发布 185.8MB）
+服务端 jar SHA1 真校验（探索 agent 补充发现的第三层漏洞）
+- 之前 ServerInstaller 恒传 sha1=null：错误内容碰巧 ≥1MB+PK 魔数（误路由大 zip/gzip）可穿过 IsValidServerJar 表面校验假成功
+- 修：版本 json 的 downloads.server.sha1 传给 DownloadFileAsync（Mojang sha1 是小写 hex——Sha1MatchesAsync 用 Convert.ToHexStringLower 精确比较，测试踩坑大写不匹配）
+- FetchServerInfoAsync 返回 sha1（manifest 推断路径同样拿到）
+- 测试 +1（217/217 全绿）：官方返回"sha1 不符但表面合法"内容 → 拒绝换下一候选
+- 提交 5de410e（随 AL5 的 DownloadTask 竞态修复一起，本次为 SHA1 校验独立提交）；水位 ~40%
