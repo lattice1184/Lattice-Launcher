@@ -20,6 +20,7 @@ public partial class CrashReportWindow : Window
     public CrashReportWindow()
     {
         InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
     }
 
     /// <summary>展示崩溃窗口（主窗口存在时作为模态；否则独立）</summary>
