@@ -60,14 +60,12 @@ public sealed class ServerInstaller
         var merged = VersionJsonMerger.ResolveChain(version, id => LoadParent(gameDir, id));
         var serverUrl = merged.Downloads?.Server?.Url;
         long serverSize = 0;
-        if (string.IsNullOrEmpty(serverUrl))
+        // AM：整合包/加载器版本无 downloads.server——推断 MC 版本 → Mojang 清单拿服务端链接（无需装原版）
+        // AL5：mcVersion 提到判空外——候选链（BMCLAPI 兜底）也要用 MC 版本，整合包名拼 URL 必 404
+        var mcVersion = string.IsNullOrEmpty(serverUrl) ? InferMcVersion(gameDir, versionId, merged) : null;
+        if (mcVersion is not null)
         {
-            // AM：整合包/加载器版本无 downloads.server——推断 MC 版本 → Mojang 清单拿服务端链接（无需装原版）
-            var mc = InferMcVersion(gameDir, versionId, merged);
-            if (mc is not null)
-            {
-                (serverUrl, serverSize) = await FetchServerInfoAsync(mc, ct);
-            }
+            (serverUrl, serverSize) = await FetchServerInfoAsync(mcVersion, ct);
         }
         if (string.IsNullOrEmpty(serverUrl))
         {
@@ -89,7 +87,8 @@ public sealed class ServerInstaller
         var candidates = new List<string> { serverUrl };
         if (serverUrl.Contains("piston-data.mojang.com"))
             candidates.Add(serverUrl.Replace("piston-data.mojang.com", "launcher.mojang.com"));
-        candidates.Add($"https://bmclapi2.bangbang93.com/version/{Uri.EscapeDataString(versionId)}/server");
+        // AL5：BMCLAPI 兜底必须用 MC 版本——"红石生电优化"等整合包/加载器 versionId 拼出必然 404 的 URL
+        candidates.Add($"https://bmclapi2.bangbang93.com/version/{Uri.EscapeDataString(mcVersion ?? PrefixVersionId(versionId))}/server");
         Exception? last = null;
         foreach (var url in candidates)
         {
@@ -149,6 +148,13 @@ public sealed class ServerInstaller
                 return lib.Name["net.fabricmc:intermediary:".Length..];
         }
         return null;
+    }
+
+    /// <summary>BMCLAPI 兜底版本 id：versionId 的数字前缀（1.21.1-Fabric 0.19.3 → 1.21.1）；无前缀原样（普通版本）</summary>
+    private static string PrefixVersionId(string versionId)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(versionId, @"^(\d+\.\d+(\.\d+)?)");
+        return m.Success ? m.Groups[1].Value : versionId;
     }
 
     /// <summary>从 Mojang 版本清单拿指定 MC 版本的服务端下载信息（url/size）</summary>
