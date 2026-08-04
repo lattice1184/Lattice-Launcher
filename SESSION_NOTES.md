@@ -137,3 +137,12 @@ hover 行为根治 + 服务端诊断弹窗 + 一键进服 + 导出报告中文�
 - 测试：ResolveInstallPath 断言更新（新隔离语义——临时目录建 versions/{id} 验证）；CF 测试防幂等残留（共享 mods 同名文件 sha1 跳过 → 请求断言偶发失败，开头清理）
 - 水位：~34%（310k/917k）
 - 提交 1be7011；192/192 全绿
+
+## AG 批次（2026-08-04 17:07 发布 185.8MB）
+真实加载器检测 + 版本页状态同步 + 内网 IP
+- AG1 **LoaderDetector（新建）**：读版本 json（inheritsFrom 链）按 mainClass 真实判定 fabric/forge/neoforge/quilt/原版——替代名字猜测（GuessLoader/LoaderBadgeOf）。版本列表徽章 + 下载页实例下拉徽章（VersionInstanceVM 加 LoaderBadge 第 4 参）；mod 搜索/安装加载器筛选优先真实徽章
+- AG2 **状态同步**：MainViewModel.RunningVersion（全局运行态：客户端/服务端；Home/Server VM 的 OnIsRunningChanged 上报）；版本页详情卡运行徽章（绿标"运行中（客户端/服务端）"）；服务端运行中时 JarMissing 红字弱化（"不影响开服"）；**版本页每次进入强制重扫**（Navigate/NavigateToVersionAsync 改 LoadAsync）——下载补全后红字同步消失（用户"同步一定要做好"根因：_loaded 缓存不重扫）
+- AG3 **内网 IP**：开服页机器状态卡显示"局域网地址：ip:port"（NetworkInterface 私有段检测 + server.properties 端口）+ 复制按钮（服务端运行中显示）
+- 查证：1.21.10 是纯原版（mainClass=net.minecraft.client.main.Main、官方 client.jar URL）——非 NeoForge；NeoForge 安装器生成的版本名本就带后缀（与 PCL 一致）
+- 水位：~40%（369k/917k）
+- 提交 8b3d2a1；192/192 全绿
