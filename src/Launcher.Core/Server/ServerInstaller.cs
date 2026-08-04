@@ -57,7 +57,17 @@ public sealed class ServerInstaller
         var dir = ServerDir(gameDir, versionId);
         Directory.CreateDirectory(dir);
         var jarPath = Path.Combine(dir, "server.jar");
-        await _downloads.DownloadFileAsync(serverUrl, jarPath, null, size, progress, ct);
+        try
+        {
+            // 官方源（piston-data.mojang.com）直连——国内网络不稳，"下载服务端基本失败"根因（AL 批次）
+            await _downloads.DownloadFileAsync(serverUrl, jarPath, null, size, progress, ct);
+        }
+        catch
+        {
+            // 官方失败 → BMCLAPI 镜像服务端接口（302 到 CDN，国内加速；大小未知不校验）
+            var mirror = $"https://bmclapi2.bangbang93.com/version/{Uri.EscapeDataString(versionId)}/server";
+            await _downloads.DownloadFileAsync(mirror, jarPath, null, null, progress, ct);
+        }
         WriteDefaultProperties(dir);
         return jarPath;
     }
