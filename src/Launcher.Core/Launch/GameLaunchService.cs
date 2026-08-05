@@ -43,11 +43,31 @@ public sealed class GameLaunchService
         // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）。
         //    版本 JSON 无 javaVersion 时按 MC 版本推断（<1.17 → Java 8；1.17+ → 17/21），避免旧版本误选 Java 21
         onStage?.Invoke("检测 Java");
+        // AL10.2：Java 大版本优先取版本自身，缺失时沿 InheritsFrom 链继承父版本——
+        // fabric/forge profile 无 javaVersion 字段，继承原版（如 26.2 → Java 25）；否则 InferJavaMajor
+        // 对 "fabric-loader-..." 匹配失败兜底 17，选到 java-runtime-beta → UnsupportedClassVersionError
+        var requiredMajor = version.JavaVersion?.MajorVersion;
+        if (requiredMajor is null && version.InheritsFrom is { } parentId)
+        {
+            var parentJson = Path.Combine(gameDirectory, "versions", parentId, $"{parentId}.json");
+            if (File.Exists(parentJson))
+            {
+                try
+                {
+                    requiredMajor = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(parentJson))
+                        ?.JavaVersion?.MajorVersion;
+                }
+                catch { /* 父 json 损坏则继续兜底推断 */ }
+            }
+        }
+        requiredMajor ??= InferJavaMajor(version.Id);
         var java = javaPathOverride is { } ov && File.Exists(ov)
             ? ov
             : LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
                 ? custom
-                : JavaSelector.Pick(version.JavaVersion?.MajorVersion ?? InferJavaMajor(version.Id));
+                : JavaSelector.Pick(requiredMajor)
+                    ?? throw new InvalidOperationException(
+                        $"需要 Java {requiredMajor}，但本机未找到匹配版本（可在设置页手动指定 Java 路径）");
 
         // 4. 构建档案 + natives 解压 + log4j 兜底 + 启动进程
         onStage?.Invoke("解压 natives");

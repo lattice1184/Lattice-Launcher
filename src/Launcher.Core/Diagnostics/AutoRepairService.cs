@@ -2,6 +2,7 @@ using System.Text.Json;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
 using Launcher.Core.Model.Mojang;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Diagnostics;
 
@@ -35,7 +36,26 @@ public sealed class AutoRepairService
         await task.Completion;
         if (task.TerminalState != DownloadTaskState.Completed)
             throw new InvalidOperationException($"补全未完成（{task.TerminalState}）");
+        // AL10.2：下载后校验文件完整性——修复不得"虚假成功"（下载列表曾静默跳过 url 形式库），缺失如实报告
+        var missing = VerifyFiles(merged, gameDir);
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"补全后仍缺 {missing.Count} 个文件（首例：{missing[0]}）");
         return "补全完成";
+    }
+
+    /// <summary>校验版本文件完整性：client jar + 全部 libraries 本地存在；返回缺失清单（空 = 完整）</summary>
+    public static List<string> VerifyFiles(VersionJson merged, string gameDir)
+    {
+        var missing = new List<string>();
+        var clientPath = Path.Combine(gameDir, "versions", merged.Id, $"{merged.Id}.jar");
+        if (!File.Exists(clientPath)) missing.Add(clientPath);
+        var librariesDir = Path.Combine(gameDir, "libraries");
+        foreach (var lib in merged.Libraries ?? [])
+        {
+            var p = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
+            if (!File.Exists(p)) missing.Add(p);
+        }
+        return missing;
     }
 
     /// <summary>读磁盘父版本 json（inheritsFrom 链解析用）；缺失/损坏返回 null</summary>

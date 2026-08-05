@@ -89,7 +89,21 @@ public partial class VersionBrowseViewModel : ViewModelBase
                 }
             }
 
-            _all = [.. _all.OrderByDescending(r => r.Id)];
+            // AL10.2：隐藏被加载器版本继承的父版本（依赖不单独显示，避免"下载一次冒两个版本"；
+            // 要玩纯净原版可从下载页单独下载原版——无继承关系即显示）
+            var inherited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in _all)
+            {
+                var json = Path.Combine(row.GameDir, "versions", row.Id, $"{row.Id}.json");
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(json));
+                    if (doc.RootElement.TryGetProperty("inheritsFrom", out var p) && p.GetString() is { } pid)
+                        inherited.Add(pid);
+                }
+                catch { /* json 缺失/损坏跳过 */ }
+            }
+            _all = [.. _all.Where(r => !inherited.Contains(r.Id)).OrderByDescending(r => r.Id)];
             Rebuild();
             var own = _all.Count(r => r.SourceLabel == "本启动器");
             var pcl = _all.Count(r => r.SourceLabel == "PCL2");

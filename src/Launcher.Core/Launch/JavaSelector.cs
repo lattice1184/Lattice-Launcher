@@ -1,58 +1,168 @@
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+
 namespace Launcher.Core.Launch;
 
 /// <summary>
-/// Java 自动选配：按版本要求的 JDK 大版本选择本机可用 Java。
-/// 探测 PCL 缓存的 runtime（AppData\Roaming\.minecraft\runtime）+ PATH 兜底。
+/// Java 自动选配：扫描本机所有 Java（AppData\.minecraft\runtime 各组件 + 注册表 JDK/JRE/Adoptium +
+/// JAVA_HOME + PATH + Program Files 常见目录），按版本要求的 JDK 大版本选择最接近的可用 Java。
+/// AL10.2：不再只看 PCL 缓存的 runtime——用户"直接调用电脑里已有的"；找不到匹配返回 null 由调用方
+/// 触发下载或提示（GameLaunchService 已处理父版本继承 javaVersion）。
 /// </summary>
 public static class JavaSelector
 {
+    /// <summary>已知 runtime 组件名 → 大版本（AppData\.minecraft\runtime 官方布局）</summary>
     private static readonly (string Name, int Major)[] Runtimes =
     [
+        ("java-runtime-epsilon", 25),
         ("java-runtime-delta", 21),
         ("java-runtime-beta", 17),
         ("java-runtime-alpha", 16),
-        ("java-runtime-epsilon", 25),
         ("jre-legacy", 8),
     ];
 
-    /// <summary>选择 Java 可执行文件路径；找不到时返回 "java"（PATH 兜底）</summary>
-    public static string Pick(int? requiredMajor)
+    public sealed record JavaInstall(string Path, int Major);
+
+    /// <summary>选择 Java 可执行文件路径；找不到匹配版本时返回 null（调用方决定下载或提示）。</summary>
+    public static string? Pick(int? requiredMajor) => BestMatch(ScanInstalled(), requiredMajor);
+
+    /// <summary>纯选型逻辑（可单测）：版本要求是"最低 Java"，选 ≥ 要求且最接近的
+    /// （JVM 向后兼容低 class 文件版本，不能向前）；无要求选最高可用。</summary>
+    public static string? BestMatch(IReadOnlyList<JavaInstall> installed, int? requiredMajor)
     {
-        // 1. 精确匹配版本要求的 runtime
-        if (requiredMajor is { } major)
+        if (installed.Count == 0) return "java"; // PATH 兜底（极端环境）
+        if (requiredMajor is { } req)
         {
-            var best = Runtimes
-                .Where(r => r.Major <= major)
-                .OrderByDescending(r => r.Major)
-                .FirstOrDefault();
-            if (best.Name is not null)
-            {
-                var exact = FindRuntime(best.Name);
-                if (exact is not null) return exact;
-            }
+            var best = installed.Where(j => j.Major >= req).OrderBy(j => j.Major).FirstOrDefault();
+            return best?.Path; // null → 本机无满足版本，调用方自动下载/提示
         }
-
-        // 2. 任何可用 runtime（优先 21）
-        foreach (var (name, _) in Runtimes)
-        {
-            var exe = FindRuntime(name);
-            if (exe is not null) return exe;
-        }
-
-        // 3. PATH 兜底
-        return "java";
+        return installed.OrderByDescending(j => j.Major).First().Path;
     }
 
-    private static string? FindRuntime(string name)
+    /// <summary>扫描本机所有 Java 安装（去重；路径优先推断版本，推断失败才跑 java -version）</summary>
+    public static List<JavaInstall> ScanInstalled()
     {
+        var found = new List<JavaInstall>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(string? exe, int? hintMajor = null, string? hintVersion = null)
+        {
+            if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe)) return;
+            if (!seen.Add(exe)) return;
+            var major = hintMajor
+                ?? ParseVersionMajor(hintVersion)
+                ?? ParseMajorFromPath(exe)
+                ?? RunJavaMajor(exe);
+            found.Add(new JavaInstall(exe, major ?? 0));
+        }
+
+        // 1. AppData\.minecraft\runtime 官方布局（PCL / 官方启动器缓存）——大版本已知
         var runtimeBase = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".minecraft", "runtime");
-        // 官方启动器布局与简化布局两种形态
-        var candidates = new[]
+        foreach (var (name, major) in Runtimes)
         {
-            Path.Combine(runtimeBase, name, "windows-x64", name, "bin", "java.exe"),
-            Path.Combine(runtimeBase, name, "bin", "java.exe"),
-        };
-        return candidates.FirstOrDefault(File.Exists);
+            Add(Path.Combine(runtimeBase, name, "windows-x64", name, "bin", "java.exe"), major);
+            Add(Path.Combine(runtimeBase, name, "bin", "java.exe"), major);
+        }
+
+        // 2. 注册表 JavaSoft（Oracle/OpenJDK）与 Adoptium
+        try
+        {
+            using var javaSoft = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\JavaSoft");
+            if (javaSoft is not null)
+            {
+                AddRegistryFamily(javaSoft, "JDK", Add);
+                AddRegistryFamily(javaSoft, "JRE", Add);
+            }
+            using var adoptium = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Eclipse Adoptium\JDK");
+            if (adoptium is not null) AddRegistryFamily(adoptium, null, Add);
+        }
+        catch { /* 注册表不可读则跳过 */ }
+
+        // 3. JAVA_HOME
+        Add(Environment.GetEnvironmentVariable("JAVA_HOME") is { } jh ? Path.Combine(jh, "bin", "java.exe") : null);
+
+        // 4. PATH 中的 java
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'))
+            Add(Path.Combine(dir.Trim('"'), "java.exe"));
+
+        // 5. Program Files 常见 JDK 目录
+        foreach (var baseDir in new[]
+        {
+            @"C:\Program Files\Java", @"C:\Program Files\Eclipse Adoptium", @"C:\Program Files\Microsoft",
+            @"C:\Program Files\Zulu", @"C:\Program Files\Amazon Corretto", @"D:\Program Files\Java",
+        })
+        {
+            if (!Directory.Exists(baseDir)) continue;
+            foreach (var d in Directory.EnumerateDirectories(baseDir))
+                Add(Path.Combine(d, "bin", "java.exe"));
+        }
+
+        return found;
+    }
+
+    /// <summary>注册表一个族（JDK/JRE 或 Adoptium）下所有版本的 JavaHome</summary>
+    private static void AddRegistryFamily(Microsoft.Win32.RegistryKey family, string? child,
+        Action<string?, int?, string?> add)
+    {
+        using var root = child is null ? family : family.OpenSubKey(child);
+        if (root is null) return;
+        foreach (var versionName in root.GetSubKeyNames())
+        {
+            try
+            {
+                using var vk = root.OpenSubKey(versionName);
+                if (vk?.GetValue("JavaHome") is string home)
+                    add(Path.Combine(home, "bin", "java.exe"), null, versionName);
+            }
+            catch { /* 单个条目损坏跳过 */ }
+        }
+    }
+
+    /// <summary>解析 "25.0.1" / "1.8.0_51" 形式版本号 → 大版本</summary>
+    private static int? ParseVersionMajor(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return null;
+        var m = Regex.Match(version, @"^(\d+)(?:\.(\d+))?");
+        if (!m.Success) return null;
+        var first = int.Parse(m.Groups[1].Value);
+        if (first == 1) // 1.8.0_51 → 8
+            return m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 1;
+        return first;
+    }
+
+    /// <summary>从路径推断大版本：jdk-25 / jdk1.8 / 17.0.15 等</summary>
+    private static int? ParseMajorFromPath(string exe)
+    {
+        var m = Regex.Match(exe, @"(?i)[-/\\](?:jdk|jre)[-]?(?:1\.)?(\d{1,2})(?:\D|$)");
+        if (m.Success) return int.Parse(m.Groups[1].Value);
+        var m2 = Regex.Match(exe, @"(?i)java-runtime-(\w+)");
+        if (m2.Success)
+        {
+            var name = "java-runtime-" + m2.Groups[1].Value;
+            return Runtimes.FirstOrDefault(r => r.Name == name).Major is { } mm ? mm : null;
+        }
+        return null;
+    }
+
+    /// <summary>兜底：运行 java -version 解析大版本（仅推断失败时，慢）</summary>
+    private static int? RunJavaMajor(string exe)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo
+            {
+                FileName = exe, Arguments = "-version", RedirectStandardError = true,
+                UseShellExecute = false, CreateNoWindow = true,
+            });
+            if (p is null) return null;
+            var text = p.StandardError.ReadToEnd();
+            p.WaitForExit(5000);
+            var m = Regex.Match(text, @"""?(\d+)(?:\.(\d+))?");
+            if (!m.Success) return null;
+            var first = int.Parse(m.Groups[1].Value);
+            return first == 1 && m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : first;
+        }
+        catch { return null; }
     }
 }
