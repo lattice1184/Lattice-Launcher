@@ -445,6 +445,6 @@ public partial class DownloadTask : ObservableObject
     {
         if (bytes >= 1024 * 1024) return $"{bytes / 1024.0 / 1024:0.0} MB";
         if (bytes >= 1024) return $"{bytes / 1024.0:0} KB";
-        return $"{bytes} B";
+        return bytes > 0 ? $"{bytes} B" : "--"; // AL10.2：大小未知（weight=0 子任务）显示 "--" 而非 "0 B"
     }
 }
