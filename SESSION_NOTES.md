@@ -293,3 +293,16 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - **下载一体**：InstallWithLoaderAsync 去掉原版预下载（LoaderService 的 merged 下载全包）——
   原版+加载器文件并列一个子任务列表，不再"原版一坨+加载器一坨"
 - 233/233 全绿；10:01 发布；水位 ~50%
+
+## AL10.1 真修复批次（2026-08-05 发布 185.9MB）
+**CNFE KnotClient 复现的根因**（用户实测 10:09：自动修复"补全完成"但 jar 仍缺）
+- **根因**：Fabric/Forge meta profile 的 libraries 是顶层 url 形式
+  （{"name","url","sha1","size"}，无 downloads.artifact）——LibraryJson 模型没顶层
+  Url/Sha1/Size 字段（被 JsonSerializer 忽略），DownloadService/VersionDownloadPipeline
+  只下载 Downloads.Artifact 非空的库 → **url 形式库（asm 全系+sponge-mixin+intermediary+
+  fabric-loader）全部静默跳过** → "补全完成"虚假成功。下载页/自动修复/一键修复全走同一代码
+- **修**：LibraryJson 补 Url/Sha1/Size；双路径（RunLegacyAsync + VersionDownloadPipeline）
+  加 url 分支（顶层 url + MavenPath 拼地址，sha1/size 可空——Fabric 的 intermediary 无 hash）
+- 新测试 UrlFormLibraryTests（fabric-loader/intermediary 落盘）；234/234 全绿
+- 防循环确认有效（_autoFixApplied 递归不重置）——多次日志是用户手动重试
+- 教训：record 位置参数（含 string?/long?）无隐式默认值，调用须全显式（CS7036）
