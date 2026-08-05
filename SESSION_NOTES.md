@@ -306,3 +306,16 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - 新测试 UrlFormLibraryTests（fabric-loader/intermediary 落盘）；234/234 全绿
 - 防循环确认有效（_autoFixApplied 递归不重置）——多次日志是用户手动重试
 - 教训：record 位置参数（含 string?/long?）无隐式默认值，调用须全显式（CS7036）
+
+## AL10.2 批次（2026-08-05 发布 185.9MB）
+26.2 Java 25 崩 + 版本列表分开 + 加载器一次性/0B + 完整性校验（用户四连报）
+- **26.2 崩根因**：GameLaunchService Java 选择用原始 fabric profile（无 javaVersion）→ InferJavaMajor
+  "fabric-loader-..." 匹配失败兜底 17 → 选 beta(17) → UnsupportedClassVersionError。本机其实有
+  epsilon(Java 25)。修：沿 InheritsFrom 链继承父版本 javaVersion=25 → 用上本机 Java 25
+- **JavaSelector 增强**：扫描注册表/JAVA_HOME/PATH/Program Files（用户："调用电脑里已有的"）；
+  Pick 找不到匹配返回 null → 明确提示（不再静默 fallback 旧 Java 崩）；BestMatch 纯逻辑可测
+- **版本列表一体**：隐藏被 inheritsFrom 继承的父版本（原版 26.2 不再单独显示）
+- **加载器下载一体化**：VersionDownloadViewModel:224 改调组重载（旧写法 (p,c) 匹配 progress 重载，
+  加载器=扁平单任务 weight=0 '一次性'且 0B）
+- **完整性校验**：AutoRepairService.VerifyFiles 下载后校验 client jar+libraries，缺失抛异常
+- 239/239 全绿（+5：BestMatch×3/VerifyFiles/BytesText）
