@@ -77,6 +77,19 @@ public sealed class VersionDownloadPipeline
                     finally { libGate.Release(); }
                 }).Completion);
             }
+
+            // AL10.1：Fabric/Forge 库无 downloads.artifact，顶层 url + Maven 坐标拼下载地址（如 maven.fabricmc.net）
+            if (artifact is null && lib.Url is { } repoUrl)
+            {
+                var path = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
+                var dlUrl = repoUrl.TrimEnd('/') + "/" + MavenPath.FullPath(lib.Name).Replace('\\', '/');
+                tasks.Add(ctx.AddChild(MavenPath.FileName(lib.Name), lib.Size ?? 0, async (p, c) =>
+                {
+                    await libGate.WaitAsync(c);
+                    try { await _downloads.DownloadFileAsync(dlUrl, path, lib.Sha1, lib.Size, p, c); }
+                    finally { libGate.Release(); }
+                }).Completion);
+            }
         }
 
         // 3. assets index

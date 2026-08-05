@@ -444,6 +444,7 @@ public sealed class DownloadService
         foreach (var lib in version.Libraries ?? [])
         {
             if (lib.Downloads?.Artifact is not null) libTotal++;
+            else if (lib.Url is not null) libTotal++; // AL10.1：Fabric/Forge 的 url 形式库（顶层 url 无 downloads.artifact）
             if (lib.Natives is not null) libTotal++;
         }
         var libIndex = 0;
@@ -460,6 +461,24 @@ public sealed class DownloadService
                     {
                         var n = Interlocked.Increment(ref libIndex);
                         await DownloadFileAsync(artifact.Url, path, artifact.Sha1, artifact.Size,
+                            Wrap($"下载库文件 {n}/{libTotal}", MavenPath.FileName(lib.Name)), ct);
+                    }
+                    finally { semaphore.Release(); }
+                }, ct));
+            }
+
+            // AL10.1：Fabric/Forge 库无 downloads.artifact，顶层 url + Maven 坐标拼下载地址（如 maven.fabricmc.net）
+            if (artifact is null && lib.Url is { } repoUrl)
+            {
+                var path = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
+                var dlUrl = repoUrl.TrimEnd('/') + "/" + MavenPath.FullPath(lib.Name).Replace('\\', '/');
+                libraryTasks.Add(Task.Run(async () =>
+                {
+                    await semaphore.WaitAsync(ct);
+                    try
+                    {
+                        var n = Interlocked.Increment(ref libIndex);
+                        await DownloadFileAsync(dlUrl, path, lib.Sha1, lib.Size,
                             Wrap($"下载库文件 {n}/{libTotal}", MavenPath.FileName(lib.Name)), ct);
                     }
                     finally { semaphore.Release(); }

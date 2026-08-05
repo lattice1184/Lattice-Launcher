@@ -7,6 +7,9 @@ namespace Launcher.Core.Model.Mojang;
 /// </summary>
 public sealed record LibraryJson(
     [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("url")] string? Url,
+    [property: JsonPropertyName("sha1")] string? Sha1,
+    [property: JsonPropertyName("size")] long? Size,
     [property: JsonPropertyName("downloads")] LibraryDownloads? Downloads,
     [property: JsonPropertyName("rules")] List<RuleJson>? Rules,
     [property: JsonPropertyName("natives")] Dictionary<string, string>? Natives,

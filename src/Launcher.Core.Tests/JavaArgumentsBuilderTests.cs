@@ -58,7 +58,7 @@ public class JavaArgumentsBuilderTests
             var parent = new VersionJson("1.16.5", "release", "net.minecraft.client.main.Main", "1.16",
                 new AssetIndexInfo("1.16", "https://mc/i.json", "s", 10, 100),
                 null, "--username ${auth_player_name} --gameDir ${game_directory}",
-                [new LibraryJson("org.lwjgl:lwjgl:3.2.2", new LibraryDownloads(
+                [new LibraryJson("org.lwjgl:lwjgl:3.2.2", null, null, null, new LibraryDownloads(
                     new DownloadFileInfo("https://mc/lwjgl.jar", "s1", 100), null), null, null, null)],
                 null, null, null, null);
             // 子：Forge（inheritsFrom + bootstraplauncher jvm 参数）
@@ -70,7 +70,7 @@ public class JavaArgumentsBuilderTests
                     JsonSerializer.SerializeToElement("ALL-MODULE-PATH"),
                     JsonSerializer.SerializeToElement("-Djava.library.path=${natives_directory}")]),
                 null,
-                [new LibraryJson("net.minecraftforge:forge:36.2.0", new LibraryDownloads(
+                [new LibraryJson("net.minecraftforge:forge:36.2.0", null, null, null, new LibraryDownloads(
                     new DownloadFileInfo("https://mc/forge.jar", "s2", 200), null), null, null, null)],
                 null, null, null, "1.16.5");
 
