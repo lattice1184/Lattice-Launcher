@@ -279,3 +279,17 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - **引擎复查发现**：FixRedownloadAsync 任务 Failed 不抛 → 调用方误判修复成功盲目自动重启
   （必再失败浪费一次启动）→ 改 State != Completed 抛异常，如实报告
 - 233/233 全绿；00:50 发布；水位 ~45%
+
+## AL10 内核批次（2026-08-05 10:01 发布 185.9MB）
+自动修复全自动 + 下载一体（用户三问：区分开来/启动报错/自动修复没用）
+- **日志实证**（09:53 错误报告）：ClassNotFoundException KnotClient（fabric-loader jar 缺失，
+  classpath 静默忽略不存在 jar）→ 自动修复已触发但失败：`补全未完成（Downloading）`——
+  **AL5 竞态复发**：FixRedownloadAsync 读 task.State（UI Post 异步），Completion 同步完成时
+  State 仍是 Downloading。修：判定改 TerminalState
+- **自动修复全自动**（用户："发现报错立即自己看日志实施修复，不是用户还要点击"）：
+  修复最多试 2 次（幂等只补缺失，瞬时失败自愈）→ 全失败才弹崩溃窗；FileNotFound 路径同套
+- **父版本补全**：FixRedownloadAsync 补 inheritsFrom 父 json（递归，深度上限 3）+ 下载改用
+  merged 版本（client jar URL/全部 libraries 继承父链——覆盖加载器 profile 无 downloads）
+- **下载一体**：InstallWithLoaderAsync 去掉原版预下载（LoaderService 的 merged 下载全包）——
+  原版+加载器文件并列一个子任务列表，不再"原版一坨+加载器一坨"
+- 233/233 全绿；10:01 发布；水位 ~50%
