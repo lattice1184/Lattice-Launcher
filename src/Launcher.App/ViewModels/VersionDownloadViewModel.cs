@@ -201,15 +201,23 @@ public partial class DownloadDetailVM : ObservableObject
         await DownloadCoreAsync(repair: true);
     }
 
-    /// <summary>顺序安装：原版 → 加载器（组任务内按顺序 await；失败级联取消）</summary>
+    /// <summary>
+    /// 安装：带加载器时由加载器阶段的合并下载全包（原版+加载器文件并列一个子任务列表）——
+    /// AL10 去掉原版预下载阶段（LoaderService 的 DownloadVersionAsync 传 merged 版本，覆盖 client jar + 全部 libraries），
+    /// 下载记录一体显示，不再"原版一坨 + 加载器一坨"。
+    /// </summary>
     private async Task InstallWithLoaderAsync(
         VersionInstaller installer, Launcher.Core.Model.Mojang.VersionJson version,
         Views.LoaderChoice? choice, DownloadGroupContext ctx, CancellationToken ct)
     {
-        // 1. 原版
-        await installer.InstallAsync(version, ctx, ct);
-        // 2. 加载器（作为组内子任务，进度/取消级联自动生效）
-        if (choice is { IsVanilla: false, Kind: { } kind, Version: { } loaderVersion })
+        // 纯原版：直接下载
+        if (choice is null or { IsVanilla: true })
+        {
+            await installer.InstallAsync(version, ctx, ct);
+            return;
+        }
+        // 带加载器：加载器服务下载合并版本全部文件（组内子任务，进度/取消级联自动生效）
+        if (choice is { Kind: { } kind, Version: { } loaderVersion })
         {
             var service = new LoaderService(gameDirectory: GameDirectory.InstallDir());
             var plan = await service.CreatePlanAsync(kind, version.Id, loaderVersion, ct);
