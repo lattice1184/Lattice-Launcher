@@ -12,18 +12,39 @@ namespace Launcher.Core.Diagnostics;
 /// </summary>
 public sealed class AutoRepairService
 {
-    /// <summary>版本文件补全重下（client jar + libraries + assets + log4j，幂等差量）。返回任务完成状态描述。</summary>
-    public static async Task<string> FixRedownloadAsync(string versionId, string gameDir)
+    /// <summary>
+    /// 版本文件补全重下（client jar + libraries + assets + log4j，幂等差量）。
+    /// AL10：① 判定用 TerminalState（State 经 UI Post 异步生效，Completion 同步——读 State 读到旧值
+    /// Downloading 误判失败，2026-08-05 日志实证）② inheritsFrom 父 json 缺失先递归补父
+    /// ③ 下载用合并版本（client jar URL/全部 libraries 继承父链——覆盖加载器 profile 无 downloads 的结构）。
+    /// </summary>
+    public static async Task<string> FixRedownloadAsync(string versionId, string gameDir, int depth = 0)
     {
         var installer = new VersionInstaller(gameDirectory: gameDir);
         var version = await installer.GetOrFetchVersionJsonAsync(versionId, null, CancellationToken.None);
+        // 父版本补全：父 json 缺失 → 递归先补（深度上限防环）
+        if (depth < 3 && version.InheritsFrom is { } parentId
+            && !File.Exists(Path.Combine(gameDir, "versions", parentId, $"{parentId}.json")))
+        {
+            try { await FixRedownloadAsync(parentId, gameDir, depth + 1); }
+            catch { /* 补父失败不阻断主修复（主下载的 merged 链可能已覆盖） */ }
+        }
+        var merged = VersionJsonMerger.ResolveChain(version, id => LoadParentJson(gameDir, id));
         var task = DownloadManager.Instance.EnqueueGroup($"自动修复 {versionId}",
-            (ctx, ct) => installer.InstallAsync(version, ctx, ct));
+            (ctx, ct) => installer.InstallAsync(merged, ctx, ct));
         await task.Completion;
-        // AL9 复查：任务失败/取消必须抛——调用方据此如实报告"修复失败"，不盲目自动重启
-        if (task.State != DownloadTaskState.Completed)
-            throw new InvalidOperationException($"补全未完成（{task.State}）");
+        if (task.TerminalState != DownloadTaskState.Completed)
+            throw new InvalidOperationException($"补全未完成（{task.TerminalState}）");
         return "补全完成";
+    }
+
+    /// <summary>读磁盘父版本 json（inheritsFrom 链解析用）；缺失/损坏返回 null</summary>
+    private static VersionJson? LoadParentJson(string gameDir, string id)
+    {
+        var p = Path.Combine(gameDir, "versions", id, $"{id}.json");
+        if (!File.Exists(p)) return null;
+        try { return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(p)); }
+        catch { return null; }
     }
 
     /// <summary>重解压 natives：先递归删 natives 目录清残留，再从库 jar 提取 dll/so/dylib。返回处理描述。</summary>

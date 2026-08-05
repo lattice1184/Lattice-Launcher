@@ -449,8 +449,8 @@ public partial class HomeViewModel : ViewModelBase
                 LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0);
                 // 崩溃弹窗（PCL 式）：游戏日志尾部 + 导出报告
                 var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
-                // AL9 自修复：日志诊断 → 可自动修复 → 修复后自动重新启动一次（最多一次；二次失败才弹窗）
-                if (!_autoFixApplied && await TryAutoFixAsync(version, gameDir, string.Join(Environment.NewLine, GameLogs)))
+                // AL9/AL10 自修复：日志诊断 → 可自动修复 → 修复后自动重新启动一次（最多一次；修复本身最多试 2 次，全失败才弹窗）
+                if (!_autoFixApplied && await TryAutoFixWithRetryAsync(version, gameDir, string.Join(Environment.NewLine, GameLogs)))
                 {
                     _autoFixApplied = true;
                     IsLaunching = false;
@@ -483,19 +483,25 @@ public partial class HomeViewModel : ViewModelBase
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
-            // AL9 自修复：文件缺失（异常即证据，跳过诊断直接重下）或诊断命中可自动修复项 → 修复后自动重试一次
+            // AL9/AL10 自修复：文件缺失（异常即证据，跳过诊断直接重下）或诊断命中可自动修复项 → 修复后自动重试一次
             // gameDir 是 try 块局部变量，catch 不可见——这里按相同规则重算
             var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
                 : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var shouldFix = !_autoFixApplied
-                && (ex is FileNotFoundException || await TryAutoFixAsync(version, gameDir, ex.Message + "\n" + string.Join("\n", GameLogs)));
+                && (ex is FileNotFoundException || await TryAutoFixWithRetryAsync(version, gameDir, ex.Message + "\n" + string.Join("\n", GameLogs)));
             if (shouldFix)
             {
                 if (ex is FileNotFoundException)
                 {
                     AppendLog("§ 检测到问题：客户端文件缺失，正在自动重新下载补全…");
-                    try { AppendLog($"§ 自动修复完成：{await AutoRepairService.FixRedownloadAsync(version.Name, gameDir)}"); }
-                    catch (Exception fx) { AppendLog($"§ 自动修复失败: {fx.Message}"); shouldFix = false; }
+                    var fixedOk = false;
+                    for (var attempt = 1; attempt <= 2 && !fixedOk; attempt++)
+                    {
+                        if (attempt > 1) AppendLog($"§ 自动修复失败，正在重试（第 {attempt}/2 次）…");
+                        try { AppendLog($"§ 自动修复完成：{await AutoRepairService.FixRedownloadAsync(version.Name, gameDir)}"); fixedOk = true; }
+                        catch (Exception fx) { AppendLog($"§ 自动修复失败: {fx.Message}"); }
+                    }
+                    shouldFix = fixedOk;
                 }
                 if (shouldFix)
                 {
@@ -509,6 +515,17 @@ public partial class HomeViewModel : ViewModelBase
             IsLaunching = false;
             IsRunning = false;
         }
+    }
+
+    /// <summary>AL10 自修复全自动：最多尝试 2 次（修复幂等只补缺失，瞬时网络失败自愈）；全失败返回 false</summary>
+    private async Task<bool> TryAutoFixWithRetryAsync(VersionInstanceVM version, string gameDir, string diagText)
+    {
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            if (attempt > 1) AppendLog($"§ 自动修复失败，正在重试（第 {attempt}/2 次）…");
+            if (await TryAutoFixAsync(version, gameDir, diagText)) return true;
+        }
+        return false;
     }
 
     /// <summary>AL9 自修复：诊断日志 → 命中可自动修复项（Redownload/ReExtractNatives）→ 执行修复。
