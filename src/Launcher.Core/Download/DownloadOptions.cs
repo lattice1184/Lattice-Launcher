@@ -19,11 +19,11 @@ public sealed class DownloadOptions
     /// <summary>分片读取缓冲区（字节）</summary>
     public int BufferSize { get; init; } = 81920;
 
-    /// <summary>整轮尝试数（每轮遍历全部候选源）</summary>
-    public int MaxSourceAttempts { get; init; } = 3;
+    /// <summary>整轮尝试数（每轮遍历全部候选源；2 轮足够——连接 15s 超时 + 0.5s 退避下轮间开销极低）</summary>
+    public int MaxSourceAttempts { get; init; } = 2;
 
-    /// <summary>官方源失败时启用镜像回退（BMCLAPI）</summary>
-    public bool MirrorFallbackEnabled { get; init; } = true;
+    /// <summary>下载源策略（官方优先 / 镜像优先 / 仅镜像）</summary>
+    public DownloadSourcePreference DownloadSource { get; init; } = DownloadSourcePreference.OfficialFirst;
 
     /// <summary>全局下载限速（字节/秒；0 = 不限速）</summary>
     public long BytesPerSecond { get; init; }
@@ -43,7 +43,7 @@ public sealed class DownloadOptions
             BufferSize = s.BufferSize > 0 ? s.BufferSize : 81920,
             LibraryConcurrency = s.MaxConcurrentDownloads > 0 ? s.MaxConcurrentDownloads : tier,
             AssetConcurrency = s.MaxConcurrentDownloads > 0 ? Math.Max(s.MaxConcurrentDownloads * 2, 16) : tier * 2,
-            MirrorFallbackEnabled = s.MirrorFallbackEnabled,
+            DownloadSource = s.DownloadSource,
             BytesPerSecond = s.DownloadSpeedLimitKbps > 0 ? s.DownloadSpeedLimitKbps * 1024 : 0,
         };
     }

@@ -55,13 +55,23 @@
                             <ItemsControl ItemsSource="{Binding History}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="svc:DownloadHistoryEntry">
-                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,2">
                                             <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11"/>
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
                                                        Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding State}" FontSize="11"
-                                                       Foreground="{StaticResource TextDim}"/>
-                                            <TextBlock Grid.Column="3" Text="{Binding Error}" FontSize="11"
+                                            <Button Grid.Column="2" Content="重下" Classes="ghost" FontSize="10" Padding="6,1"
+                                                    IsVisible="{Binding SourceUrl, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).RedownloadCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="用原链接重新下载到同一目录"/>
+                                            <Button Grid.Column="3" Content="位置" Classes="ghost" FontSize="10" Padding="6,1"
+                                                    IsVisible="{Binding TargetPath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).OpenHistoryLocationCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="在资源管理器中定位该文件"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding State}" FontSize="11"
+                                                       Foreground="{Binding State, Converter={x:Static app:HistoryStateBrushConverter.Instance}}"/>
+                                            <TextBlock Grid.Column="5" Text="{Binding Error}" FontSize="11"
                                                        Foreground="{StaticResource Danger}" TextTrimming="CharacterEllipsis"/>
                                         </Grid>
                                     </DataTemplate>
@@ -72,7 +82,8 @@
                     <ItemsControl ItemsSource="{Binding Tasks}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="core:DownloadTask">
-                                <Border Classes="row" Padding="12,8" Margin="0,0,0,1">
+                                <Border Classes="row taskRow" Classes.active="{Binding IsActive}"
+                                        Classes.failed="{Binding IsFailed}" Padding="12,8" Margin="0,0,0,1">
                                     <Grid>
                                         <!-- 组任务：展开显示文件级子任务 -->
                                         <Expander IsVisible="{Binding HasChildren}" HorizontalAlignment="Stretch" Padding="0">
@@ -130,8 +141,8 @@
     </UserControl.Resources>
 
     <DockPanel>
-        <!-- 板块 tab 栏：下载游戏 / MOD / 整合包 / 材质包 / 光影包 / 下载记录 -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+        <!-- 板块 tab 栏：下载游戏 / MOD / 整合包 / 材质包 / 光影包 / 第三方文件 / 下载记录（WrapPanel 窄窗口自动换行不重叠） -->
+        <WrapPanel DockPanel.Dock="Top" ItemSpacing="8" Margin="0,0,0,12">
             <Button Content="下载游戏" Classes="tab" Classes.active="{Binding IsGameTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="game"/>
             <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
@@ -142,16 +153,18 @@
                     Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
             <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+            <Button Content="第三方文件" Classes="tab" Classes.active="{Binding IsThirdPartyTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="thirdparty"/>
             <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
-        </StackPanel>
+        </WrapPanel>
 
         <Grid>
             <!-- 下载记录（队列常驻，轻量无网络） -->
-            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
+            <ContentControl x:Name="QueuePanelHost" Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
                             IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsQueueTabSelected}"/>
             <!-- 其余 tab：懒实例化（ActiveTab 首次激活才创建 → ViewLocator 解析视图，秒切） -->
-            <ContentControl Content="{Binding ActiveTab}"
+            <ContentControl x:Name="ActiveTabHost" Content="{Binding ActiveTab}"
                             IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsNotQueueTabSelected}"/>
         </Grid>
     </DockPanel>

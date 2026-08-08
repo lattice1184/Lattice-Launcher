@@ -8,11 +8,12 @@ public class RetryPolicyTests
     [Fact]
     public void Backoff_DoublesAndCapsAt30s()
     {
-        Assert.Equal(TimeSpan.FromSeconds(1), RetryPolicy.Backoff(0));
-        Assert.Equal(TimeSpan.FromSeconds(2), RetryPolicy.Backoff(1));
-        Assert.Equal(TimeSpan.FromSeconds(4), RetryPolicy.Backoff(2));
-        Assert.Equal(TimeSpan.FromSeconds(30), RetryPolicy.Backoff(5));  // 32 封顶 30
-        Assert.Equal(TimeSpan.FromSeconds(30), RetryPolicy.Backoff(10));
+        // AL31：0.5s 起步（国内直连官方源失败是常态，快速换镜像）
+        Assert.Equal(TimeSpan.FromMilliseconds(500), RetryPolicy.Backoff(0));
+        Assert.Equal(TimeSpan.FromSeconds(1), RetryPolicy.Backoff(1));
+        Assert.Equal(TimeSpan.FromSeconds(2), RetryPolicy.Backoff(2));
+        Assert.Equal(TimeSpan.FromSeconds(16), RetryPolicy.Backoff(5));  // 0.5×2⁵=16
+        Assert.Equal(TimeSpan.FromSeconds(30), RetryPolicy.Backoff(10)); // 封顶 30
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Launcher.Animation;
@@ -22,6 +23,22 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // 主窗口关闭前不退出
+            desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
+
+            // 启动浮层在主窗口内部（AL16：避免独立 splash 窗口关窗/开窗的强切，过渡连续可见）
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = new MainViewModel(),
+            };
+            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色。
+            // AL7：预览必须传 VM 值（Settings 未写盘时读不到新值——旧版预览永远不生效）
+            if (desktop.MainWindow.DataContext is MainViewModel mainVm)
+            {
+                mainVm.Settings.AppearanceChanged += () => ApplyAccentColor(LauncherSettings.Current.AccentColor);
+                mainVm.Settings.PreviewChanged += () => ApplyAccentColor(mainVm.Settings.AccentColor);
+            }
+            // 启动序列在 Opened 里触发（小窗 logo → 窗口放大）；这里同步做初始化，任一失败只记日志不阻止窗口出现
             // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
@@ -36,17 +53,7 @@ public partial class App : Application
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
             Guard("Lifecycle.OnInitialize", () => Lifecycle.OnInitialize());
 
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = new MainViewModel(),
-            };
-            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色。
-            // AL7：预览必须传 VM 值（Settings 未写盘时读不到新值——旧版预览永远不生效）
-            if (desktop.MainWindow.DataContext is MainViewModel mainVm)
-            {
-                mainVm.Settings.AppearanceChanged += () => ApplyAccentColor(LauncherSettings.Current.AccentColor);
-                mainVm.Settings.PreviewChanged += () => ApplyAccentColor(mainVm.Settings.AccentColor);
-            }
+            // Show → Opened → StartSplashSequence（小窗 logo 缩放出现 → 窗口放大到正式页面）
             desktop.MainWindow.Show();
 
             // 首次启动询问游戏目录（settings.json 未指定时），确认后写入，之后不再询问

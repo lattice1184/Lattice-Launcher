@@ -28,7 +28,7 @@
             <TextBlock x:Name="VersionStatus" Classes="dim" FontSize="11"/>
         </StackPanel>
 
-        <TextBlock Text="将下载原版 + 所选加载器（已下载部分自动跳过）" Classes="dim" FontSize="11"/>
+        <TextBlock Text="下载原版 + 所选加载器" Classes="dim" FontSize="11"/>
 
         <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
             <Button Content="取消" Classes="ghost" Click="OnCancel"/>

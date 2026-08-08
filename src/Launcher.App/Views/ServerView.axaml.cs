@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Interactivity;
+using Launcher.App.Services;
 using Launcher.App.ViewModels;
 
 namespace Launcher.App.Views;
@@ -18,6 +19,21 @@ public partial class ServerView : UserControl
             if (DataContext is ServerViewModel vm)
                 vm.Logs.CollectionChanged += OnLogsChanged;
         };
+    }
+
+    /// <summary>弹独立窗口显示开服页（共享同一 VM 实例：日志/状态/操作实时同步）</summary>
+    private void OnOpenWindow(object? sender, RoutedEventArgs e)
+    {
+        var win = new ServerWindow { DataContext = DataContext };
+        win.Show(DialogService.MainWindow());
+    }
+
+    /// <summary>建议档位按钮（0=测试低配 / 1=推荐 / 2=高配），填充建议编辑框</summary>
+    private void OnPresetClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i)
+            && DataContext is ServerViewModel vm)
+            vm.ApplyPreset(i);
     }
 
     /// <summary>服务端日志到达时控制台自动滚动到底部</summary>

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
@@ -19,6 +20,7 @@ public partial class DownloadViewModel : ViewModelBase
     private EcosystemViewModel? _modpacks;
     private EcosystemViewModel? _resourcepacks;
     private EcosystemViewModel? _shaders;
+    private ThirdPartyDownloadViewModel? _thirdParty;
 
     public ObservableCollection<DownloadTask> Tasks => DownloadManager.Instance.Tasks;
 
@@ -26,6 +28,12 @@ public partial class DownloadViewModel : ViewModelBase
     public ObservableCollection<DownloadHistoryEntry> History { get; } = [];
 
     private readonly HashSet<DownloadTask> _recorded = [];
+
+    /// <summary>跳转②来源页（入队时经 NavigateToDownloadQueue(returnTo) 设置；任务终态跳回一次后清空）</summary>
+    private string? _returnTo;
+
+    /// <summary>记录任务完成后的跳回目标（null = 不跳回）</summary>
+    public void SetReturnNavigation(string? returnTo) => _returnTo = returnTo;
 
     [ObservableProperty]
     public partial string Status { get; set; } = "暂无下载任务";
@@ -64,6 +72,9 @@ public partial class DownloadViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsShaderTabSelected { get; set; }
 
+    [ObservableProperty]
+    public partial bool IsThirdPartyTabSelected { get; set; }
+
     /// <summary>内容区 ContentControl 显示条件（queue 用常驻面板，其余走懒 ContentControl）</summary>
     public bool IsNotQueueTabSelected => !IsQueueTabSelected;
 
@@ -98,6 +109,13 @@ public partial class DownloadViewModel : ViewModelBase
             NotificationService.Success($"已完成：{t.Name}");
         else if (t.State == DownloadTaskState.Failed)
             NotificationService.Error($"失败：{t.Name}");
+
+        // 跳转②：任务完成/失败 → 跳回来源页（只一次；取消不跳——用户主动取消留在记录）
+        if (t.State is DownloadTaskState.Completed or DownloadTaskState.Failed && _returnTo is { } page)
+        {
+            _returnTo = null;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => MainViewModel.Current?.NavigateTo(page));
+        }
     }
 
     private void ReloadHistory()
@@ -143,7 +161,7 @@ public partial class DownloadViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void SelectTab(string tab)
+    public void SelectTab(string tab)
     {
         IsGameTabSelected = tab == "game";
         IsQueueTabSelected = tab == "queue";
@@ -151,6 +169,7 @@ public partial class DownloadViewModel : ViewModelBase
         IsModpackTabSelected = tab == "modpack";
         IsResourcepackTabSelected = tab == "resourcepack";
         IsShaderTabSelected = tab == "shader";
+        IsThirdPartyTabSelected = tab == "thirdparty";
         if (tab != "queue") ActiveTab = GetOrCreateTab(tab);
     }
 
@@ -162,6 +181,7 @@ public partial class DownloadViewModel : ViewModelBase
         "modpack" => _modpacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Modpack), e => e.InitializeAsync()),
         "resourcepack" => _resourcepacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Resourcepack), e => e.InitializeAsync()),
         "shader" => _shaders ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Shader), e => e.InitializeAsync()),
+        "thirdparty" => _thirdParty ??= new ThirdPartyDownloadViewModel(),
         _ => throw new ArgumentOutOfRangeException(nameof(tab)),
     };
 
@@ -178,6 +198,40 @@ public partial class DownloadViewModel : ViewModelBase
         Status = Tasks.Count == 0
             ? "暂无下载任务"
             : active > 0 ? $"正在下载 {active} 个任务" : "下载任务已全部完成";
+    }
+
+    /// <summary>ProjectType → 下载页 tab 名（安装完成跳回原 tab 用）</summary>
+    public static string TabFor(ProjectType type) => type switch
+    {
+        ProjectType.Mod => "mod",
+        ProjectType.Modpack => "modpack",
+        ProjectType.Resourcepack => "resourcepack",
+        ProjectType.Shader => "shader",
+        _ => "mod",
+    };
+
+    /// <summary>历史「重新下载」：同 URL 重下到原目录（同名自动 (1) 后缀，不覆盖）</summary>
+    [RelayCommand]
+    private void Redownload(DownloadHistoryEntry? entry)
+    {
+        if (entry?.SourceUrl is not { } url || entry.TargetPath is not { } dest) return;
+        var name = UriFileNameResolver.FromUrl(url) ?? Path.GetFileName(dest);
+        var target = UniquePath.Resolve(dest);
+        DownloadManager.Instance.Enqueue($"重新下载 {name}", (p, ct) =>
+            new DownloadService().DownloadFileAsync(url, target, null, null, p, ct));
+    }
+
+    /// <summary>历史「打开位置」：资源管理器定位文件</summary>
+    [RelayCommand]
+    private void OpenHistoryLocation(DownloadHistoryEntry? entry)
+    {
+        if (entry?.TargetPath is not { } dest) return;
+        if (!File.Exists(dest))
+        {
+            NotificationService.Error("文件已不存在（可能被移动或删除）");
+            return;
+        }
+        Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{dest}\"") { UseShellExecute = true });
     }
 
     [RelayCommand]

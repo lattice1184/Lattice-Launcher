@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Launcher.Core.Launch;
 
 namespace Launcher.Core.Utils;
 
@@ -9,6 +10,9 @@ public enum DensityMode { Compact = 0, Normal = 1, Comfortable = 2 }
 
 /// <summary>下载并发档位（分片连接数：低 8 / 中 16 / 高 24）</summary>
 public enum DownloadTier { Low = 8, Medium = 16, High = 24 }
+
+/// <summary>下载源策略：官方优先（原回退行为）/ 镜像优先 / 仅镜像</summary>
+public enum DownloadSourcePreference { OfficialFirst = 0, MirrorFirst = 1, MirrorOnly = 2 }
 
 public sealed class LauncherSettings
 {
@@ -23,8 +27,11 @@ public sealed class LauncherSettings
 
     // ---------- 启动 ----------
 
-    /// <summary>游戏内存上限（MB）；0 = 自动（总内存 60%）</summary>
-    public int MemoryMb { get; set; } = 4096;
+    /// <summary>游戏内存上限（MB）；-2 = 自动（按可用内存留余量），0 = 总内存 60%</summary>
+    public int MemoryMb { get; set; } = -2;
+
+    /// <summary>服务器内存（MB）；>0 开服使用，否则默认 2048（独立于客户端内存——开服建议配置只改这里，不误改客户端）</summary>
+    public int ServerMemoryMb { get; set; } = 2048;
 
     /// <summary>Java 路径；null = 自动选配（PCL runtime / PATH）</summary>
     public string? JavaPath { get; set; }
@@ -35,10 +42,16 @@ public sealed class LauncherSettings
     /// <summary>启动时自动写入中文语言（options.txt lang:zh_cn）</summary>
     public bool AutoChineseEnabled { get; set; } = true;
 
+    /// <summary>JVM 性能档位（轻量/均衡/流畅/极致 → GC 参数预设）</summary>
+    public PerformanceProfile JvmProfile { get; set; } = PerformanceProfile.Medium;
+
+    /// <summary>启动完成后随机弹一条小提示（彩蛋，可关）</summary>
+    public bool StartupTipEnabled { get; set; } = true;
+
     // ---------- 下载 ----------
 
-    /// <summary>下载失败时回退镜像源（BMCLAPI 等）</summary>
-    public bool MirrorFallbackEnabled { get; set; } = true;
+    /// <summary>下载源策略（官方优先 / 镜像优先 / 仅镜像）</summary>
+    public DownloadSourcePreference DownloadSource { get; set; } = DownloadSourcePreference.OfficialFirst;
 
     /// <summary>最大并发下载数（0 = 默认）</summary>
     public int MaxConcurrentDownloads { get; set; }
@@ -57,6 +70,12 @@ public sealed class LauncherSettings
 
     /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
     public string CurseForgeApiKey { get; set; } = "";
+
+    /// <summary>CurseForge 文件 CDN 镜像前缀（空 = 官方 edge.forgecdn.net 直连；可填镜像/代理根地址）</summary>
+    public string CurseForgeCdnPrefix { get; set; } = "";
+
+    /// <summary>第三方文件下载目录（空 = 首次取系统 Downloads）</summary>
+    public string ThirdPartyDownloadDir { get; set; } = "";
 
     // ---------- 外观 ----------
 

@@ -193,7 +193,7 @@ public partial class DownloadDetailVM : ObservableObject
         if (IsDownloading) return;
         var owner = DialogService.MainWindow();
         if (owner is null || !await DialogService.Confirm(owner,
-                $"将重新下载 {Id} 的缺失或损坏文件（已有文件自动跳过）。继续？",
+                $"重新下载 {Id} 缺失或损坏的文件（已有的自动跳过）。继续？",
                 "重新下载", "重新下载", "取消"))
         {
             return;
@@ -239,10 +239,16 @@ public partial class DownloadDetailVM : ObservableObject
         DownloadProgressPercent = 0;
         try
         {
-            var installer = repair ? new VersionInstaller(gameDirectory: GameDirectory.InstallDir()) : _installer;
+            // AL31：每次下载重建 installer 并传当前设置——DownloadService 构造时读 settings 快照，
+            // 缓存 _installer 会冻结滑块改动（限速/并发/分片要重开下载页才生效，与第三方下载/修复路径不一致）
+            var installer = new VersionInstaller(
+                downloads: new DownloadService(null, null, DownloadOptions.FromSettings(LauncherSettings.Current), null),
+                gameDirectory: repair ? GameDirectory.InstallDir() : GameDirectory.Detect());
             var version = await installer.GetOrFetchVersionJsonAsync(targetId, targetUrl, CancellationToken.None);
             var task = DownloadManager.Instance.EnqueueGroup($"下载 {targetId}{(choice is { IsVanilla: false } ? $" + {choice.Kind}" : "")}", (ctx, ct) =>
                 InstallWithLoaderAsync(installer, version, choice, ctx, ct));
+            // 跳转①：入队即去下载记录看进度；完成后跳回版本页（跳转②由下载中心统一处理）
+            MainViewModel.Current?.NavigateToDownloadQueue("version");
 
             void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
             {
@@ -260,7 +266,6 @@ public partial class DownloadDetailVM : ObservableObject
                 if (Id == targetId) Installed = true;
                 _onInstalled(targetId);
                 NotificationService.Success(repair ? $"{targetId} 修复完成" : $"{targetId} 安装完成");
-                if (!repair) MainViewModel.Current?.NavigateToDownloadQueue(); // 自动跳转下载记录
             }
             else if (task.Error is { } failed)
             {

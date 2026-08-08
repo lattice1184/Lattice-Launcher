@@ -41,6 +41,12 @@ public partial class DownloadTask : ObservableObject
 
     public string Name { get; }
 
+    /// <summary>来源直链（第三方下载；下载历史「重新下载」用；普通下载为 null）</summary>
+    public string? SourceUrl { get; set; }
+
+    /// <summary>目标路径（下载历史「打开位置」用；普通下载为 null）</summary>
+    public string? TargetPath { get; set; }
+
     /// <summary>
     /// 完成信号（内部 TCS，**终态**（完成/失败/取消）才完成；暂停不完成——Resume 后继续等待）。
     /// 对象稳定：Resume 重跑不替换（下游 await/自动移除/角标订阅始终有效）。
@@ -176,8 +182,10 @@ public partial class DownloadTask : ObservableObject
         catch (Exception ex)
         {
             TerminalState = DownloadTaskState.Failed;
-            SetState(DownloadTaskState.Failed);
-            Post(() => Error = ex.Message);
+            // AL30：Error 与 State 同一 Post 内先 Error 后 State——PropertyChanged(State) 触发下游
+            // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
+            // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
+            SetState(DownloadTaskState.Failed, ex.Message);
         }
         finally
         {
@@ -215,8 +223,7 @@ public partial class DownloadTask : ObservableObject
                 if (failed is not null)
                 {
                     TerminalState = DownloadTaskState.Failed;
-                    SetState(DownloadTaskState.Failed);
-                    Post(() => Error = failed.Error ?? "子任务失败");
+                    SetState(DownloadTaskState.Failed, failed.Error ?? "子任务失败");
                 }
                 else if (_cts.IsCancellationRequested)
                 {
@@ -241,8 +248,10 @@ public partial class DownloadTask : ObservableObject
         catch (Exception ex)
         {
             TerminalState = DownloadTaskState.Failed;
-            SetState(DownloadTaskState.Failed);
-            Post(() => Error = ex.Message);
+            // AL30：Error 与 State 同一 Post 内先 Error 后 State——PropertyChanged(State) 触发下游
+            // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
+            // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
+            SetState(DownloadTaskState.Failed, ex.Message);
         }
         finally
         {
@@ -346,7 +355,11 @@ public partial class DownloadTask : ObservableObject
         var percent = total > 0 ? weighted / total : 0;
         Stage = active?.Stage ?? (total > 0 ? "正在下载…" : "准备中…");
         TotalBytes = total;
-        if (percent > ProgressPercent) ProgressPercent = percent;
+        // AL32：直接赋真实加权值。旧 clamp（只升不降）在阶段 2 晚挂载子任务时
+        // （VersionDownloadPipeline 的 assets 差量，index 下完才知道清单）把父进度卡死在 100%，
+        // 观感「大小已满但一直下载中」。子任务进度自身单调（DownloadService 层已保证），
+        // 聚合唯一可能回落 = 新子任务挂载（真实进度变化，应如实显示，Stage 会同步指到新任务）。
+        ProgressPercent = percent;
         BytesDone = (long)(total * percent / 100);
 
         // 聚合计速（聚合字节单调，无需重置基线）
@@ -423,10 +436,11 @@ public partial class DownloadTask : ObservableObject
         });
     }
 
-    private void SetState(DownloadTaskState state)
+    private void SetState(DownloadTaskState state, string? error = null)
     {
         Post(() =>
         {
+            if (error is not null) Error = error; // AL30：先 Error 后 State（同一 Post），见失败路径注释
             State = state;
             OnPropertyChanged(nameof(StateText));
             OnPropertyChanged(nameof(IsActive));

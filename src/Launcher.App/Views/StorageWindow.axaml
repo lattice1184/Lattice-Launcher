@@ -10,7 +10,7 @@
     <DockPanel Margin="22,18">
         <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,14">
             <TextBlock Text="存储空间" FontSize="16" FontWeight="SemiBold"/>
-            <TextBlock Text="启动器文件的位置与占用（计算中…）。红色「删除」可清理：日志、缓存、崩溃报告、服务端"
+            <TextBlock Text="启动器文件位置与占用（计算中…）。红色「删除」可清理：日志、缓存、崩溃报告、服务端"
                        Classes="sub" FontSize="11" TextWrapping="Wrap"/>
         </StackPanel>
         <ScrollViewer>

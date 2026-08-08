@@ -27,9 +27,17 @@ public sealed class DownloadManager
     /// <summary>显式同步上下文（测试传 null = Post 同步直跑，不依赖当前线程上下文）</summary>
     public DownloadManager(SynchronizationContext? syncContext) => _ui = syncContext;
 
-    public DownloadTask Enqueue(string name, Func<DownloadProgressHandler, CancellationToken, Task> work)
+    /// <summary>
+    /// 入队单个文件任务。sourceUrl/targetPath 供下载历史「重新下载 / 打开位置」使用（第三方下载传入，其余为 null）。
+    /// </summary>
+    public DownloadTask Enqueue(string name, Func<DownloadProgressHandler, CancellationToken, Task> work,
+        string? sourceUrl = null, string? targetPath = null)
     {
-        var task = new DownloadTask(name, work, _ui);
+        var task = new DownloadTask(name, work, _ui)
+        {
+            SourceUrl = sourceUrl,
+            TargetPath = targetPath,
+        };
         AddAndTrack(task);
         return task;
     }
@@ -45,6 +53,7 @@ public sealed class DownloadManager
     private void AddAndTrack(DownloadTask task)
     {
         Tasks.Add(task);
+        KeepActiveOnTop(); // AL11：新任务插入后活跃置顶（终态任务沉底）
         SetActive(Tasks.Count(t => t.IsActive));
         task.Completion.ContinueWith(_ => UiPost(() => SetActive(Tasks.Count(t => t.IsActive))),
             TaskScheduler.Default);
@@ -54,6 +63,37 @@ public sealed class DownloadManager
         task.Completion.ContinueWith(t =>
             System.Diagnostics.Debug.WriteLine($"[DownloadManager] 计数回调异常: {t.Exception?.GetBaseException().Message}"),
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        // AL11：终态沉底——活跃任务置顶（PropertyChanged 由任务经 UI 上下文封送，此处直接 Move 安全）
+        task.PropertyChanged += OnTaskStateChanged;
+    }
+
+    /// <summary>任务状态变化 → 活跃任务前置（终态沉底）。组任务的子任务不在 Tasks（IndexOf<0 跳过）。</summary>
+    private void OnTaskStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(DownloadTask.State)) return;
+        if (sender is not DownloadTask t) return;
+        if (Tasks.IndexOf(t) < 0) return;
+        KeepActiveOnTop();
+    }
+
+    /// <summary>稳定分区：活跃（下载中/排队/校验）在前、非活跃（终态/暂停）在后，各自保持相对顺序。
+    /// 下载记录里正在下的任务始终置顶；终态任务沉底（3s 后自动移除）。</summary>
+    private void KeepActiveOnTop()
+    {
+        var active = new List<DownloadTask>();
+        var rest = new List<DownloadTask>();
+        foreach (var t in Tasks) (t.IsActive ? active : rest).Add(t);
+        for (var i = 0; i < active.Count; i++)
+        {
+            var cur = Tasks.IndexOf(active[i]);
+            if (cur != i) Tasks.Move(cur, i);
+        }
+        for (var j = 0; j < rest.Count; j++)
+        {
+            var cur = Tasks.IndexOf(rest[j]);
+            var target = active.Count + j;
+            if (cur != target) Tasks.Move(cur, target);
+        }
     }
 
     public void Cancel(DownloadTask task) => task.Cancel();
@@ -90,7 +130,7 @@ public sealed class DownloadManager
         {
             await Task.Delay(3000);
             if (task.State is DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)
-                UiPost(() => { Tasks.Remove(task); SetActive(Tasks.Count(t => t.IsActive)); });
+                UiPost(() => { task.PropertyChanged -= OnTaskStateChanged; Tasks.Remove(task); SetActive(Tasks.Count(t => t.IsActive)); });
         }
         catch { /* 进程退出等 */ }
     }

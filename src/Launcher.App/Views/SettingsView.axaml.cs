@@ -1,9 +1,9 @@
-using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
-using Launcher.App.ViewModels;
+using Avalonia.Media;
+using Launcher.App.Animations;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.Views;
@@ -13,141 +13,150 @@ public partial class SettingsView : UserControl
     public SettingsView()
     {
         InitializeComponent();
+        // 汉堡菜单锚定到 ☰ 按钮（代码赋值比 XAML 元素绑定稳）；默认显示"游戏目录"分区
+        SettingsMenu.PlacementTarget = SettingsMenuButton;
+        ShowSection(0);
     }
 
-    private SettingsViewModel? Vm => DataContext as SettingsViewModel;
+    // ---------- 分类菜单（汉堡按钮弹出；本地值驱动视觉，防 Avalonia 12 伪类不可靠 / hover 错位） ----------
 
-    // ---------- 游戏目录 ----------
+    private int _activeSection;
 
-    private IStorageProvider? Picker => TopLevel.GetTopLevel(this)?.StorageProvider;
-
-    private async void OnBrowseGameDir(object? sender, RoutedEventArgs e)
+    private void OnToggleMenu(object? sender, RoutedEventArgs e)
     {
-        if (Vm is null || Picker is null) return;
-        var folders = await Picker.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        if (SettingsMenu.IsOpen) CloseMenuAnimated(); // 收起先播动画再关
+        else SettingsMenu.IsOpen = true;              // 弹出由 Opened 事件弹入
+    }
+
+    /// <summary>☰ 菜单弹入：缩放 0.9→1 + 淡入（180ms Standard，无弹性过冲——host=child 互斥打断连点重播）</summary>
+    private void OnSettingsMenuOpened(object? sender, EventArgs e)
+    {
+        if (SettingsMenu.Child is not Control child) return;
+        child.Opacity = 0;
+        var tx = new ScaleTransform(0.9, 0.9);
+        child.RenderTransform = tx;
+        UiAnim.Animate(180, UiAnim.Curves.Standard, e2 =>
         {
-            Title = "选择游戏目录",
-            AllowMultiple = false,
-        });
-        if (folders.Count > 0 && folders[0].Path.IsAbsoluteUri)
-            Vm.ApplyGameDirectory(folders[0].Path.LocalPath);
+            child.Opacity = e2;
+            tx.ScaleX = 0.9 + 0.1 * e2;
+            tx.ScaleY = 0.9 + 0.1 * e2;
+        }, null, child);
     }
 
-    private void OnResetGameDir(object? sender, RoutedEventArgs e) => Vm?.ResetGameDirectory();
-
-    // ---------- Java ----------
-
-    private async void OnBrowseJava(object? sender, RoutedEventArgs e)
+    /// <summary>☰ 菜单收起：先反向缩放+淡出（120ms），done 后才关。起点取当前值（弹入被中断时无跳变）。
+    /// 点击外部 dismiss（IsLightDismissEnabled）是系统行为无法拦截，保持瞬间关闭。</summary>
+    private void CloseMenuAnimated()
     {
-        if (Vm is null || Picker is null) return;
-        var files = await Picker.OpenFilePickerAsync(new FilePickerOpenOptions
+        if (!SettingsMenu.IsOpen || SettingsMenu.Child is not Control child) return;
+        var fromO = child.Opacity;
+        var tx = child.RenderTransform as ScaleTransform ?? new ScaleTransform(1, 1);
+        var fromS = tx.ScaleX;
+        child.RenderTransform = tx;
+        UiAnim.Animate(120, UiAnim.Curves.Standard, e =>
         {
-            Title = "选择 java.exe",
-            AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("Java 可执行文件") { Patterns = ["java.exe"] }],
-        });
-        if (files.Count > 0 && files[0].Path.IsAbsoluteUri)
-            Vm.ApplyJavaPath(files[0].Path.LocalPath);
+            child.Opacity = fromO * (1 - e);
+            tx.ScaleX = fromS + (0.9 - fromS) * e;
+            tx.ScaleY = tx.ScaleX;
+        }, () => SettingsMenu.IsOpen = false, child);
     }
 
-    private void OnResetJava(object? sender, RoutedEventArgs e) => Vm?.ResetJavaPath();
-
-    // ---------- 自定义内存 ----------
-
-    private void OnMemoryCustomKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) CommitCustomMemory();
-    }
-
-    private void OnMemoryCustomLostFocus(object? sender, RoutedEventArgs e) => CommitCustomMemory();
-
-    private void CommitCustomMemory()
-    {
-        if (Vm is null) return;
-        var box = this.FindControl<TextBox>("MemoryCustomText");
-        Vm.ApplyCustomMemory(box?.Text ?? "");
-    }
-
-    private void OnAccentClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { CommandParameter: string color }) Vm!.AccentColor = color;
-    }
-
-    private void OnDensityClick(object? sender, RoutedEventArgs e)
+    private void OnSettingsNavClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
-            Vm!.DensityIndex = i;
+            ShowSection(i);
     }
 
-    private void OnTierClick(object? sender, RoutedEventArgs e)
+    /// <summary>分类切换：ContentControl 覆盖式布局——直接替换内容 + 新分区淡入上移（200ms），
+    /// 旧分区瞬间消失即可（无流布局占位问题）。首帧（尚未有内容）直接显示不动画。</summary>
+    private void ShowSection(int index)
     {
-        if (sender is Button { CommandParameter: string idx } && int.TryParse(idx, out var i))
-            Vm!.DownloadTierIndex = i;
-    }
-
-    // ---------- 存储空间 ----------
-
-    /// <summary>打开存储空间窗口（列出全部启动器文件位置与占用，可清理）</summary>
-    private void OnOpenStorage(object? sender, RoutedEventArgs e)
-    {
-        var win = new StorageWindow();
-        if (Launcher.App.Services.DialogService.MainWindow() is { } owner && owner.IsVisible)
-            win.ShowDialog(owner);
-        else
-            win.Show();
-    }
-
-    // ---------- 卸载 ----------
-
-    /// <summary>
-    /// 卸载启动器：红字警告列出删除项 → 写延迟删除 ps1（UTF-8 BOM，中文路径不乱码）→ 退出进程。
-    /// 安装目录只删 exe + 空目录（不带 -Recurse，防误删用户自放文件）；应用数据与游戏目录递归全删。
-    /// </summary>
-    private async void OnUninstall(object? sender, RoutedEventArgs e)
-    {
-        var exePath = Environment.ProcessPath;
-        if (string.IsNullOrEmpty(exePath))
+        _activeSection = index;
+        ApplySettingsNavVisuals();
+        CloseMenuAnimated(); // 选完自动收起（先播动画再关）
+        var content = BuildSection(index);
+        if (ContentHost.Content is null) { ContentHost.Content = content; return; }
+        content.Opacity = 0;
+        var ty = new TranslateTransform(0, 8);
+        content.RenderTransform = ty;
+        ContentHost.Content = content;
+        UiAnim.Animate(200, UiAnim.Curves.Standard, e =>
         {
-            Launcher.App.Services.NotificationService.Error("无法定位启动器路径");
+            content.Opacity = e;
+            ty.Y = 8 * (1 - e);
+        }, () => content.RenderTransform = null, content); // done 清残留变换
+    }
+
+    private static Control BuildSection(int index) => index switch
+    {
+        0 => new SectionGameDirView(),
+        1 => new SectionLaunchView(),
+        2 => new SectionAppearanceView(),
+        3 => new SectionDownloadView(),
+        _ => new SectionAboutView(),
+    };
+
+    private void ApplySettingsNavVisuals()
+    {
+        var accent = AccentBrush();
+        SetNavVisual(SettingsNavGameDir, _activeSection == 0, accent);
+        SetNavVisual(SettingsNavLaunch, _activeSection == 1, accent);
+        SetNavVisual(SettingsNavAppearance, _activeSection == 2, accent);
+        SetNavVisual(SettingsNavDownload, _activeSection == 3, accent);
+        SetNavVisual(SettingsNavAbout, _activeSection == 4, accent);
+    }
+
+    private static void SetNavVisual(Button btn, bool active, IBrush accent)
+    {
+        btn.Background = active ? new SolidColorBrush(Color.Parse("#12332F")) : Brushes.Transparent;
+        btn.Foreground = active ? Brushes.White : new SolidColorBrush(Color.Parse("#8A93A6"));
+        btn.BorderBrush = active ? accent : Brushes.Transparent;
+        btn.BorderThickness = active ? new Thickness(3, 0, 0, 0) : new Thickness(0);
+    }
+
+    private static IBrush AccentBrush()
+    {
+        var hex = LauncherSettings.Current.AccentColor;
+        return new SolidColorBrush(Color.Parse(string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#') ? "#2DD4BF" : hex));
+    }
+
+    private bool IsActiveNav(Button btn) =>
+        ReferenceEquals(btn, SettingsNavGameDir) && _activeSection == 0
+        || ReferenceEquals(btn, SettingsNavLaunch) && _activeSection == 1
+        || ReferenceEquals(btn, SettingsNavAppearance) && _activeSection == 2
+        || ReferenceEquals(btn, SettingsNavDownload) && _activeSection == 3
+        || ReferenceEquals(btn, SettingsNavAbout) && _activeSection == 4;
+
+    private void SettingsNavEnter(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Button btn) return;
+        if (ReferenceEquals(btn, SettingsMenuButton))
+        {
+            btn.Background = new SolidColorBrush(Color.Parse("#2C3544")); // ☰ 触发钮无激活态，hover 直接变灰
             return;
         }
-        var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
-        var gameDir = LauncherSettings.Current.GameDirectory ?? GameDirectory.Detect();
-        var installDir = Path.GetDirectoryName(exePath) ?? "";
+        if (IsActiveNav(btn)) return; // 激活项 hover 不改色
+        btn.Background = new SolidColorBrush(Color.Parse("#2C3544"));
+        btn.Foreground = new SolidColorBrush(Color.Parse("#E8EAF0"));
+    }
 
-        var owner = Launcher.App.Services.DialogService.MainWindow();
-        if (owner is null) return;
-        var ok = await Launcher.App.Services.DialogService.Warn(owner,
-            "将永久删除启动器及其全部数据",
-            "删除内容：\n· 启动器本体：" + exePath
-            + "\n· 应用数据（设置/账号/日志）：" + appDataDir
-            + "\n· 游戏目录（含世界存档）：" + gameDir
-            + "\n\n此操作不可恢复，确认卸载？",
-            "卸载启动器", "确认卸载", "取消");
-        if (!ok) return;
+    private void SettingsNavExit(object? sender, PointerEventArgs e)
+    {
+        if (ReferenceEquals(sender, SettingsMenuButton))
+            SettingsMenuButton.Background = Brushes.Transparent;
+        else
+            ApplySettingsNavVisuals();
+    }
 
-        try
-        {
-            var ps = Path.Combine(Path.GetTempPath(), "yanla_uninstall.ps1");
-            var content = "Start-Sleep -Seconds 3\r\n"
-                + $"Remove-Item -LiteralPath '{exePath}' -Force -ErrorAction SilentlyContinue\r\n"
-                + $"Remove-Item -LiteralPath '{installDir}' -Force -ErrorAction SilentlyContinue\r\n" // 仅空目录
-                + $"Remove-Item -LiteralPath '{appDataDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
-                + $"Remove-Item -LiteralPath '{gameDir}' -Recurse -Force -ErrorAction SilentlyContinue\r\n"
-                + "Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\r\n";
-            File.WriteAllText(ps, content, new System.Text.UTF8Encoding(true)); // BOM：PowerShell 5.1 正确识别 UTF-8
-            Process.Start(new ProcessStartInfo("powershell.exe",
-                $"-NoProfile -ExecutionPolicy Bypass -File \"{ps}\"")
-            {
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
-            });
-            // 关闭主窗口（应用随之退出）；延迟删除脚本 3 秒后清理本体
-            Launcher.App.Services.DialogService.MainWindow()?.Close();
-        }
-        catch (Exception ex)
-        {
-            Launcher.App.Services.NotificationService.Error($"卸载失败: {ex.Message}");
-        }
+    private void SettingsNavPress(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Button btn) btn.Background = new SolidColorBrush(Color.Parse("#1A2029"));
+    }
+
+    private void SettingsNavRelease(object? sender, PointerReleasedEventArgs e)
+    {
+        if (ReferenceEquals(sender, SettingsMenuButton))
+            SettingsMenuButton.Background = new SolidColorBrush(Color.Parse("#2C3544")); // 松手仍悬停 → 回到 hover 色
+        else
+            ApplySettingsNavVisuals();
     }
 }

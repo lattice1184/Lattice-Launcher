@@ -21,6 +21,7 @@ public class CurseForgeServiceTests
 
         public void RouteJson(string hostPath, string json) => _routes[hostPath] = (200, Encoding.UTF8.GetBytes(json));
         public void RouteBytes(string hostPath, byte[] body) => _routes[hostPath] = (200, body);
+        public void RouteStatus(string hostPath, int status) => _routes[hostPath] = (status, []);
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -71,7 +72,8 @@ public class CurseForgeServiceTests
     [Fact]
     public void IsEnabled_FalseWhenNoKey()
     {
-        var svc = new CurseForgeService((string?)null, new HttpClient(new CfStubHandler()));
+        // 显式空 key = 禁用（不传 null 动态读设置——本机 settings.json 有 key 时测试会误判）
+        var svc = new CurseForgeService("", new HttpClient(new CfStubHandler()));
         Assert.False(svc.IsEnabled);
     }
 
@@ -79,9 +81,65 @@ public class CurseForgeServiceTests
     public async Task SearchAsync_Disabled_ReturnsNull_NoHttp()
     {
         var handler = new CfStubHandler();
-        var svc = new CurseForgeService((string?)null, new HttpClient(handler));
+        var svc = new CurseForgeService("", new HttpClient(handler));
         var results = await svc.SearchAsync(ProjectType.Mod);
         Assert.Null(results);
+        Assert.Empty(handler.Requests);
+    }
+
+    // ---------- key 有效性验证（#212：设置页填入后失焦验证反馈，不打印 key 内容） ----------
+
+    [Fact]
+    public async Task ValidateKey_Ok_Valid()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJson("api.curseforge.com/v1/mods/search", """{"data":[],"pagination":{"totalCount":0}}""");
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var (valid, msg) = await svc.ValidateKeyAsync();
+
+        Assert.True(valid);
+        Assert.Contains("有效", msg);
+        Assert.DoesNotContain("test-key", msg); // key 永不进结果/日志
+    }
+
+    [Fact]
+    public async Task ValidateKey_401_Invalid()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteStatus("api.curseforge.com/v1/mods/search", 401);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var (valid, msg) = await svc.ValidateKeyAsync();
+
+        Assert.False(valid);
+        Assert.Contains("无效", msg);
+        Assert.Contains("401", msg);
+    }
+
+    [Fact]
+    public async Task ValidateKey_ServerError_ReportsCode()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteStatus("api.curseforge.com/v1/mods/search", 500);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var (valid, msg) = await svc.ValidateKeyAsync();
+
+        Assert.False(valid);
+        Assert.Contains("500", msg); // 服务器错误 ≠ key 无效，如实报告
+    }
+
+    [Fact]
+    public async Task ValidateKey_NoKey_NoRequest()
+    {
+        var handler = new CfStubHandler();
+        var svc = new CurseForgeService("", new HttpClient(handler)); // 显式禁用
+
+        var (valid, msg) = await svc.ValidateKeyAsync();
+
+        Assert.False(valid);
+        Assert.Contains("未配置", msg);
         Assert.Empty(handler.Requests);
     }
 

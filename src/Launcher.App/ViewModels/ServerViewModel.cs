@@ -5,8 +5,10 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
+using Launcher.Core.Multiplayer;
 using Launcher.Core.Server;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
@@ -42,13 +44,27 @@ public partial class PropRowVM : ObservableObject
         set => Value = value ? "true" : "false";
     }
 
-    public PropRowVM(string key, string label, string value, PropControlKind kind, IReadOnlyList<string>? options = null)
+    /// <summary>数字控件取值范围（0 = 不限）</summary>
+    public int Min { get; }
+    public int Max { get; }
+
+    /// <summary>数字控件绑定（NumericUpDown decimal? ↔ Value 字符串）</summary>
+    public decimal? NumberValue
+    {
+        get => decimal.TryParse(Value, out var d) ? d : null;
+        set => Value = value?.ToString("0") ?? "";
+    }
+
+    public PropRowVM(string key, string label, string value, PropControlKind kind, IReadOnlyList<string>? options = null,
+        int min = 0, int max = 0)
     {
         Key = key;
         Label = label;
         Value = value;
         Kind = kind;
         Options = options ?? [];
+        Min = min;
+        Max = max;
     }
 }
 
@@ -64,12 +80,20 @@ public partial class ServerViewModel : ViewModelBase
         ("max-players", "最大玩家", PropControlKind.Number, null),
         ("motd", "服务器描述 (MOTD)", PropControlKind.Text, null),
         ("online-mode", "正版验证", PropControlKind.Bool, null),
-        ("difficulty", "难度", PropControlKind.Choice, ["easy", "normal", "hard"]),
+        ("difficulty", "难度", PropControlKind.Choice, ["peaceful", "easy", "normal", "hard"]),
         ("gamemode", "游戏模式", PropControlKind.Choice, ["survival", "creative", "adventure", "spectator"]),
         ("view-distance", "视距（区块）", PropControlKind.Number, null),
         ("pvp", "PVP", PropControlKind.Bool, null),
         ("white-list", "白名单", PropControlKind.Bool, null),
     ];
+
+    /// <summary>数字属性的取值范围（NumericUpDown 校验）</summary>
+    private static readonly Dictionary<string, (int Min, int Max)> NumberRanges = new()
+    {
+        ["server-port"] = (1, 65535),
+        ["view-distance"] = (2, 32),
+        ["max-players"] = (1, 1000),
+    };
 
     private readonly ServerInstaller _installer = new();
     private readonly ServerProcess _process = new();
@@ -149,6 +173,10 @@ public partial class ServerViewModel : ViewModelBase
     private static string VersionGameDir(VersionInstanceVM? v) =>
         string.IsNullOrEmpty(v?.GameDir) ? GameDirectory.InstallDir() : v!.GameDir;
 
+    /// <summary>联机创建房间过滤：该版本的服务端 jar 是否有效就绪（≥1MB + zip 魔数，坏 jar 不进房间列表）</summary>
+    public bool HasServerJar(VersionInstanceVM v) =>
+        ServerInstaller.IsValidServerJar(Path.Combine(ServerInstaller.ServerDir(VersionGameDir(v), v.Name), "server.jar"));
+
     /// <summary>当前服务端目录（servers/{versionId}）</summary>
     private string? ServerDir => SelectedVersion is null
         ? null
@@ -183,6 +211,7 @@ public partial class ServerViewModel : ViewModelBase
             Dispatcher.UIThread.Post(async () =>
             {
                 IsRunning = false;
+                LanDiscoveryService.Shared.StopBroadcast(); // 进程退出（含崩溃）→ 停播房间
                 if (_worldGenDone)
                 {
                     // 预生成世界流程：世界已落盘，正常结束
@@ -190,7 +219,7 @@ public partial class ServerViewModel : ViewModelBase
                     _autoStopOnReady = false;
                     var world = CurrentLevelName();
                     AppendLog($"§ 世界「{world}」生成完成，已自动停止");
-                    Status = $"世界「{world}」已生成——玩家可以直接进了";
+                    Status = $"世界「{world}」已生成，可进入游戏";
                     NotificationService.Success($"世界「{world}」已生成");
                     RefreshOps();
                     return;
@@ -202,13 +231,35 @@ public partial class ServerViewModel : ViewModelBase
                 {
                     // 动态诊断：等 stdout 缓冲刷完，用已收集日志匹配已知错误模式 → 中文原因弹窗
                     await Task.Delay(300);
-                    var diag = Launcher.Core.Diagnostics.LogDiagnostics.Diagnose(string.Join(Environment.NewLine, Logs));
-                    foreach (var d in diag) AppendLog("§ 诊断：" + d.Replace(Environment.NewLine, " "));
+                    var diag = LogDiagnostics.DiagnoseDetailed(string.Join(Environment.NewLine, Logs));
+                    foreach (var d in diag) AppendLog("§ 诊断：" + d.Explanation);
                     if (diag.Count > 0 && DialogService.MainWindow() is { } owner)
-                        await DialogService.Warn(owner, $"服务端启动失败（exitCode={code}）",
-                            string.Join(Environment.NewLine + Environment.NewLine, diag)
+                    {
+                        // 开服自修复：诊断命中 Redownload（server.jar 缺失/损坏）→ 提供"自动修复并重新启动"
+                        var fixable = diag.Any(d => d.Fix == FixKind.Redownload);
+                        var ok = await DialogService.Warn(owner, $"服务端启动失败（exitCode={code}）",
+                            string.Join(Environment.NewLine + Environment.NewLine, diag.Select(d => d.Explanation))
+                            + (fixable
+                                ? Environment.NewLine + Environment.NewLine + "检测到服务端文件问题，可自动重新下载服务端并重启。"
+                                : "")
                             + Environment.NewLine + Environment.NewLine + "完整日志可在控制台复制或导出。",
-                            "服务端异常退出", "知道了", "");
+                            "服务端异常退出", fixable ? "自动修复并重新启动" : "知道了", fixable ? "取消" : "");
+                        if (ok && fixable && SelectedVersion is { } ver)
+                        {
+                            SetStatus($"正在重新下载 {ver.Name} 的服务端…");
+                            try
+                            {
+                                await AutoRepairService.FixServerJarAsync(ver.Name, VersionGameDir(ver), _installer);
+                                NotificationService.Success("服务端已重新下载，正在重新启动");
+                                await StartServer();
+                            }
+                            catch (Exception ex)
+                            {
+                                SetStatus($"自动修复失败：{ex.Message}", error: true);
+                                NotificationService.Error($"自动修复失败：{ex.Message}");
+                            }
+                        }
+                    }
                 }
                 RefreshOps(); // 停止后 ops.json 为最终态，刷新 OP 列表
                 RefreshBanned(); // 停止后 banned-players.json 为最终态，刷新封禁列表
@@ -259,9 +310,10 @@ public partial class ServerViewModel : ViewModelBase
         {
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            InstalledVersions.Clear();
+            // 收集全部候选 (目录, 版本)
+            var candidates = new List<(string Dir, string Id)>();
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                InstalledVersions.Add(new VersionInstanceVM(e.Id, GameDir: e.GameDirectory)); // AL7：带版本所在目录
+                candidates.Add((e.GameDirectory, e.Id));
             // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ PCL/官方扫描源
             foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
             {
@@ -270,10 +322,17 @@ public partial class ServerViewModel : ViewModelBase
                 foreach (var d in Directory.EnumerateDirectories(versionsDir))
                 {
                     var id = Path.GetFileName(d);
-                    if (InstalledVersions.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
                     if (File.Exists(Path.Combine(d, $"{id}.json")))
-                        InstalledVersions.Add(new VersionInstanceVM(id, GameDir: dir)); // AL7：带版本所在目录
+                        candidates.Add((dir, id));
                 }
+            }
+            // AL27：回滚 AL26 隐藏——原版与加载器都显示（友好名徽章保留；隐藏后用户失去原版可选）
+            InstalledVersions.Clear();
+            foreach (var (dir, id) in candidates)
+            {
+                var (loader, mc) = VersionScan.Inspect(dir, id);
+                InstalledVersions.Add(new VersionInstanceVM(id, GameDir: dir, LoaderBadge: loader, McVersion: mc));
             }
             if (InstalledVersions.Count > 0 && SelectedVersion is null) SelectedVersion = InstalledVersions[0];
             // 全局版本绑定：主页当前版本优先选中（AF1）
@@ -298,14 +357,29 @@ public partial class ServerViewModel : ViewModelBase
         LoadProperties();
     }
 
-    /// <summary>建议配置（供显示与应用共用）</summary>
+    /// <summary>建议配置（供显示与应用共用）：按 CPU 核数 + 可用内存动态推算（不再写死 10/20）</summary>
     private (long XmxMb, int ViewDistance, int MaxPlayers) BuildSuggestion()
+        => SuggestionPresets.Compute(Environment.ProcessorCount,
+            GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024);
+
+    /// <summary>档位按钮：0=测试低配 / 1=推荐（现算）/ 2=高配，填充建议编辑框</summary>
+    public void ApplyPreset(int preset)
     {
-        var avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-        return (
-            (long)Math.Clamp(avail * 0.6 / 1024 / 1024, 1024, 8192),
-            10,
-            20);
+        var (xmx, view, players) = preset switch
+        {
+            0 => SuggestionPresets.Fixed(SuggestionPresets.Preset.Low),
+            2 => SuggestionPresets.Fixed(SuggestionPresets.Preset.High),
+            _ => BuildSuggestion(), // 推荐 = 按当前机器状态现算
+        };
+        SuggestionMemoryText = xmx.ToString();
+        SuggestionViewText = view.ToString();
+        SuggestionPlayersText = players.ToString();
+        NotificationService.Info(preset switch
+        {
+            0 => "已填入测试低配（内存 1G · 视距 4 · 玩家 5）",
+            2 => "已填入高配（内存 8G · 视距 16 · 玩家 40）",
+            _ => "已填入按当前机器计算的推荐配置",
+        });
     }
 
     /// <summary>机器状态实时刷新（每 5 秒自动；后台读内存/CPU/磁盘）</summary>
@@ -364,9 +438,9 @@ public partial class ServerViewModel : ViewModelBase
         props.Set("max-players", players.ToString());
         props.Save(Path.Combine(dir, "server.properties"));
 
-        // 全局内存 = 建议 Xmx（启动服务端时使用）
+        // 服务器内存 = 建议 Xmx（独立字段——不再覆盖全局 MemoryMb，避免误改客户端启动内存）
         var s = LauncherSettings.Current;
-        s.MemoryMb = (int)xmxMb;
+        s.ServerMemoryMb = (int)xmxMb;
         s.Save();
 
         // 刷新表单显示已应用值 + 建议区同步（改前可能是旧值，不刷则表单与建议区不同步）
@@ -476,6 +550,8 @@ public partial class ServerViewModel : ViewModelBase
             LoadProperties();
             Status = "服务端下载完成，可启动";
             NotificationService.Success($"{version.Name} 服务端已就绪");
+            // AL11：下载成功跳回开服页（下载中自动跳去了下载记录，不跳回用户看不到就绪状态）
+            MainViewModel.Current?.NavigateToServer();
         }
         catch (Exception ex)
         {
@@ -486,7 +562,7 @@ public partial class ServerViewModel : ViewModelBase
             // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
             if (DialogService.MainWindow() is { } dlg)
                 await DialogService.Warn(dlg, "服务端下载失败",
-                    ex.Message + "\n\n可稍后重试「下载服务端」。", "下载失败", "知道了", "");
+                    ex.Message + "\n\n请稍后重试「下载服务端」。", "下载失败", "知道了", "");
         }
         finally
         {
@@ -497,7 +573,7 @@ public partial class ServerViewModel : ViewModelBase
     /// <summary>前提不满足警告：未选版本（红字加粗原因 + 说明）</summary>
     private static async Task WarnNoVersion() =>
         await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
-            "请在顶部选择要开服的已安装版本，再继续操作。", "无法继续", "知道了", "");
+            "选顶部要开服的已装版本再继续。", "无法继续", "知道了", "");
 
     /// <summary>下载服务端并自动启动（弹窗"立即下载并启动"确认后走这里；下载完成前提已满足直接 StartServer）</summary>
     private async Task DownloadAndStartAsync()
@@ -506,6 +582,7 @@ public partial class ServerViewModel : ViewModelBase
         if (version is null || IsInstalling) return;
         IsInstalling = true;
         Status = "正在下载服务端…";
+        var readyToStart = false;
         try
         {
             var installer = _installer;
@@ -522,7 +599,8 @@ public partial class ServerViewModel : ViewModelBase
             ServerDirText = ServerDir ?? "";
             LoadProperties();
             Status = "服务端下载完成，正在启动…";
-            StartServer(); // 前提已满足（jar 就位）
+            readyToStart = true; // 校验通过后才启动（见 finally）
+            MainViewModel.Current?.NavigateToServer(); // AL11：下载成功回开服页看控制台
         }
         catch (Exception ex)
         {
@@ -533,11 +611,14 @@ public partial class ServerViewModel : ViewModelBase
             // 失败显式报出（终止"未安装→再下载→又失败"套娃）：单按钮弹窗说明原因
             if (DialogService.MainWindow() is { } dlg)
                 await DialogService.Warn(dlg, "服务端下载失败",
-                    ex.Message + "\n\n可稍后重试「下载服务端」。", "下载失败", "知道了", "");
+                    ex.Message + "\n\n请稍后重试「下载服务端」。", "下载失败", "知道了", "");
         }
         finally
         {
             IsInstalling = false;
+            // 启动必须等 IsInstalling 复位之后：StartServer 开头有 IsInstalling 检查，
+            // 在 try 里调用会被直接 return（真机验收抓到：重新下载后不自动启动）
+            if (readyToStart) await StartServer();
         }
     }
 
@@ -552,14 +633,24 @@ public partial class ServerViewModel : ViewModelBase
             await WarnNoVersion();
             return;
         }
-        if (!File.Exists(Path.Combine(dir, "server.jar")))
+        var jarPath = Path.Combine(dir, "server.jar");
+        if (!ServerInstaller.IsValidServerJar(jarPath))
         {
-            // 红字警告：未安装服务端 → 提供"立即下载并启动"
+            var missing = !File.Exists(jarPath);
+            // 红字警告：未安装/损坏 → 提供"立即下载并启动"/"修复并启动"（坏 jar 先删再下——
+            // InstallAsync 幂等跳过已有文件，不删会假装成功）
             if (DialogService.MainWindow() is { } owner
-                && await DialogService.Warn(owner, "未安装服务端",
-                    $"「{version.Name}」的服务端尚未下载。可立即下载并启动，或先取消。", "无法启动服务端",
-                    "立即下载并启动", "取消"))
+                && await DialogService.Warn(owner, missing ? "未安装服务端" : "服务端文件损坏",
+                    missing
+                        ? $"「{version.Name}」的服务端还没下载。可以现在下载并启动，或先取消。"
+                        : $"「{version.Name}」的 server.jar 损坏（下载不完整或被清理）。将删除损坏文件后重新下载并启动。",
+                    "无法启动服务端", missing ? "立即下载并启动" : "重新下载并启动", "取消"))
             {
+                if (!missing)
+                {
+                    try { File.Delete(jarPath); }
+                    catch (Exception ex) { SetStatus($"无法删除损坏的服务端文件：{ex.Message}（可手动删除后重试）", error: true); return; }
+                }
                 await DownloadAndStartAsync();
             }
             return;
@@ -574,7 +665,7 @@ public partial class ServerViewModel : ViewModelBase
             try { using var probe = File.Open(latest, FileMode.Open, FileAccess.ReadWrite, FileShare.None); }
             catch
             {
-                SetStatus($"日志文件被其他程序占用，无法启动服务端：\n{latest}\n\n最常见是上一个服务端进程未完全退出（任务管理器结束残留的 java.exe），或编辑器打开着日志。", error: true);
+                SetStatus($"日志文件被占用，服务端起不来：\n{latest}\n\n一般是上一个服务端进程没退干净（任务管理器结束残留的 java.exe），或日志正被编辑器打开。", error: true);
                 NotificationService.Error("日志文件被占用（可结束残留 java.exe 或关闭打开的日志后重试）");
                 return;
             }
@@ -582,15 +673,15 @@ public partial class ServerViewModel : ViewModelBase
         var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
             ? custom
             : PickServerJava(VersionGameDir(version), version.Name);
-        var mem = LauncherSettings.Current.MemoryMb > 0
-            ? LauncherSettings.Current.MemoryMb
+        var mem = LauncherSettings.Current.ServerMemoryMb > 0
+            ? LauncherSettings.Current.ServerMemoryMb
             : 2048;
         try
         {
             Logs.Clear();
             _process.Start(dir, java, mem);
             IsRunning = true;
-            Status = "服务端运行中（控制台可输命令）";
+            Status = "服务端运行中，可在控制台输入命令。";
             AppendLog($"§ 已启动：{java}");
             AppendLog($"§ 内存 {mem}MB · 世界目录 {dir}");
             // AL8：完整启动命令落日志（崩溃/启动失败时根因一眼可见）
@@ -598,6 +689,7 @@ public partial class ServerViewModel : ViewModelBase
                 AppendLog($"§ 启动命令：" + LaunchProcess.DescribeCommandLine(java, cmd));
             RefreshOps(); // 启动后 ops.json 已就绪（含已授予的 OP）
             RefreshBanned(); // 启动后 banned-players.json 已就绪
+            StartBroadcastRoom(version.Name, dir); // 联机：向局域网广播房间（同网段 Lattice 联机页可见）
         }
         catch (Exception ex)
         {
@@ -606,8 +698,37 @@ public partial class ServerViewModel : ViewModelBase
         }
     }
 
+    /// <summary>联机创建房间：写入 server-port + motd（server.properties；目录不存在自动创建，服务器启动时读回）</summary>
+    public void ApplyRoomSettings(int port, string? roomName)
+    {
+        if (SelectedVersion is null) return;
+        var dir = ServerInstaller.ServerDir(VersionGameDir(SelectedVersion), SelectedVersion.Name);
+        var path = Path.Combine(dir, "server.properties");
+        var props = ServerProperties.Load(path);
+        props.Set("server-port", port.ToString());
+        if (!string.IsNullOrWhiteSpace(roomName)) props.Set("motd", roomName.Trim());
+        props.Save(path);
+    }
+
+    /// <summary>广播房间信息（服务端启动成功后调用；停止/退出时由 StopBroadcast 停播）</summary>
+    private void StartBroadcastRoom(string versionId, string serverDir)
+    {
+        var props = ServerProperties.Load(Path.Combine(serverDir, "server.properties"));
+        var motd = props.Get("motd", "");
+        var room = new LanRoomInfo(
+            Name: string.IsNullOrWhiteSpace(motd) ? $"我的 {versionId} 服务器" : motd,
+            HostName: Environment.MachineName,
+            Ip: LanDiscoveryService.LocalIp(),
+            VersionId: versionId,
+            Port: props.GetInt("server-port", 25565),
+            WorldName: props.Get("level-name", "world"));
+        LanDiscoveryService.Shared.StartBroadcast(room);
+        AppendLog($"§ 已向局域网广播房间「{room.Name}」（{room.Ip}:{room.Port}）");
+    }
+
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
-    /// <summary>服务端 Java 按版本选择（26.x 需 Java 21+——修复 Java 17 硬编码启动即崩）；找不到降级 21/17</summary>
+    /// <summary>服务端 Java 按版本选择：沿继承链解析所需大版本（fabric/整合包 profile 无 javaVersion，继承原版 26.2 → Java 25）；
+    /// 找不到匹配版本直接报错（不静默降级——降级拿旧 Java 跑新版本必崩，26.2 曾默认 17 启动即 UnsupportedClassVersionError）。</summary>
     private static string PickServerJava(string gameDir, string versionId)
     {
         var major = 17;
@@ -617,20 +738,31 @@ public partial class ServerViewModel : ViewModelBase
             if (File.Exists(p))
             {
                 var v = System.Text.Json.JsonSerializer.Deserialize<Launcher.Core.Model.Mojang.VersionJson>(File.ReadAllText(p));
-                if (v?.JavaVersion?.MajorVersion is { } m && m > 0) major = m;
+                if (v is not null)
+                {
+                    major = JavaSelector.ResolveRequiredMajor(v, id =>
+                    {
+                        var parentPath = Path.Combine(gameDir, "versions", id, $"{id}.json");
+                        if (!File.Exists(parentPath)) return null;
+                        try
+                        {
+                            return System.Text.Json.JsonSerializer.Deserialize<Launcher.Core.Model.Mojang.VersionJson>(
+                                File.ReadAllText(parentPath));
+                        }
+                        catch { return null; }
+                    });
+                }
             }
+        }
+        catch { /* json 读取失败用默认推断 */ }
+        try
+        {
+            var picked = JavaSelector.Pick(major);
+            if (!string.IsNullOrEmpty(picked)) return picked;
         }
         catch { }
-        foreach (var cand in new[] { major, 21, 17 })
-        {
-            try
-            {
-                var picked = JavaSelector.Pick(cand);
-                if (!string.IsNullOrEmpty(picked)) return picked;
-            }
-            catch { }
-        }
-        throw new InvalidOperationException("未找到可用 Java（可在设置页指定 Java 路径）");
+        throw new InvalidOperationException(
+            $"需要 Java {major}，但本机未找到匹配版本（可在设置页手动指定 Java 路径）");
     }
 
     // ---------- 连接信息（AG3 + AH1：服务端运行中显示本机/局域网地址，朋友可连） ----------
@@ -716,6 +848,7 @@ public partial class ServerViewModel : ViewModelBase
     private async Task StopServer()
     {
         if (!IsRunning) return;
+        LanDiscoveryService.Shared.StopBroadcast(); // 立即停播（不等进程真正退出）
         Status = "正在停止…";
         AppendLog("§ 发送 stop 命令…");
         await Task.Run(() => _process.Stop());
@@ -893,14 +1026,14 @@ public partial class ServerViewModel : ViewModelBase
         }
         if (DialogService.MainWindow() is not { } owner
             || !await DialogService.Confirm(owner,
-                $"将启动服务端生成新世界「{levelName}」（首次启动约 1~2 分钟），生成完成后自动停止。继续？",
+                $"启动服务端生成新世界「{levelName}」（首次约 1~2 分钟），生成完自动停。继续？",
                 "生成世界", "生成世界", "取消"))
         {
             return;
         }
         _autoStopOnReady = true;
         _worldGenDone = false;
-        Status = $"正在生成世界「{levelName}」（完成后自动停止）…";
+        Status = $"正在生成世界「{levelName}」（生成完自动停）…";
         await StartServer();
     }
 
@@ -950,7 +1083,7 @@ public partial class ServerViewModel : ViewModelBase
         // ② 无世界 → 生成（启动→Done→自动停→等退出）
         if (!Directory.Exists(Path.Combine(dir, CurrentLevelName())))
         {
-            Status = "② 生成世界（首次约 1~2 分钟，完成后自动停止）…";
+            Status = "② 生成世界（首次约 1~2 分钟，完成自动停）…";
             _autoStopOnReady = true;
             _worldGenDone = false;
             await StartServer();
@@ -990,7 +1123,7 @@ public partial class ServerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            SetStatus($"进服失败：{ex.Message}（服务端仍在运行，可手动点「进入服务器」）", error: true);
+            SetStatus($"连接失败：{ex.Message}。服务端仍在运行，可手动使用「进入服务器」连接。", error: true);
         }
         finally
         {
@@ -1047,7 +1180,8 @@ public partial class ServerViewModel : ViewModelBase
                 "view-distance" => "10",
                 _ => "",
             };
-            PropRows.Add(new PropRowVM(key, label, props.Get(key, fallback), kind, options));
+            var (min, max) = NumberRanges.TryGetValue(key, out var r) ? r : (0, 0);
+            PropRows.Add(new PropRowVM(key, label, props.Get(key, fallback), kind, options, min, max));
         }
     }
 

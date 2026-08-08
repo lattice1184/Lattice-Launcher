@@ -72,7 +72,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <ComboBox Grid.Column="3" ItemsSource="{x:Static vm:EcosystemViewModel.SourceOptions}"
+                <ComboBox Grid.Column="3" ItemsSource="{Binding SourceOptions}"
                           SelectedItem="{Binding SelectedSource}" MinWidth="100">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+SourceOption">
@@ -112,7 +112,7 @@
                             Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNext}"/>
                 </StackPanel>
 
-                <ScrollViewer>
+                <ScrollViewer x:Name="CardsScroll">
                     <ItemsControl ItemsSource="{Binding Cards}">
                         <!-- 竖排列表（PCL2 式：一行一个项目，全宽行） -->
                         <ItemsControl.ItemTemplate>

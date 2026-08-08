@@ -105,6 +105,23 @@ public class DownloadManagerTests
     }
 
     [Fact]
+    public async Task TerminalTask_SinksToBottom_ActiveStaysOnTop()
+    {
+        var manager = CreateManager();
+        var gate = new TaskCompletionSource();
+        var a = manager.Enqueue("A", (p, ct) => Task.CompletedTask);
+        var b = manager.Enqueue("B", async (p, ct) => await gate.Task);
+
+        await a.Completion; // State 置终态先于 Completion 完成 → 分区已同步生效
+
+        Assert.Equal(2, manager.Tasks.Count);
+        Assert.Equal("B", manager.Tasks[0].Name); // 活跃任务置顶
+        Assert.Equal("A", manager.Tasks[1].Name); // 终态任务沉底
+        gate.SetResult();
+        await b.Completion;
+    }
+
+    [Fact]
     public async Task ClearFinished_RemovesFinishedKeepsActive()
     {
         var manager = CreateManager();

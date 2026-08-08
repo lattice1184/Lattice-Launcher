@@ -2,7 +2,12 @@ using Launcher.Core.Download;
 
 namespace Launcher.Core.Tests;
 
+/// <summary>并发回归测试类不并行跑（AsyncPostContext + Task.Run 负载重，全量并行时线程池争抢导致 Post 积压、偶发超窗）</summary>
+[CollectionDefinition("SerialDownloadGroup", DisableParallelization = true)]
+public sealed class SerialDownloadGroupCollection { }
+
 /// <summary>组任务模型：状态推导 / 加权聚合 / 递归取消 / 计数语义 / 清理（离线同步上下文）</summary>
+[Collection("SerialDownloadGroup")]
 public class DownloadGroupTests
 {
     private static DownloadManager CreateManager()
@@ -151,8 +156,8 @@ public class DownloadGroupTests
                     }
                 });
                 await task.Completion;
-                // 异步 Post 上下文：State/Children 更新在排队回调里，轮询等待（10s 窗口容忍线程池竞争）
-                for (var i = 0; i < 1000 && (task.State != DownloadTaskState.Completed || task.Children.Count != 20); i++)
+                // 异步 Post 上下文：State/Children 更新在排队回调里，轮询等待（20s 窗口容忍线程池竞争）
+                for (var i = 0; i < 2000 && (task.State != DownloadTaskState.Completed || task.Children.Count != 20); i++)
                     await Task.Delay(10);
                 Assert.True(task.State == DownloadTaskState.Completed,
                     $"round={round} state={task.State} children={task.Children.Count}");
@@ -198,5 +203,42 @@ public class DownloadGroupTests
 
         Assert.Equal(0, task.Children[0].Weight); // 权重 0 → 父聚合不受影响
         Assert.Equal(DownloadTaskState.Completed, task.State);
+    }
+
+    [Fact]
+    public async Task Group_LateAttachedChild_ProgressFallsFrom100ToReal()
+    {
+        // AL32 回归：阶段 2 晚挂载时序（VersionDownloadPipeline 的 assets 差量——
+        // index 下完才知道清单，必然晚于阶段 1 全部完成）。阶段 1 完成使父聚合收敛 100%，
+        // 新子任务挂载后真实进度应回落到加权值 (700×100+300×0)/1000=70，
+        // 而不是被只升不降的 clamp 卡死在 100%（观感「大小已满但一直下载中」）。
+        var manager = CreateManager();
+        var reported = new TaskCompletionSource();   // 阶段 1 报告完成信号（屏障：先 100% 再挂阶段 2）
+        var hold = new TaskCompletionSource();       // 按住子任务，模拟下载进行中
+        var task = manager.EnqueueGroup("下载 1.21.1", async (ctx, ct) =>
+        {
+            // 阶段 1：大文件先下完（报告 100% 后挂起保持活动，模拟完成但组未收尾）
+            ctx.AddChild("1.21.1.jar", 700, async (p, c) =>
+            {
+                p(new DownloadProgress("下载 1.21.1.jar", "1.21.1.jar", 700, 700, 100));
+                reported.SetResult();
+                await hold.Task;
+            });
+            // 与真实管线一致：阶段 1 聚合收敛 100% 之后才挂阶段 2（assets 差量，权重 300）
+            await reported.Task;
+            ctx.AddChild("资源文件 (1000 个)", 300, (p, c) => hold.Task);
+            await hold.Task;
+        });
+
+        // 等两个子任务都挂载（groupWork 在后台线程跑）——此时父已收敛 100%，
+        // 新子任务 0% 挂载后真实聚合 = 70%；修复前 clamp 拒绝下降 → 一直 100
+        for (var i = 0; i < 100 && task.Children.Count < 2; i++) await Task.Delay(10);
+        Assert.Equal(70, task.ProgressPercent, 1);
+        Assert.Equal(1000, task.TotalBytes);
+
+        hold.SetResult();
+        await task.Completion;
+        Assert.Equal(DownloadTaskState.Completed, task.State);
+        Assert.Equal(100, task.ProgressPercent);
     }
 }

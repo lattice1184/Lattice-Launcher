@@ -64,7 +64,7 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool ShowRepairGuide { get; set; }
 
-    public string RepairGuideText => "客户端文件缺失，可补全下载或前往官方页面：";
+    public string RepairGuideText => "客户端文件缺失，可补全下载或去官方页面：";
 
     private string? _lastLaunchVersionId;
 
@@ -231,9 +231,10 @@ public partial class HomeViewModel : ViewModelBase
         {
             var svc = new VersionManifestService();
             await svc.RefreshAsync();
-            InstalledVersions.Clear();
+            // 收集全部候选 (目录, 版本)
+            var candidates = new List<(string Dir, string Id)>();
             foreach (var e in svc.Entries.Where(e => e.Installed))
-                InstalledVersions.Add(new VersionInstanceVM(e.Id, LabelFor(e.Id, e.GameDirectory), e.GameDirectory));
+                candidates.Add((e.GameDirectory, e.Id));
             // 目录扫描补漏：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
             foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
             {
@@ -242,10 +243,18 @@ public partial class HomeViewModel : ViewModelBase
                 foreach (var d in Directory.EnumerateDirectories(versionsDir))
                 {
                     var id = Path.GetFileName(d);
-                    if (InstalledVersions.Any(v => v.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                    if (File.Exists(Path.Combine(d, $"{id}.json")))
-                        InstalledVersions.Add(new VersionInstanceVM(id, LabelFor(id, dir), dir));
+                    if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                    // AL29：已安装 = json+jar（残件版本不在主页显示，版本页可修）
+                    if (VersionManifestService.IsInstalled(dir, id))
+                        candidates.Add((dir, id));
                 }
+            }
+            // AL27：回滚 AL26 隐藏——原版与加载器都显示（友好名徽章保留；隐藏后用户失去原版可选，1.21.10 启动依赖它）
+            InstalledVersions.Clear();
+            foreach (var (dir, id) in candidates)
+            {
+                var (loader, mc) = VersionScan.Inspect(dir, id);
+                InstalledVersions.Add(new VersionInstanceVM(id, LabelFor(id, dir), dir, loader, mc));
             }
             if (InstalledVersions.Count > 0 && SelectedVersion is null)
                 SelectedVersion = InstalledVersions[0];
@@ -357,7 +366,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             LaunchStatus = "请先选择版本";
             await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
-                "请选择要启动的已安装版本，再点击启动游戏。", "无法启动游戏", "知道了", "");
+                "请选择要启动的已安装版本。", "无法启动游戏", "知道了", "");
             return;
         }
         _lastLaunchVersionId = version.Name;
@@ -367,7 +376,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             LaunchStatus = "请先登录账号";
             await DialogService.Warn(DialogService.MainWindow(), "未登录账号",
-                "游戏需要账号才能启动。点击头像可离线登录或使用正版账号。", "无法启动游戏", "知道了", "");
+                "启动游戏需要登录账号。可通过头像菜单离线登录或使用正版账号。", "无法启动游戏", "知道了", "");
             return;
         }
 
@@ -388,10 +397,16 @@ public partial class HomeViewModel : ViewModelBase
                 : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var s = LauncherSettings.Current;
             var (memCfg, javaCfg, argsCfg) = VersionConfigService.Merge(gameDir, version.Name, s);
-            var memMb = memCfg > 0
-                ? memCfg
-                : (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6);
-            var extraArgs = argsCfg?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var memMb = memCfg switch
+            {
+                -2 => MemoryAllocator.AutoMb(), // 自动：按可用内存留余量
+                > 0 => memCfg,
+                _ => (int)(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024 * 0.6), // 0=极致
+            };
+            // 性能档位：GC 参数预设前置合并（用户"额外 JVM 参数"在后，优先级更高）
+            var (_, _, gcArgs) = PerformanceProfiles.Resolve(
+                s.JvmProfile, GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024);
+            var extraArgs = gcArgs.Concat(argsCfg?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []).ToArray();
             if (!string.IsNullOrEmpty(javaCfg))
                 s.JavaPath = javaCfg; // 版本级 Java 优先（GameLaunchService 读 LauncherSettings）
             // 正版账号：启动前静默刷新 access token（过期自动换新，用户无感；刷新失败提示重新登录）
@@ -422,7 +437,7 @@ public partial class HomeViewModel : ViewModelBase
             IsRunning = true;
             LaunchState = "运行中";
             LaunchProgress = 100;
-            LaunchStatus = $"游戏运行中（{account.Name}）· 点击停止可结束";
+            LaunchStatus = $"游戏运行中（{account.Name}）· 点停止结束";
             SetStage("运行中");
             NotificationService.Success("游戏窗口已拉起");
 
@@ -479,7 +494,7 @@ public partial class HomeViewModel : ViewModelBase
             // 客户端文件缺失（残件版本）：显示修复入口按钮
             ShowRepairGuide = ex is FileNotFoundException;
             LaunchStatus = ShowRepairGuide
-                ? "客户端文件缺失，无法启动（可补全下载或前往官方页面）"
+                ? "客户端文件缺失，无法启动。可补全下载或前往官方页面下载。"
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
@@ -512,6 +527,8 @@ public partial class HomeViewModel : ViewModelBase
                     return;
                 }
             }
+            // 自修复后仍失败：状态区红字之外必须弹窗（用户在别的页面时看不到 LaunchStatus）
+            NotificationService.Error($"启动失败：{LaunchStatus}");
             IsLaunching = false;
             IsRunning = false;
         }

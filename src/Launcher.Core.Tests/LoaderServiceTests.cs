@@ -175,6 +175,205 @@ public class LoaderServiceTests
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }
 
+    /// <summary>AL29 H3/H6 补位：下载阶段静默跳过的库（json 漏配 url/downloads 的条目）安装后必须被校验抓到——
+    /// 「安装完成」 != 「文件完整」。Fabric 直装路径与 VersionInstaller 路径（H6）同等保证。</summary>
+    [Fact]
+    public async Task FabricInstall_SilentlySkippedLibrary_ThrowsAfterInstall()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.21.1"));
+        try
+        {
+            File.WriteAllText(Path.Combine(gameDir, "versions", "1.21.1", "1.21.1.json"),
+                """{"id":"1.21.1","mainClass":"net.minecraft.client.main.Main","libraries":[],"downloads":{"client":{"url":"https://piston/1.21.1/client.jar","size":5}}}""");
+
+            // 第二条库漏配 url/downloads → 下载阶段无任何动作（静默跳过）→ 安装后校验必须报缺文件
+            const string profileJson = """
+                {"id":"fabric-loader-0.16.13-1.21.1","inheritsFrom":"1.21.1","type":"release",
+                 "mainClass":"net.fabricmc.loader.impl.launch.knot.KnotClient",
+                 "libraries":[
+                    {"name":"net.fabricmc:fabric-loader:0.16.13","url":"https://maven.fabricmc.net/",
+                     "downloads":{"artifact":{"url":"https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.16.13/fabric-loader-0.16.13.jar","size":5}}},
+                    {"name":"net.example:missing:1.0"}]}
+                """;
+            var routes = new Dictionary<string, string>
+            {
+                ["/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.16.13","stable":true}}]""",
+                ["/v2/versions/loader/1.21.1/0.16.13/profile/json"] = profileJson,
+            };
+            var svc = CreateService(routes, gameDir);
+
+            var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None);
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None));
+
+            Assert.Contains("缺 1 个文件", ex.Message);
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    // ---------- AL29 真机回归：Forge 组路径（安装器 stub 注入，无需 java） ----------
+
+    private const string VanillaJson21_10 = """
+        {"id":"1.21.10","mainClass":"net.minecraft.client.main.Main","libraries":[],
+         "downloads":{"client":{"url":"https://piston/1.21.10/client.jar","size":5}}}
+        """;
+
+    /// <summary>种子原版版本目录（json 无 jar——真机 22:38 预取残件同款）</summary>
+    private static string SeedVanilla(string gameDir, string mcVersion)
+    {
+        var dir = Path.Combine(gameDir, "versions", mcVersion);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, $"{mcVersion}.json"), VanillaJson21_10);
+        return dir;
+    }
+
+    /// <summary>Forge 组路径：EnqueueGroup 驱动（与真实下载页同语义），HTTP 全走 StubHandler</summary>
+    private static async Task<DownloadTask> RunGroupInstallAsync(string gameDir,
+        Func<string, string[], Action<string>?, CancellationToken, Task<int>> installerProcess)
+    {
+        var http = new HttpClient(new StubHandler([]));
+        var downloads = new DownloadService(http, gameDirectory: gameDir);
+        var svc = new LoaderService(http, downloads, gameDir, installerProcess);
+        var plan = new LoaderInstallPlan(LoaderKind.Forge, "1.21.10", "60.1.0", null,
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.0/forge-1.21.10-60.1.0-installer.jar",
+            null, null); // 与 CreatePlanAsync 生产一致：Sha1/Size 均为 null
+        var mgr = new DownloadManager(null);
+        var task = mgr.EnqueueGroup($"下载 1.21.10 + Forge", (ctx, ct) => svc.InstallAsync(plan, ctx, ct));
+        await task.Completion;
+        return task;
+    }
+
+    /// <summary>AL29 真机场景 1（22:41 复现）：安装器退出 0 但什么都没写 → 安装后校验拦下：
+    /// 任务 Failed、不误打安装标记（fix A：先校验后标记）、运行前已补 launcher_profiles.json（fix B）。</summary>
+    [Fact]
+    public async Task ForgeInstall_InstallerWroteNothing_GroupFailed_NoMark_ProfilesStub()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            var profilesPresentAtRun = false;
+            var task = await RunGroupInstallAsync(gameDir, (_, _, _, _) =>
+            {
+                profilesPresentAtRun = File.Exists(Path.Combine(gameDir, "launcher_profiles.json"));
+                return Task.FromResult(0); // 安装器「成功」退出但什么都不写
+            });
+
+            Assert.True(profilesPresentAtRun, "运行安装器前应已补写 launcher_profiles.json");
+            Assert.Equal(DownloadTaskState.Failed, task.State);
+            Assert.Contains("缺 1 个文件", task.Error ?? "");
+            Assert.False(File.Exists(Path.Combine(gameDir, "versions", "1.21.10", ".yanla-installed")),
+                "校验失败不得打安装标记（先校验后标记）");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>AL29 真机场景 2：安装器非零退出 → 必须如实报「安装器执行失败」，
+    /// 不得被 FindNewestVersionDir+校验误报成「缺 N 个文件」掩盖根因（fix C：子任务失败显式传播）。</summary>
+    [Fact]
+    public async Task ForgeInstall_InstallerExitNonZero_RealErrorPropagated()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            var task = await RunGroupInstallAsync(gameDir, (_, _, _, _) => Task.FromResult(5));
+
+            Assert.Equal(DownloadTaskState.Failed, task.State);
+            Assert.Contains("安装器执行失败（退出码 5）", task.Error ?? "");
+            Assert.DoesNotContain("缺", task.Error ?? "");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>launcher_profiles.json 已存在（可能是官方启动器真实配置）→ 不得覆盖。</summary>
+    [Fact]
+    public async Task ForgeInstall_LauncherProfilesExisting_NotOverwritten()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            File.WriteAllText(Path.Combine(gameDir, "launcher_profiles.json"), "KEEP");
+            var contentAtRun = "";
+            var task = await RunGroupInstallAsync(gameDir, (_, _, _, _) =>
+            {
+                contentAtRun = File.ReadAllText(Path.Combine(gameDir, "launcher_profiles.json"));
+                return Task.FromResult(0);
+            });
+
+            Assert.Equal("KEEP", contentAtRun);
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>成功路径回归（真机语义，Forge 1.21.10 实测）：安装器写出版本 json（继承原版）、
+    /// client jar 落父版本目录、client classifier 库 url 为空（继承引用）→ 校验不得误报 → 组 Completed + 打标记。</summary>
+    [Fact]
+    public async Task ForgeInstall_Success_CompletesAndMarks()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        var vanillaDir = SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            var task = await RunGroupInstallAsync(gameDir, (_, _, _, _) =>
+            {
+                // 模拟真实 Forge 安装器：json 落 forge 目录，client jar 落父版本目录，classifier 库 url 空
+                var forgeDir = Path.Combine(gameDir, "versions", "forge-1.21.10-60.1.0");
+                Directory.CreateDirectory(forgeDir);
+                File.WriteAllText(Path.Combine(forgeDir, "forge-1.21.10-60.1.0.json"),
+                    """{"id":"forge-1.21.10-60.1.0","inheritsFrom":"1.21.10","mainClass":"net.minecraftforge.client.main.ForgeMain","libraries":[{"name":"net.minecraftforge:forge:1.21.10-60.1.0:client","downloads":{"artifact":{"path":"net/minecraftforge/forge/1.21.10-60.1.0/forge-1.21.10-60.1.0-client.jar","url":"","size":31989134}}}]}""");
+                File.WriteAllText(Path.Combine(vanillaDir, "1.21.10.jar"), "12345"); // 父版本目录（真机实测落盘位置）
+                return Task.FromResult(0);
+            });
+
+            Assert.Equal(DownloadTaskState.Completed, task.State);
+            Assert.True(File.Exists(Path.Combine(gameDir, "versions", "forge-1.21.10-60.1.0", ".yanla-installed")),
+                "校验通过后应打安装标记");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>AL30 真机根因回归：修复路径（VersionInstaller.InstallAsync + EnqueueGroup，VersionBrowseViewModel.Repair 同语义）
+    /// 对 forge 版本——client classifier 库 url 空（继承引用，无实体下载目标）→ pipeline 必须跳过，
+    /// 不得建失败子任务（旧行为：子任务 Failed → 组任务 Failed + Error 被 Post 时序吞掉，真机 08-07 10:37
+    /// 「修复 1.21.10-forge-60.1.0」Failed + Error=null 即此）。</summary>
+    [Fact]
+    public async Task RepairPath_UrlEmptyClassifier_Skipped_GroupCompletes()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            var forgeId = "1.21.10-forge-60.1.0";
+            var forgeDir = Path.Combine(gameDir, "versions", forgeId);
+            Directory.CreateDirectory(forgeDir);
+            File.WriteAllText(Path.Combine(forgeDir, $"{forgeId}.json"), """
+                {"id":"1.21.10-forge-60.1.0","inheritsFrom":"1.21.10","mainClass":"net.minecraftforge.bootstrap.ForgeBootstrap",
+                 "libraries":[
+                   {"name":"net.minecraftforge:forge:1.21.10-60.1.0:universal",
+                    "downloads":{"artifact":{"url":"https://maven.test/universal.jar","size":5}}},
+                   {"name":"net.minecraftforge:forge:1.21.10-60.1.0:client",
+                    "downloads":{"artifact":{"path":"net/minecraftforge/forge/1.21.10-60.1.0/forge-1.21.10-60.1.0-client.jar","url":"","size":31989134}}}]}
+                """);
+
+            var http = new HttpClient(new StubHandler([]));
+            var downloads = new DownloadService(http, gameDirectory: gameDir);
+            var installer = new VersionInstaller(http, downloads, gameDir);
+            var version = await installer.GetOrFetchVersionJsonAsync(forgeId, null, CancellationToken.None);
+            var mgr = new DownloadManager(null);
+            var task = mgr.EnqueueGroup($"修复 {forgeId}", (ctx, ct) => installer.InstallAsync(version, ctx, ct));
+            await task.Completion;
+
+            Assert.Equal(DownloadTaskState.Completed, task.State);
+            Assert.Null(task.Error);
+            Assert.DoesNotContain(task.Children, c => c.State == DownloadTaskState.Failed);
+            Assert.True(File.Exists(Path.Combine(forgeDir, ".yanla-installed")), "校验通过应打安装标记");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
     /// <summary>按路径返回预设响应；未匹配路径返回 5 字节假文件内容（下载用）</summary>
     private sealed class StubHandler : HttpMessageHandler
     {

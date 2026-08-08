@@ -1,6 +1,6 @@
 ﻿# ============================================================
-#  YanKa Launcher 一键发布
-#  产物：发布\YanKa启动器.exe —— 单文件自包含，双击即用（无需安装 .NET）
+#  Lattice Launcher 一键发布
+#  产物：发布\Lattice启动器.exe —— 单文件自包含，双击即用（无需安装 .NET）
 #  用法：右键 → 使用 PowerShell 运行（或 powershell -ExecutionPolicy Bypass -File 发布.ps1）
 # ============================================================
 $ErrorActionPreference = "Stop"
@@ -8,10 +8,10 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $out  = Join-Path $root "发布"
 
 Write-Host ""
-Write-Host "=== YanKa Launcher 发布 ===" -ForegroundColor Cyan
+Write-Host "=== Lattice Launcher 发布 ===" -ForegroundColor Cyan
 
 # 0) 自动关闭运行中的启动器（发布需覆盖 exe；用户不在时自动处理，无需手动关）
-$running = Get-Process -Name "YanKa启动器" -ErrorAction SilentlyContinue
+$running = Get-Process -Name "Lattice启动器" -ErrorAction SilentlyContinue
 if ($running) {
     Write-Host "检测到启动器正在运行，自动关闭..." -ForegroundColor Yellow
     $running | Stop-Process -Force
@@ -35,14 +35,14 @@ if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
 # 3) 取 exe → 移到 发布\ 并重命名为友好名，清掉 stage 残留
 $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
 if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
-$final = Join-Path $out "YanKa启动器.exe"
+$final = Join-Path $out "Lattice启动器.exe"
 # 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
 if (Test-Path $final) {
     try {
         $fs = [System.IO.File]::Open($final, 'Open', 'Read', 'None')
         $fs.Close()
     } catch {
-        Write-Host "[错误] 检测到启动器正在运行（exe 被占用）——请先关闭 YanKa启动器 再运行本脚本" -ForegroundColor Red
+        Write-Host "[错误] 检测到启动器正在运行（exe 被占用）——请先关闭 Lattice启动器 再运行本脚本" -ForegroundColor Red
         exit 1
     }
 }
@@ -56,9 +56,9 @@ Write-Host "[2/3] 签名..."
 # 5) 使用说明
 $sizeMB = [Math]::Round((Get-Item $final).Length / 1MB)
 @"
-YanKa Launcher（闫卡启动器）
+Lattice Launcher（晶格启动器）
 =============================
-双击 [YanKa启动器.exe] 即可运行 —— 单文件自包含，无需安装 .NET 运行库。
+双击 [Lattice启动器.exe] 即可运行 —— 单文件自包含，无需安装 .NET 运行库。
 首次启动会解压运行库到系统临时目录，需要几秒到十几秒，属正常现象。
 
 构建时间：$(Get-Date -Format "yyyy-MM-dd HH:mm")

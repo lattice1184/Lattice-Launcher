@@ -21,23 +21,26 @@ public sealed class CurseForgeService
     private readonly HttpClient _http;
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
+    private readonly string? _apiKeyOverride;
 
-    /// <summary>已配置 API Key；false = CF 源禁用（UI 提示"未配置 API Key"）</summary>
-    public bool IsEnabled { get; }
+    /// <summary>是否启用（动态：每次读设置/环境变量——设置页改 key 即时生效，无需重启）</summary>
+    public bool IsEnabled => !string.IsNullOrWhiteSpace(EffectiveKey());
+
+    /// <summary>当前生效 key：构造注入优先（null = 动态读设置/环境变量；空字符串 = 显式禁用），否则每次读设置（不再构造时缓存）</summary>
+    private string? EffectiveKey() =>
+        _apiKeyOverride is not null ? _apiKeyOverride : ResolveApiKey();
 
     public CurseForgeService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null)
-        : this(ResolveApiKey(), http, downloads, gameDirectory)
+        : this(null, http, downloads, gameDirectory) // null = 动态读设置/环境变量
     {
     }
 
-    /// <summary>测试注入用：显式 key（null/空 = 禁用）</summary>
+    /// <summary>测试注入用：显式 key（null = 动态读设置；空字符串 = 禁用）</summary>
     public CurseForgeService(string? apiKey, HttpClient? http = null, DownloadService? downloads = null,
         string? gameDirectory = null)
     {
-        IsEnabled = !string.IsNullOrWhiteSpace(apiKey);
+        _apiKeyOverride = apiKey;
         _http = http ?? new HttpClient();
-        if (IsEnabled)
-            _http.DefaultRequestHeaders.Add("x-api-key", apiKey);
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
@@ -84,6 +87,29 @@ public sealed class CurseForgeService
         return new CurseForgeSearchPage(response.data ?? [], response.pagination?.totalCount ?? response.data?.Count ?? 0);
     }
 
+    /// <summary>
+    /// 验证当前生效 key：调一次最小 search 请求。401/403 = 无效；其他状态码/网络错误 = 无法验证。
+    /// 结果只含状态与 HTTP 码，**绝不包含 key 内容**（设置页填入后失焦即调，用于即时反馈）。
+    /// </summary>
+    public async Task<(bool Valid, string Message)> ValidateKeyAsync(CancellationToken ct = default)
+    {
+        if (!IsEnabled) return (false, "未配置 Key");
+        try
+        {
+            var url = BuildSearchUrl(ProjectType.Mod, null, null, SortIndex.Relevance, 1, 0);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Add("x-api-key", EffectiveKey());
+            using var resp = await _http.SendAsync(req, ct);
+            if (resp.IsSuccessStatusCode) return (true, "Key 有效");
+            var code = (int)resp.StatusCode;
+            return (false, code is 401 or 403 ? $"Key 无效（HTTP {code}）" : $"验证失败（HTTP {code}）");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return (false, "无法连接 CurseForge API，稍后再试");
+        }
+    }
+
     /// <summary>项目详情（含 logo / authors / 下载数）</summary>
     public async Task<CurseforgeProject?> GetProjectAsync(int modId, CancellationToken ct = default)
     {
@@ -119,8 +145,18 @@ public sealed class CurseForgeService
         var targetDir = EcosystemService.ResolveInstallPath(_gameDirectory, instanceId, type);
         var destPath = Path.Combine(targetDir, Path.GetFileName(file.fileName));
         var sha1 = file.hashes?.algo == 1 ? file.hashes.value : null; // CF algo: 1=SHA1 2=MD5
-        await _downloads.DownloadFileAsync(file.downloadUrl, destPath, sha1, file.fileLength, progress, ct);
+        await _downloads.DownloadFileAsync(ApplyCdnPrefix(file.downloadUrl), destPath, sha1, file.fileLength, progress, ct);
         return destPath;
+    }
+
+    /// <summary>CF 文件 CDN 加速：设置里可配置镜像/代理前缀替换官方 edge.forgecdn.net（国内直连慢）。
+    /// 每次读设置（改前缀即时生效）；前缀为空或 URL 非官方域名时原样返回。</summary>
+    private static string ApplyCdnPrefix(string url)
+    {
+        const string official = "https://edge.forgecdn.net/";
+        var prefix = LauncherSettings.Current.CurseForgeCdnPrefix?.Trim();
+        if (string.IsNullOrEmpty(prefix) || !url.StartsWith(official)) return url;
+        return prefix.TrimEnd('/') + "/" + url[official.Length..];
     }
 
     /// <summary>
@@ -194,7 +230,13 @@ public sealed class CurseForgeService
 
     private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct)
     {
-        var json = await _http.GetStringAsync(url, ct);
+        var key = EffectiveKey(); // 每次请求读最新 key——改 key 即时生效
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(key))
+            req.Headers.Add("x-api-key", key);
+        using var resp = await _http.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+        var json = await resp.Content.ReadAsStringAsync(ct);
         return JsonSerializer.Deserialize<T>(json);
     }
 

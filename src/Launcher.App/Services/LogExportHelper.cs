@@ -12,7 +12,7 @@ public static class LogExportHelper
     {
         Directory.CreateDirectory(outDir);
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
-        var zipPath = Path.Combine(outDir, $"YanKa-日志-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+        var zipPath = Path.Combine(outDir, $"Lattice-日志-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
 
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
 
@@ -49,21 +49,21 @@ public static class LogExportHelper
         var diagEntry = zip.CreateEntry("诊断说明.txt");
         using (var sw = new StreamWriter(diagEntry.Open(), new UTF8Encoding(false)))
         {
-            sw.WriteLine("----- YanKa Launcher 日志诊断说明 -----");
+            sw.WriteLine("----- Lattice Launcher 日志诊断说明 -----");
             sw.WriteLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sw.WriteLine($"包含文件：{(collected.Count > 0 ? string.Join("、", collected) : "（无日志文件）")}");
             sw.WriteLine();
             if (diag.Count > 0)
             {
-                sw.WriteLine("检测到以下问题（按日志内容动态匹配）：");
+                sw.WriteLine("检测到这些疑似问题：");
                 sw.WriteLine();
                 foreach (var d in diag) sw.WriteLine(d);
             }
             else
             {
-                sw.WriteLine("未匹配到已知错误模式。可提供以下信息以便排查：");
-                sw.WriteLine("· 发生时的操作步骤");
-                sw.WriteLine("· 控制台最后 20 行内容");
+                sw.WriteLine("没匹配到已知错误。想排查的话可以给：");
+                sw.WriteLine("· 当时的操作步骤");
+                sw.WriteLine("· 控制台最后 20 行");
             }
         }
 
@@ -76,6 +76,6 @@ public static class LogExportHelper
            + $"系统：{Environment.OSVersion}" + Environment.NewLine
            + $"CPU：{Environment.ProcessorCount} 核" + Environment.NewLine
            + $"可用内存：{GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024} MB" + Environment.NewLine
-           + $"启动器：YanKa Launcher" + Environment.NewLine
+           + $"启动器：Lattice Launcher" + Environment.NewLine
            + $"游戏目录：{Launcher.Core.Utils.GameDirectory.InstallDir()}" + Environment.NewLine;
 }

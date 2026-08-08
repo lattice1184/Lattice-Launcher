@@ -1,15 +1,26 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
+using Launcher.Core.Launch;
+using Launcher.Core.Services;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>内存预设项（Mb=0 表示总内存 60%，Mb=-1 表示自定义）</summary>
+/// <summary>强调色预设项（选色器圆点 + 名字）</summary>
+public sealed record AccentPresetVM(string Name, string Hex);
+
+/// <summary>内存预设项（Mb=-2 自动按可用内存，0 总内存 60%，Mb=-1 自定义）</summary>
 public sealed record MemoryPresetVM(string Name, int Mb)
 {
-    public bool IsCustom => Mb < 0;
+    public bool IsCustom => Mb == -1;
 }
+
+/// <summary>下载源策略选项（设置页 ComboBox）</summary>
+public sealed record DownloadSourceOption(string Name, DownloadSourcePreference Value);
+
+/// <summary>性能档位选项（设置页 ComboBox）</summary>
+public sealed record JvmProfileOption(string Name, PerformanceProfile Value);
 
 /// <summary>
 /// 设置页：游戏目录 / 版本隔离 / 内存预设 / Java 路径 / 额外 JVM 参数 / 下载选项。
@@ -19,6 +30,7 @@ public partial class SettingsViewModel : ViewModelBase
 {
     public List<MemoryPresetVM> MemoryPresets { get; } =
     [
+        new("自动（按可用内存）", -2),
         new("低（2G）", 2048),
         new("中（4G）", 4096),
         new("高（8G）", 8192),
@@ -61,10 +73,34 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool AutoChineseEnabled { get; set; } = true;
 
-    // ---------- 下载 ----------
+    /// <summary>性能档位选项与选中项（GC 参数预设；不影响内存）</summary>
+    public IReadOnlyList<JvmProfileOption> JvmProfileOptions { get; } =
+    [
+        new("轻量", PerformanceProfile.Low),
+        new("均衡", PerformanceProfile.Medium),
+        new("流畅", PerformanceProfile.High),
+        new("极致", PerformanceProfile.Ultra),
+    ];
 
     [ObservableProperty]
-    public partial bool MirrorFallbackEnabled { get; set; } = true;
+    public partial JvmProfileOption? SelectedJvmProfile { get; set; }
+
+    /// <summary>启动随机小提示（彩蛋开关）</summary>
+    [ObservableProperty]
+    public partial bool StartupTipEnabled { get; set; } = true;
+
+    // ---------- 下载 ----------
+
+    /// <summary>下载源策略选项与选中项（官方优先/镜像优先/仅镜像）</summary>
+    public IReadOnlyList<DownloadSourceOption> DownloadSourceOptions { get; } =
+    [
+        new("官方优先", DownloadSourcePreference.OfficialFirst),
+        new("镜像优先", DownloadSourcePreference.MirrorFirst),
+        new("仅镜像", DownloadSourcePreference.MirrorOnly),
+    ];
+
+    [ObservableProperty]
+    public partial DownloadSourceOption? SelectedDownloadSource { get; set; }
 
     [ObservableProperty]
     public partial int MaxConcurrentDownloads { get; set; }
@@ -73,13 +109,49 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int SpeedLimitKbps { get; set; }
 
-    /// <summary>分片并发档位（0=低8 / 1=中16 / 2=高24 连接）</summary>
+    /// <summary>分片数（每文件并发连接数，1-32；0=用档位默认）</summary>
     [ObservableProperty]
-    public partial int DownloadTierIndex { get; set; }
+    public partial int ChunkCount { get; set; } = 8;
 
     /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
     [ObservableProperty]
     public partial string CurseForgeApiKeyText { get; set; } = "";
+
+    /// <summary>Key 有效性验证状态（只含 有效/无效/HTTP 码——**永不包含 key 内容**）</summary>
+    [ObservableProperty]
+    public partial string CurseForgeApiKeyStatus { get; set; } = "";
+
+    /// <summary>验证序列号：key 输入变化即递增，丢弃过期验证结果（防抖 + 防旧结果覆盖新输入状态）</summary>
+    private int _keyValidateSeq;
+
+    /// <summary>CF 服务（构造含 GameDirectory.Detect() 文件扫描——缓存实例避免每次验证重扫）</summary>
+    private readonly CurseForgeService _curseForge = new();
+
+    /// <summary>失焦/页面打开时验证当前 key（调一次 search API；结果只含状态不含 key）</summary>
+    public async Task ValidateApiKeyAsync()
+    {
+        var seq = ++_keyValidateSeq;
+        if (string.IsNullOrWhiteSpace(CurseForgeApiKeyText))
+        {
+            CurseForgeApiKeyStatus = "未配置 Key（留空 = 禁用 CurseForge 源）";
+            return;
+        }
+        CurseForgeApiKeyStatus = "验证中…";
+        try
+        {
+            var (valid, msg) = await _curseForge.ValidateKeyAsync();
+            if (seq != _keyValidateSeq) return; // 输入已变，丢弃过期结果
+            CurseForgeApiKeyStatus = (valid ? "✓ " : "✗ ") + msg;
+        }
+        catch (Exception)
+        {
+            if (seq == _keyValidateSeq) CurseForgeApiKeyStatus = "✗ 验证异常，稍后再试";
+        }
+    }
+
+    /// <summary>CurseForge 文件 CDN 镜像前缀（空 = 官方 CDN 直连）</summary>
+    [ObservableProperty]
+    public partial string CurseForgeCdnPrefixText { get; set; } = "";
 
     // ---------- 外观 ----------
 
@@ -101,9 +173,28 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>外观预览（点击选项即时预览，不写盘；保存才持久化）</summary>
     public event Action? PreviewChanged;
 
-    /// <summary>预设强调色（色块按钮）</summary>
-    public static IReadOnlyList<string> AccentPresets { get; } =
-        ["#2DD4BF", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899"];
+    /// <summary>预设强调色（圆点+名字；非预设颜色动态插入「自定义 #HEX」项）</summary>
+    public static IReadOnlyList<AccentPresetVM> AccentPresets { get; } =
+    [
+        new("青绿", "#2DD4BF"),
+        new("蓝", "#3B82F6"),
+        new("紫", "#8B5CF6"),
+        new("琥珀", "#F59E0B"),
+        new("玫红", "#EC4899"),
+    ];
+
+    /// <summary>选色器列表（含自定义兜底项）</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<AccentPresetVM> AccentPresetItems { get; set; } = AccentPresets;
+
+    /// <summary>当前选中的预设（null = 自定义色未匹配，回退显示 hex）</summary>
+    [ObservableProperty]
+    public partial AccentPresetVM? SelectedAccent { get; set; }
+
+    partial void OnSelectedAccentChanged(AccentPresetVM? value)
+    {
+        if (value is not null) AccentColor = value.Hex; // 触发 PreviewChanged 预览
+    }
 
     public SettingsViewModel()
     {
@@ -117,14 +208,29 @@ public partial class SettingsViewModel : ViewModelBase
         JavaPathText = s.JavaPath ?? "";
         ExtraJvmArgsText = s.ExtraJvmArgs ?? "";
         AutoChineseEnabled = s.AutoChineseEnabled;
-        MirrorFallbackEnabled = s.MirrorFallbackEnabled;
+        SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
+        StartupTipEnabled = s.StartupTipEnabled;
+        SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
-        DownloadTierIndex = (int)s.DownloadTier / 8 - 1;
+        ChunkCount = s.ChunkCount > 0 ? s.ChunkCount : (int)s.DownloadTier; // 老用户继承当前档位，新装默认 8
         CurseForgeApiKeyText = s.CurseForgeApiKey ?? "";
+        CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
         WindowOpacity = s.WindowOpacity;
-        AccentColor = s.AccentColor;
         DensityIndex = (int)s.Density;
+        // 强调色：非预设值（老用户自定义）动态插「自定义 #HEX」项；选中项触发 AccentColor 赋值预览
+        AccentColor = s.AccentColor;
+        if (AccentPresets.All(p => p.Hex != s.AccentColor))
+        {
+            AccentPresetItems = AccentPresets
+                .Prepend(new AccentPresetVM($"自定义 {s.AccentColor.ToUpperInvariant()}", s.AccentColor))
+                .ToList();
+        }
+        SelectedAccent = AccentPresetItems.FirstOrDefault(p => p.Hex == s.AccentColor);
+
+        // 已有 key 的老用户打开设置页即验证一次（结果只含状态，不含 key）
+        if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyText))
+            _ = ValidateApiKeyAsync();
     }
 
     // ---------- 写入 ----------
@@ -136,11 +242,14 @@ public partial class SettingsViewModel : ViewModelBase
         s.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
         s.ExtraJvmArgs = string.IsNullOrWhiteSpace(ExtraJvmArgsText) ? null : ExtraJvmArgsText.Trim();
         s.AutoChineseEnabled = AutoChineseEnabled;
-        s.MirrorFallbackEnabled = MirrorFallbackEnabled;
+        s.DownloadSource = SelectedDownloadSource?.Value ?? DownloadSourcePreference.OfficialFirst;
+        s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
+        s.StartupTipEnabled = StartupTipEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
-        s.DownloadTier = (DownloadTier)((DownloadTierIndex + 1) * 8);
+        s.ChunkCount = ChunkCount;
         s.CurseForgeApiKey = CurseForgeApiKeyText.Trim();
+        s.CurseForgeCdnPrefix = CurseForgeCdnPrefixText.Trim();
         s.Save();
     }
 
@@ -171,14 +280,21 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnJavaPathTextChanged(string value) => Save();
     partial void OnExtraJvmArgsTextChanged(string value) => Save();
     partial void OnAutoChineseEnabledChanged(bool value) => Save();
-    partial void OnMirrorFallbackEnabledChanged(bool value) => Save();
+    partial void OnSelectedJvmProfileChanged(JvmProfileOption? value) => Save();
+    partial void OnStartupTipEnabledChanged(bool value)
+    {
+        Save();
+        NotificationService.Info(value ? "已开启小提示，下次启动生效" : "已关闭小提示，下次启动生效");
+    }
+    partial void OnSelectedDownloadSourceChanged(DownloadSourceOption? value) => Save();
     // 滑块拖动连续触发——150ms 防抖写盘（避免每 tick 写 settings.json）
     private CancellationTokenSource? _saveDebounce;
 
     partial void OnMaxConcurrentDownloadsChanged(int value) => DebouncedSave();
     partial void OnSpeedLimitKbpsChanged(int value) => DebouncedSave();
-    partial void OnDownloadTierIndexChanged(int value) => Save();
+    partial void OnChunkCountChanged(int value) => DebouncedSave(); // 滑块拖动防抖写盘
     partial void OnCurseForgeApiKeyTextChanged(string value) => Save();
+    partial void OnCurseForgeCdnPrefixTextChanged(string value) => Save();
 
     // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
     partial void OnWindowOpacityChanged(double value) => PreviewChanged?.Invoke();
@@ -204,7 +320,7 @@ public partial class SettingsViewModel : ViewModelBase
     {
         var owner = DialogService.MainWindow();
         if (owner is null || !await DialogService.Confirm(owner,
-                "重置外观设置（透明度/强调色/密度）为默认值？", "重置外观", "重置", "取消"))
+                "把外观（透明度/强调色/密度）重置回默认？", "重置外观", "重置", "取消"))
         {
             return;
         }
@@ -259,5 +375,33 @@ public partial class SettingsViewModel : ViewModelBase
     {
         JavaPathText = "";
         Save();
+    }
+
+    /// <summary>清理下载缓存：删除断点续传残留的 *.parts 临时目录（不影响已装版本）</summary>
+    public (int Dirs, long Bytes) ClearDownloadCache()
+    {
+        var gameDir = LauncherSettings.Current.GameDirectory ?? GameDirectory.Detect();
+        var removed = 0;
+        long freed = 0;
+        if (Directory.Exists(gameDir))
+        {
+            foreach (var dir in Directory.EnumerateDirectories(gameDir, "*.parts", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    freed += DirSize(dir);
+                    Directory.Delete(dir, true);
+                    removed++;
+                }
+                catch { /* 占用中跳过 */ }
+            }
+        }
+        return (removed, freed);
+    }
+
+    private static long DirSize(string dir)
+    {
+        try { return Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length); }
+        catch { return 0; }
     }
 }

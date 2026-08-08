@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
 
@@ -22,12 +23,18 @@ public sealed class GameLaunchService
         var vjPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.json");
         if (!File.Exists(vjPath))
             throw new FileNotFoundException($"版本 {versionId} 未安装（请先在版本页下载）");
-        var jarPath = Path.Combine(gameDirectory, "versions", versionId, $"{versionId}.jar");
-        if (!File.Exists(jarPath))
-            throw new FileNotFoundException($"版本 {versionId} 的客户端文件缺失（请重新下载）");
 
         var version = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(vjPath, ct))
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {versionId}");
+
+        // AL29 H5：启动前完整校验（client jar + 本 OS 实际需要的 libraries，沿链合并）——
+        // 缺失在启动前报错（HomeViewModel 既有 catch 走修复指引 + AutoFix），不再 JVM 启动后
+        // ClassNotFoundException/ZipException 崩溃。父 json 缺失时链保留 → 只查子自身 → 落到 Build 抛
+        // ParentVersionMissingException（C2 路径）。
+        var missing = AutoRepairService.VerifyVersion(version, gameDirectory);
+        if (missing.Count > 0)
+            throw new FileNotFoundException(
+                $"版本 {versionId} 文件不完整：缺 {missing.Count} 个文件（首例：{missing[0]}）。可点重新下载补全");
 
         // 2. 版本隔离：game_directory 指向 versions/{id}，启动前建 saves/mods 等子目录（Minecraft 不会自建）；
         //    自动中文写隔离后的目录（options.txt 各版本独立，不串门）
@@ -43,24 +50,16 @@ public sealed class GameLaunchService
         // 3. Java：设置指定路径优先，否则自动选配（PCL runtime / PATH）。
         //    版本 JSON 无 javaVersion 时按 MC 版本推断（<1.17 → Java 8；1.17+ → 17/21），避免旧版本误选 Java 21
         onStage?.Invoke("检测 Java");
-        // AL10.2：Java 大版本优先取版本自身，缺失时沿 InheritsFrom 链继承父版本——
-        // fabric/forge profile 无 javaVersion 字段，继承原版（如 26.2 → Java 25）；否则 InferJavaMajor
-        // 对 "fabric-loader-..." 匹配失败兜底 17，选到 java-runtime-beta → UnsupportedClassVersionError
-        var requiredMajor = version.JavaVersion?.MajorVersion;
-        if (requiredMajor is null && version.InheritsFrom is { } parentId)
+        // AL10.2：Java 大版本解析共用 JavaSelector.ResolveRequiredMajor——自身 javaVersion 缺失时
+        // 沿 InheritsFrom 链继承父版本（fabric/forge profile 无 javaVersion，继承原版如 26.2 → Java 25），
+        // 链断则按 MC 版本号推断；服务端开服（PickServerJava）同用，避免"只读自身 json → 默认 17"启动即崩
+        var requiredMajor = JavaSelector.ResolveRequiredMajor(version, id =>
         {
-            var parentJson = Path.Combine(gameDirectory, "versions", parentId, $"{parentId}.json");
-            if (File.Exists(parentJson))
-            {
-                try
-                {
-                    requiredMajor = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(parentJson))
-                        ?.JavaVersion?.MajorVersion;
-                }
-                catch { /* 父 json 损坏则继续兜底推断 */ }
-            }
-        }
-        requiredMajor ??= InferJavaMajor(version.Id);
+            var parentJson = Path.Combine(gameDirectory, "versions", id, $"{id}.json");
+            if (!File.Exists(parentJson)) return null;
+            try { return JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(parentJson)); }
+            catch { return null; } // 父 json 损坏则继续链上推断
+        });
         var java = javaPathOverride is { } ov && File.Exists(ov)
             ? ov
             : LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
@@ -117,16 +116,6 @@ public sealed class GameLaunchService
             }
             catch (Exception ex) { onLog?.Invoke($"§ natives 解压警告 {Path.GetFileName(nativeJar)}: {ex.Message}"); }
         }
-    }
-
-    /// <summary>按 MC 版本推断所需 Java 大版本（version.json 无 javaVersion 时）：1.17+ → 17；更旧 → 8</summary>
-    private static int InferJavaMajor(string versionId)
-    {
-        var m = System.Text.RegularExpressions.Regex.Match(versionId, @"^(\d+)\.(\d+)");
-        if (!m.Success) return 17;
-        var major = int.Parse(m.Groups[1].Value);
-        var minor = int.Parse(m.Groups[2].Value);
-        return major > 1 || (major == 1 && minor >= 17) ? 17 : 8;
     }
 
     /// <summary>log4j 配置文件缺失时写入 Minecraft 标准模板（防 log4j 无配置告警）</summary>

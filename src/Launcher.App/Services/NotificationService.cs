@@ -37,6 +37,9 @@ public partial class ToastItem : ObservableObject
     [ObservableProperty]
     public partial double Opacity { get; set; } = 0;
 
+    /// <summary>移除前的滑出回调（视图层注册：MainWindow ContainerPrepared 挂 SlideOutToRight；动画时长被 Delay(260) 覆盖）</summary>
+    public Action? OnRemoving { get; set; }
+
     public ToastItem(string message, ToastType type)
     {
         Message = message;
@@ -76,7 +79,11 @@ public static class NotificationService
     private static async Task FadeOutAsync(ToastItem toast, int durationMs)
     {
         await Task.Delay(durationMs);
-        await Dispatcher.UIThread.InvokeAsync(() => toast.Opacity = 0); // 淡出（UI 线程触发过渡）
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            toast.OnRemoving?.Invoke(); // 视图层滑出（180ms，与下方 Delay(260) 同步收尾）
+            toast.Opacity = 0; // 淡出（UI 线程触发过渡）
+        });
         await Task.Delay(260);
         await Dispatcher.UIThread.InvokeAsync(() => Toasts.Remove(toast));
     }

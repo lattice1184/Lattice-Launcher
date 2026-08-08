@@ -55,11 +55,12 @@ public class LauncherSettingsTests
     public void Defaults_LaunchFields()
     {
         var s = new LauncherSettings();
-        Assert.Equal(4096, s.MemoryMb);
+        Assert.Equal(-2, s.MemoryMb); // AL16：默认自动分配（按可用内存留余量）
+        Assert.Equal(2048, s.ServerMemoryMb); // 服务器内存独立默认 2048
         Assert.Null(s.JavaPath);
         Assert.Null(s.ExtraJvmArgs);
         Assert.True(s.AutoChineseEnabled);
-        Assert.True(s.MirrorFallbackEnabled);
+        Assert.Equal(DownloadSourcePreference.OfficialFirst, s.DownloadSource);
         Assert.Equal(0, s.MaxConcurrentDownloads);
     }
 
@@ -72,20 +73,22 @@ public class LauncherSettingsTests
             var s = new LauncherSettings
             {
                 MemoryMb = 8192,
+                ServerMemoryMb = 4096,
                 JavaPath = @"C:\Program Files\Java\jdk-21in\java.exe",
                 ExtraJvmArgs = "-Dxxx=1 -Xss2m",
                 AutoChineseEnabled = false,
-                MirrorFallbackEnabled = false,
+                DownloadSource = DownloadSourcePreference.MirrorOnly,
                 MaxConcurrentDownloads = 12,
             };
             s.Save(path);
 
             var loaded = LauncherSettings.Load(path);
             Assert.Equal(8192, loaded.MemoryMb);
+            Assert.Equal(4096, loaded.ServerMemoryMb);
             Assert.Equal(@"C:\Program Files\Java\jdk-21in\java.exe", loaded.JavaPath);
             Assert.Equal("-Dxxx=1 -Xss2m", loaded.ExtraJvmArgs);
             Assert.False(loaded.AutoChineseEnabled);
-            Assert.False(loaded.MirrorFallbackEnabled);
+            Assert.Equal(DownloadSourcePreference.MirrorOnly, loaded.DownloadSource);
             Assert.Equal(12, loaded.MaxConcurrentDownloads);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
@@ -99,6 +102,7 @@ public class LauncherSettingsTests
         Assert.Equal(0, s.ChunkCount);
         Assert.Equal(0, s.BufferSize);
         Assert.Equal("", s.CurseForgeApiKey);
+        Assert.Equal("", s.ThirdPartyDownloadDir);
     }
 
     [Fact]
@@ -113,6 +117,7 @@ public class LauncherSettingsTests
                 ChunkCount = 12,
                 BufferSize = 163840,
                 CurseForgeApiKey = "cf-key-abc",
+                ThirdPartyDownloadDir = @"D:\Downloads\mods",
             };
             s.Save(path);
 
@@ -121,6 +126,7 @@ public class LauncherSettingsTests
             Assert.Equal(12, loaded.ChunkCount);
             Assert.Equal(163840, loaded.BufferSize);
             Assert.Equal("cf-key-abc", loaded.CurseForgeApiKey);
+            Assert.Equal(@"D:\Downloads\mods", loaded.ThirdPartyDownloadDir);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

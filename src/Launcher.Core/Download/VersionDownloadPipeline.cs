@@ -54,7 +54,10 @@ public sealed class VersionDownloadPipeline
         foreach (var lib in version.Libraries ?? [])
         {
             var artifact = lib.Downloads?.Artifact;
-            if (artifact is not null)
+            // AL30：url 为空的 artifact 是"继承引用"（forge 的 client classifier 库 url=""，安装器标记 Invalid 跳过），
+            // 无实体下载目标——镜像 VerifyFiles 同规则跳过，否则建子任务下载空 URL 抛 UriFormatException → 组任务误报失败
+            // （真机 08-07 10:37「修复 1.21.10-forge-60.1.0」Failed + Error=null 即此根因，Vanilla 启动器同样跳过）。
+            if (artifact is not null && !string.IsNullOrEmpty(artifact.Url))
             {
                 var path = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
                 tasks.Add(ctx.AddChild(MavenPath.FileName(lib.Name), artifact.Size ?? 0, async (p, c) =>
