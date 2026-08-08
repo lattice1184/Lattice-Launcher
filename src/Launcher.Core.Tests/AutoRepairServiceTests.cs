@@ -33,4 +33,23 @@ public class AutoRepairServiceTests
 
         Assert.Empty(AutoRepairService.VerifyFiles(version, gameDir));
     }
+
+    /// <summary>AL11：VerifyFiles 按 OS 规则过滤——linux-only natives 库不会下载，不应误报缺失</summary>
+    [Fact]
+    public void VerifyFiles_SkipsOtherOsLibraries()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"verify-{Guid.NewGuid():N}");
+        var libs = new List<LibraryJson>
+        {
+            new("net.fabricmc:fabric-loader:0.19.3", null, null, null, null, null, null, null),
+            new("org.lwjgl:lwjgl-glfw:3.2.2", null, null, null, null,
+                [new RuleJson("allow", new RuleOsInfo("linux", null, null), null)], null, null),
+        };
+        var version = new VersionJson("1.21.11", "release", "net.minecraft.client.main.Main",
+            null, null, null, null, libs, null, null, null, null);
+
+        var missing = AutoRepairService.VerifyFiles(version, gameDir);
+        Assert.Equal(2, missing.Count); // client jar + fabric-loader；linux-only 库被过滤
+        Assert.DoesNotContain(missing, p => p.Contains("lwjgl-glfw-3.2.2"));
+    }
 }

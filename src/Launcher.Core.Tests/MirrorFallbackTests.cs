@@ -1,16 +1,18 @@
 using System.Net;
 using System.Net.Http;
 using Launcher.Core.Download;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Tests;
 
 /// <summary>镜像回退：官方失败→镜像成功 / 官方坏字节→镜像好字节 / 双失败按次数 / 不可映射 URL 单候选</summary>
 public class MirrorFallbackTests
 {
-    /// <summary>按 host+path 返回状态/内容；跟踪请求序列</summary>
+    /// <summary>按 host+path 返回状态/内容；跟踪请求序列（并发竞速下多个源并行打请求——List.Add 非线程安全，加锁防丢条目）</summary>
     private sealed class HostStubHandler : HttpMessageHandler
     {
         public readonly List<string> Requests = [];
+        private readonly object _lock = new();
         private readonly Dictionary<string, (int Status, byte[] Body)> _routes = [];
         private readonly byte[] _defaultBody = "12345"u8.ToArray();
 
@@ -19,7 +21,7 @@ public class MirrorFallbackTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var key = $"{request.RequestUri!.Host}{request.RequestUri.AbsolutePath}";
-            Requests.Add($"{request.Method} {key}");
+            lock (_lock) Requests.Add($"{request.Method} {key}");
             if (_routes.TryGetValue(key, out var route))
             {
                 return Task.FromResult(route.Status == 200
@@ -97,7 +99,8 @@ public class MirrorFallbackTests
             await Assert.ThrowsAsync<HttpRequestException>(() =>
                 svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None));
 
-            Assert.Equal(4, handler.Requests.Count); // 2 轮 × 2 源
+            Assert.True(handler.Requests.Count == 4,
+                $"requests({handler.Requests.Count}): {string.Join(" | ", handler.Requests)}"); // 2 轮 × 2 源
         }
         finally { if (File.Exists(dest)) File.Delete(dest); }
     }
@@ -148,15 +151,15 @@ public class MirrorFallbackTests
     }
 
     [Fact]
-    public async Task MirrorFallbackDisabled_OnlyOfficialCandidate()
+    public async Task MirrorOnly_OnlyMirrorCandidate()
     {
         var handler = new HostStubHandler();
-        handler.RouteBytes("resources.download.minecraft.net/ab/abcdef", 200, "12345"u8.ToArray());
+        handler.RouteBytes("bmclapi2.bangbang93.com/ab/abcdef", 200, "12345"u8.ToArray());
         var http = new HttpClient(handler);
         var resolver = new ResolvingDlSourceMapper(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
         var svc = new DownloadService(http, resolver, new DownloadOptions
         {
-            MirrorFallbackEnabled = false,
+            DownloadSource = DownloadSourcePreference.MirrorOnly,
             MaxSourceAttempts = 2,
             BackoffProvider = _ => TimeSpan.Zero,
         }, Path.GetTempPath());
@@ -166,8 +169,37 @@ public class MirrorFallbackTests
             var url = "https://resources.download.minecraft.net/ab/abcdef";
             await svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None);
 
-            // 镜像禁用 → 只请求官方
-            Assert.All(handler.Requests, r => Assert.DoesNotContain("bmclapi2", r));
+            // 仅镜像 → 只请求镜像，官方不出现
+            Assert.All(handler.Requests, r => Assert.DoesNotContain("resources.download.minecraft.net", r));
+        }
+        finally { if (File.Exists(dest)) File.Delete(dest); }
+    }
+
+    [Fact]
+    public async Task MirrorFirst_MirrorWins_WhenOfficialFails()
+    {
+        var handler = new HostStubHandler();
+        // 官方 500 失败；镜像 200 好字节——MirrorFirst 下镜像必须胜出（字节可验证）
+        handler.RouteBytes("resources.download.minecraft.net/ab/abcdef", 500, []);
+        handler.RouteBytes("bmclapi2.bangbang93.com/ab/abcdef", 200, "12345"u8.ToArray());
+        var http = new HttpClient(handler);
+        var resolver = new ResolvingDlSourceMapper(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
+        var svc = new DownloadService(http, resolver, new DownloadOptions
+        {
+            DownloadSource = DownloadSourcePreference.MirrorFirst,
+            MaxSourceAttempts = 2,
+            BackoffProvider = _ => TimeSpan.Zero,
+        }, Path.GetTempPath());
+        var dest = Path.Combine(Path.GetTempPath(), $"mirror-{Guid.NewGuid():N}.jar");
+        try
+        {
+            var url = "https://resources.download.minecraft.net/ab/abcdef";
+            await svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None);
+
+            // 竞速语义：官方并行发起可能被取消在请求前（请求可不出现）——只断言结果与镜像被请求
+            Assert.True(File.Exists(dest));
+            Assert.Equal("12345", await File.ReadAllTextAsync(dest));
+            Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com"));
         }
         finally { if (File.Exists(dest)) File.Delete(dest); }
     }

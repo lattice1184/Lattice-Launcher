@@ -148,7 +148,8 @@ public class JavaArgumentsBuilderTests
         var child = new VersionJson("1.16.5-forge-36.2.0", "release", "forge.Launcher", null, null,
             null, null, null, null, null, null, "1.16.5");
 
-        var ex = Assert.Throws<FileNotFoundException>(() => Build(child, @"C:\mc-empty"));
+        // AL29 C2：父版本缺失是 ParentVersionMissingException（与「客户端文件缺失」区分，修复目标不同）
+        var ex = Assert.Throws<ParentVersionMissingException>(() => Build(child, @"C:\mc-empty"));
 
         Assert.Contains("1.16.5", ex.Message);
     }

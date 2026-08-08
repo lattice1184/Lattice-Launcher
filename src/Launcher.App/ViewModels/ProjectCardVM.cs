@@ -147,8 +147,20 @@ public partial class ProjectCardVM : ObservableObject
         => d.Year > 2000 ? $"更新于 {d:yyyy-MM-dd}" : "";
 }
 
-/// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）；GameDir 为版本所在游戏目录；LoaderBadge 为真实加载器徽章（fabric/forge/neoforge/quilt，AG1 检测）</summary>
-public sealed record VersionInstanceVM(string Name, string SourceLabel = "", string GameDir = "", string LoaderBadge = "")
+/// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）；GameDir 为版本所在游戏目录；LoaderBadge 为真实加载器徽章（fabric/forge/neoforge/quilt，AG1 检测）；McVersion 为加载器版本继承的原版版本号</summary>
+public sealed record VersionInstanceVM(string Name, string SourceLabel = "", string GameDir = "", string LoaderBadge = "", string McVersion = "")
 {
-    public string DisplayName => SourceLabel.Length > 0 ? $"{Name} · {SourceLabel}" : Name;
+    /// <summary>显示名：加载器版本 → "26.2 (Fabric)"，附来源标签；原版保持原名</summary>
+    public string DisplayName
+    {
+        get
+        {
+            var core = LoaderBadge.Length > 0
+                ? $"{(McVersion.Length > 0 ? McVersion : Name)} ({Cap(LoaderBadge)})"
+                : Name;
+            return SourceLabel.Length > 0 ? $"{core} · {SourceLabel}" : core;
+        }
+    }
+
+    private static string Cap(string s) => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..] : s;
 }

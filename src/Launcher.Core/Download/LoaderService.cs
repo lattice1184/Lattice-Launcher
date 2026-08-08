@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Launch;
 using Launcher.Core.Model.Loader;
 using Launcher.Core.Model.Mojang;
@@ -27,26 +28,70 @@ public sealed class LoaderService
     private readonly HttpClient _http;
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
+    // AL29 测试缝：真实环境跑 java 安装器进程；测试注入 stub（控制退出码与写文件行为）
+    private readonly Func<string, string[], Action<string>?, CancellationToken, Task<int>> _installerProcess;
 
-    public LoaderService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null)
+    public LoaderService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
+        Func<string, string[], Action<string>?, CancellationToken, Task<int>>? installerProcess = null)
     {
-        _http = http ?? new HttpClient();
+        // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
+        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+        _installerProcess = installerProcess ?? InstallerProcess.RunAsync;
     }
 
     // ---------- 版本列表 ----------
 
     public async Task<List<LoaderMetaVersion>> GetLoaderVersionsAsync(LoaderKind kind, string mcVersion, CancellationToken ct)
     {
-        return kind switch
+        // AL28 本地缓存（24h）：meta 服务国内访问慢（实测 12s+），二次打开秒出；
+        // 列表含新版本延迟最多 24h（loader 版本更新不频繁，可接受）
+        var cachePath = CacheFilePath(kind, mcVersion);
+        if (TryLoadCache(cachePath, out var cached)) return cached;
+
+        var list = kind switch
         {
             LoaderKind.Fabric => await GetFabricVersionsAsync(mcVersion, ct),
             LoaderKind.Quilt => await GetQuiltVersionsAsync(mcVersion, ct),
             LoaderKind.NeoForge => await GetNeoForgeVersionsAsync(mcVersion, ct),
             _ => await GetForgeVersionsAsync(mcVersion, ct),
         };
+        TrySaveCache(cachePath, list);
+        return list;
+    }
+
+    // ---------- AL28 版本列表本地缓存（TTL 24h，损坏/空列表回退网络） ----------
+
+    private static string CacheFilePath(LoaderKind kind, string mcVersion)
+        => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Launcher", "cache", $"loader-{kind}-{mcVersion}.json");
+
+    private static bool TryLoadCache(string path, out List<LoaderMetaVersion> list)
+    {
+        list = [];
+        try
+        {
+            if (!File.Exists(path)) return false;
+            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromHours(24)) return false;
+            var cached = JsonSerializer.Deserialize<List<LoaderMetaVersion>>(File.ReadAllText(path));
+            if (cached is null || cached.Count == 0) return false;
+            list = cached;
+            return true;
+        }
+        catch { return false; } // 缓存损坏则重新拉取
+    }
+
+    private static void TrySaveCache(string path, List<LoaderMetaVersion> list)
+    {
+        try
+        {
+            if (list.Count == 0) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(list));
+        }
+        catch { /* 缓存失败不影响主流程 */ }
     }
 
     /// <summary>Fabric：meta.fabricmc.net/v2/versions/loader/{mc}（最新在前，stable 优先展示）</summary>
@@ -169,9 +214,13 @@ public sealed class LoaderService
                 await InstallInstallerAsync(plan, progress, ctx, ct);
                 break;
         }
-        // 本启动器安装标记（来源标签区分 PCL2 扫描版本）
+        // AL29 真机教训：先校验后标记——校验抛异常时绝不能留下 .yanla-installed
+        // （否则版本页把失败的安装计为「本启动器已装」，实测 22:41 真机即此错误）
         if (_lastInstalledVersionId is { } id)
+        {
+            VerifyInstalledVersion(id);
             InstallMarker.Mark(_gameDirectory, id);
+        }
     }
 
     /// <summary>Fabric/Quilt：拉 profile json（inheritsFrom 原版）→ 写版本目录 → 全量下载（链解析下载 client jar 与库）</summary>
@@ -223,6 +272,10 @@ public sealed class LoaderService
     {
         RequireVanilla(plan.McVersion);
 
+        // AL29 真机修复：Forge/NeoForge 官方安装器要求目标目录存在官方启动器的 launcher_profiles.json，
+        // 否则直接中止（实测 "There is no minecraft launcher profile in ..."）。第三方启动器须预写 stub（HMCL/PCL 同法）。
+        EnsureLauncherProfiles();
+
         var installerDir = Path.Combine(_gameDirectory, "installers");
         Directory.CreateDirectory(installerDir);
         var installerPath = Path.Combine(installerDir, Path.GetFileName(new Uri(plan.InstallerUrl!).LocalPath));
@@ -233,15 +286,20 @@ public sealed class LoaderService
             await ctx.AddChild($"安装器 {Path.GetFileName(installerPath)}", plan.InstallerSize ?? 0, (p, c) =>
                 _downloads.DownloadFileAsync(plan.InstallerUrl!, installerPath, plan.InstallerSha1, plan.InstallerSize, p, c)).Completion;
 
-            await ctx.AddChild($"运行 {plan.Kind} 安装器", 0, async (p, c) =>
+            var runChild = ctx.AddChild($"运行 {plan.Kind} 安装器", 0, async (p, c) =>
             {
                 var java = JavaSelector.Pick(null);
-                var exitCode = await InstallerProcess.RunAsync(java,
+                var exitCode = await _installerProcess(java,
                     ["-jar", installerPath, "--installClient", _gameDirectory],
                     line => p(new DownloadProgress(line, null, 0, 0, 0)), c);
                 if (exitCode != 0)
                     throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
-            }).Completion;
+            });
+            await runChild.Completion;
+            // AL29 真机教训：子任务 Failed 不抛（Completion 永不抛）——必须显式传播安装器失败原因，
+            // 否则会继续走 FindNewestVersionDir+校验，把「安装器执行失败」误报成「缺 N 个文件」掩盖根因
+            if (runChild.TerminalState == DownloadTaskState.Failed)
+                throw new InvalidOperationException(runChild.Error ?? $"运行 {plan.Kind} 安装器失败");
 
             // 安装器写出的版本目录名不确定 → 取安装后最新修改的版本目录
             _lastInstalledVersionId = FindNewestVersionDir();
@@ -253,21 +311,48 @@ public sealed class LoaderService
 
         progress?.Invoke(new DownloadProgress($"运行 {plan.Kind} 安装器", null, 0, 0, 0));
         var java = JavaSelector.Pick(null);
-        var exitCode = await InstallerProcess.RunAsync(java,
+        var exitCode = await _installerProcess(java,
             ["-jar", installerPath, "--installClient", _gameDirectory],
             line => progress?.Invoke(new DownloadProgress(line, null, 0, 0, 0)), ct);
         if (exitCode != 0)
             throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
     }
 
-    /// <summary>安装器写出的版本目录名不确定 → 取最近修改的版本目录（带 {id}.json 且无安装标记者优先）</summary>
+    /// <summary>官方安装器要求 launcher_profiles.json（否则 "no minecraft launcher profile" 中止）——
+    /// 只补缺失的，不覆盖已有文件（可能是官方启动器的真实配置）。</summary>
+    private void EnsureLauncherProfiles()
+    {
+        var path = Path.Combine(_gameDirectory, "launcher_profiles.json");
+        if (File.Exists(path)) return;
+        File.WriteAllText(path,
+            """{"clientToken":"","launcherVersion":1,"profiles":{},"settings":{},"selectedProfile":null}""");
+    }
+
+    /// <summary>AL29 H3/H6 补位：安装完成 != 文件完整——安装器内部下载（Forge/NeoForge）与
+    /// 下载阶段静默跳过（Fabric/Quilt）都沿版本 json 全量校验，缺失如实报错（与 VersionInstaller 同口径）。</summary>
+    private void VerifyInstalledVersion(string versionId)
+    {
+        var jsonPath = Path.Combine(_gameDirectory, "versions", versionId, $"{versionId}.json");
+        if (!File.Exists(jsonPath))
+            throw new InvalidOperationException($"版本 {versionId} 安装完成但版本 json 缺失");
+        VersionJson version;
+        try { version = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(jsonPath))!; }
+        catch { throw new InvalidOperationException($"版本 {versionId} 安装完成但版本 json 解析失败"); }
+        var missing = AutoRepairService.VerifyVersion(version, _gameDirectory);
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"安装完成但文件不完整：缺 {missing.Count} 个文件（首例：{missing[0]}）。可重新下载补全");
+    }
+
+    /// <summary>安装器写出的版本目录名不确定 → 取最近修改的版本目录（带 {id}.json）。
+    /// AL29 Test 4 实证：目录 mtime 在 NTFS 有缓存延迟（刚写入会排错序）→ 改按目录内 {id}.json 的文件 mtime 排序。</summary>
     private string? FindNewestVersionDir()
     {
         var versionsDir = Path.Combine(_gameDirectory, "versions");
         if (!Directory.Exists(versionsDir)) return null;
         return Directory.EnumerateDirectories(versionsDir)
             .Where(d => File.Exists(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
-            .OrderByDescending(Directory.GetLastWriteTime)
+            .OrderByDescending(d => File.GetLastWriteTime(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
             .Select(Path.GetFileName)
             .FirstOrDefault();
     }

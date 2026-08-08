@@ -14,11 +14,13 @@ public class DownloadServiceTests : IAsyncLifetime
     private HttpListener? _listener;
     private byte[] _payload = [];
     private byte[] _smallPayload = [];
+    private byte[] _slowPayload = [];
 
     public Task InitializeAsync()
     {
         _payload = new byte[10 * 1024 * 1024];
         _smallPayload = new byte[64 * 1024];
+        _slowPayload = new byte[1024 * 1024];
         Random.Shared.NextBytes(_payload);
         Random.Shared.NextBytes(_smallPayload);
         _listener = new HttpListener();
@@ -28,9 +30,14 @@ public class DownloadServiceTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    /// <summary>按 URL 路径路由到对应数据：/small.bin → 64KB，其余 → 10MB</summary>
+    /// <summary>按 URL 路径路由到对应数据：/small.bin → 64KB，/slow.bin → 1MB（慢速），其余 → 10MB</summary>
     private byte[] PayloadFor(HttpListenerContext ctx)
-        => ctx.Request.Url?.AbsolutePath == "/small.bin" ? _smallPayload : _payload;
+        => ctx.Request.Url?.AbsolutePath switch
+        {
+            "/small.bin" => _smallPayload,
+            "/slow.bin" => _slowPayload,
+            _ => _payload,
+        };
 
     public Task DisposeAsync()
     {
@@ -64,7 +71,21 @@ public class DownloadServiceTests : IAsyncLifetime
                         ctx.Response.StatusCode = 206;
                         ctx.Response.AddHeader("Content-Range", $"bytes {start}-{end}/{data.Length}");
                         ctx.Response.ContentLength64 = end - start + 1;
-                        await ctx.Response.OutputStream.WriteAsync(data.AsMemory((int)start, (int)(end - start + 1)));
+                        // 慢速端点：分块写+延迟，把单片下载时长拉过节流窗口（测分片进度节流上报）
+                        if (ctx.Request.Url?.AbsolutePath == "/slow.bin")
+                        {
+                            var segLen = (int)(end - start + 1);
+                            for (var offset = 0; offset < segLen; offset += 64 * 1024)
+                            {
+                                var n = Math.Min(64 * 1024, segLen - offset);
+                                await ctx.Response.OutputStream.WriteAsync(data.AsMemory((int)start + offset, n));
+                                await Task.Delay(80);
+                            }
+                        }
+                        else
+                        {
+                            await ctx.Response.OutputStream.WriteAsync(data.AsMemory((int)start, (int)(end - start + 1)));
+                        }
                     }
                     else if (ctx.Request.HttpMethod == "HEAD")
                     {
@@ -121,6 +142,44 @@ public class DownloadServiceTests : IAsyncLifetime
             var second = await File.ReadAllBytesAsync(dest);
             Assert.Equal(first, second);
             Assert.True(sw.ElapsedMilliseconds < 500, $"幂等跳过应 <500ms，实际 {sw.ElapsedMilliseconds}ms");
+        }
+        finally { File.Delete(dest); }
+    }
+
+    [Fact]
+    public async Task ChunkedDownload_Progress_ReportsMoreThanChunkCount()
+    {
+        // 修 B 回归：分片下载旧实现每片完成才报一次进度（4 片 = 4 次回调）→ 大文件
+        // 速度/剩余时间文字每片周期才刷新（观感「延迟显示」）。慢速流（每 64KB 延迟 80ms，
+        // 单片 > 250ms 节流窗口）应产生完成回调之外的中间上报：回调数必须多于分片数。
+        var sha1 = Convert.ToHexStringLower(SHA1.HashData(_slowPayload));
+        var dest = TempPath();
+        try
+        {
+            var reports = new List<(long done, long total)>();
+            var svc = new DownloadService(null, null, new DownloadOptions
+            {
+                ChunkCount = 4,
+                BufferSize = 80 * 1024,
+            }, null);
+            await svc.DownloadFileAsync($"http://localhost:{Port}/slow.bin", dest, sha1, _slowPayload.Length,
+                p =>
+                {
+                    lock (reports) reports.Add((p.FileBytesDone, p.FileTotalBytes));
+                });
+
+            lock (reports)
+            {
+                Assert.True(reports.Count > 4,
+                    $"进度回调应多于分片数（4），实际 {reports.Count}——每片完成才报一次的粒度未修");
+                Assert.Equal(_slowPayload.Length, reports[^1].done);
+                for (var i = 1; i < reports.Count; i++)
+                    Assert.True(reports[i].done >= reports[i - 1].done,
+                        $"进度应单调递增：{reports[i - 1].done} → {reports[i].done}");
+            }
+
+            var actual = await File.ReadAllBytesAsync(dest);
+            Assert.Equal(_slowPayload, actual);
         }
         finally { File.Delete(dest); }
     }

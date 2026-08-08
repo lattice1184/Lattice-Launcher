@@ -207,8 +207,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
             _matchedVersion = version;
             VersionHint = version is null
                 ? (_instance is null
-                    ? "未指定实例，可安装整合包或选择实例后安装"
-                    : $"未匹配到 {_instance.Name} 的版本，请选择其他实例或手动选版本")
+                    ? "未选择目标实例，请先在生态页顶部选择实例。"
+                    : $"没有 {_instance.Name} 能用的版本，换个实例或手动选版本")
                 : $"匹配版本: {version.Name} ({version.VersionNumber})";
             CanInstall = version is not null;
             if (version is not null) Changelog = version.Changelog ?? "";
@@ -252,7 +252,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             _cfFile = file;
             VersionHint = file is null
                 ? (_instance is null
-                    ? "未指定实例，可安装整合包或选择实例后安装"
+                    ? "未选择目标实例，请先在生态页顶部选择实例。"
                     : $"未匹配到 {_instance.Name} 的版本")
                 : $"匹配文件: {file.fileName}";
             CanInstall = file is not null;
@@ -440,7 +440,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         var fileName = version.Files?.FirstOrDefault()?.FileName ?? "";
         if (fileName.Length > 0 && File.Exists(Path.Combine(targetDir, fileName)))
             return await DialogService.Confirm(owner,
-                $"目标文件夹已存在同名文件：{fileName}\n覆盖下载？", "文件已存在", "覆盖", "取消");
+                $"目标文件夹已有同名文件：{fileName}\n覆盖下载？", "文件已存在", "覆盖", "取消");
         // 同 mod id（扫描 mods 下 jar 的 fabric.mod.json）
         if (_card.Type == ProjectType.Mod && Directory.Exists(targetDir))
         {
@@ -448,7 +448,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             {
                 if (JarModId(jar) != _card.Id) continue;
                 return await DialogService.Confirm(owner,
-                    $"「{_card.Title}」已安装在该版本的 mods 文件夹（检测到 {Path.GetFileName(jar)}）。\n仍要下载？",
+                    $"「{_card.Title}」已经装在这个版本的 mods 文件夹里（检测到 {Path.GetFileName(jar)}）。\n还要下载？",
                     "已安装此模组", "仍要下载", "取消");
             }
         }
@@ -480,6 +480,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
         {
             report = await work(dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
         });
+        // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（详情层叠还在，跳转②由下载中心统一处理）
+        MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_card.Type)}");
         if (ct.CanBeCanceled) ct.Register(() => task.Cancel());
 
         // 内联进度区订阅同一任务属性
@@ -515,7 +517,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (InstalledPath.Length > 0 && _card.Type != ProjectType.Modpack)
                 NotificationService.Success($"已安装到：{InstalledPath}");
             if (_card.Type == ProjectType.Modpack)
-                NotificationService.Info("整合包已下载到 downloads/modpacks——可到【版本】页点「导入整合包」创建实例");
+                NotificationService.Info("整合包已保存至 downloads/modpacks，请在【版本】页使用「导入整合包」创建实例。");
         }
         else if (task.State == DownloadTaskState.Completed)
         {

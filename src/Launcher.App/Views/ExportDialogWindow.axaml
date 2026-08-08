@@ -39,7 +39,6 @@
                 <TextBox Grid.Column="0" x:Name="PathBox"/>
                 <Button Grid.Column="1" Content="浏览…" Classes="ghost" Click="OnBrowse"/>
             </Grid>
-            <TextBlock Text="直接打包本地文件，无需重新下载" Classes="dim" FontSize="11"/>
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">

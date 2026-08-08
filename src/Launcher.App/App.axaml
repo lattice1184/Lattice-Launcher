@@ -3,6 +3,7 @@
              x:Class="Launcher.App.App"
              xmlns:local="using:Launcher.App"
              xmlns:behaviors="using:Launcher.App.Animations"
+             xmlns:conv="using:Launcher.App.Converters"
              RequestedThemeVariant="Dark">
 
     <Application.DataTemplates>
@@ -43,6 +44,11 @@
         <x:Double x:Key="SpaceXL">16</x:Double>
         <Thickness x:Key="PagePadding">12</Thickness>
         <Thickness x:Key="CardPad">12</Thickness>
+        <!-- 阴影令牌（#213 借鉴 BlockHelm：卡片轻阴影 + 浮层重阴影，全局统一） -->
+        <BoxShadows x:Key="ShadowCard">0 2 8 0 #14000000</BoxShadows>
+        <BoxShadows x:Key="ShadowPop">0 8 24 0 #26000000</BoxShadows>
+        <!-- 共享过渡实例：Expander 展开/收起高度动画（无实例状态，可多 Expander 复用） -->
+        <behaviors:ExpandCollapseTransition x:Key="ExpanderTransition"/>
     </Application.Resources>
 
     <Application.Styles>
@@ -168,6 +174,19 @@
             <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="UseFloatingPlaceholder" Value="True"/>
+            <!-- 聚焦过渡：只渐变颜色（边框/背景），粗细与内边距不变——几何零变化，杜绝亚像素重排的"震动"感 -->
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+            <Setter Property="Background" Value="{StaticResource BgHover}"/>
+            <Setter Property="PlaceholderForeground" Value="{DynamicResource Accent}"/>
         </Style>
         <Style Selector="ComboBox">
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
@@ -175,6 +194,60 @@
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
             <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="behaviors:DropDownAnimBehavior.Enabled" Value="True"/>
+        </Style>
+        <Style Selector="Expander">
+            <Setter Property="ContentTransition" Value="{StaticResource ExpanderTransition}"/>
+        </Style>
+
+        <!-- 开关滑块动画（#213 借鉴 BlockHelm：36x18 轨道 + 圆形 Thumb + 0.14s CubicEase）。
+             Avalonia 12 约定：模板需 PART_MovingKnobs（Panel），点击切换由 ToggleSwitch 自身处理
+             （OnPointerPressed），容器 IsHitTestVisible=False 让点击直达控件。
+             checked 驱动：轨道背景由伪类样式变色（BrushTransition 0.14s）；Thumb 位移用模板内
+             TranslateTransform 局部 Transitions + IsChecked 绑定（BoolThumbX 转换器，2/20 双侧对称），
+             绑定变化自动触发 0.14s CubicEase 过渡——绕开样式选择器对命名非 Control 的限制 -->
+        <Style Selector="ToggleSwitch">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ToggleSwitch">
+                    <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8">
+                        <ContentPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1" x:Name="PART_MovingKnobs" VerticalAlignment="Center"
+                              IsHitTestVisible="False">
+                            <Border x:Name="SwitchArea" Width="36" Height="18" CornerRadius="9"
+                                    Background="#4D6F7B90" BorderBrush="{StaticResource BorderColor}"
+                                    BorderThickness="1">
+                                <Ellipse x:Name="Thumb" Width="14" Height="14" Fill="White"
+                                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                                         RenderTransformOrigin="50%,50%">
+                                    <Ellipse.RenderTransform>
+                                        <TranslateTransform X="{Binding $parent[ToggleSwitch].IsChecked, Converter={x:Static conv:BoolThumbXConverter.Instance}}">
+                                            <TranslateTransform.Transitions>
+                                                <Transitions>
+                                                    <DoubleTransition Property="X" Duration="0:0:0.14"
+                                                                      Easing="CubicEaseInOut"/>
+                                                </Transitions>
+                                            </TranslateTransform.Transitions>
+                                        </TranslateTransform>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleSwitch /template/ Border#SwitchArea">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleSwitch:checked /template/ Border#SwitchArea">
+            <Setter Property="Background" Value="{DynamicResource Accent}"/>
+        </Style>
+        <Style Selector="ToggleSwitch:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
         <!-- 玻璃卡片（液态玻璃点缀；日志/控制台保持实色 card 保证对比度） -->
@@ -193,6 +266,30 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
+        <!-- 设置卡片三层模板（#213 借鉴 BlockHelm）：GroupHeader 分组标题 + SettingGroupCard 半透明阴影卡片 + SettingRow 两列行 -->
+        <Style Selector="TextBlock.group-header">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Margin" Value="2,0,0,6"/>
+        </Style>
+        <Style Selector="Border.setting-group">
+            <Setter Property="Background" Value="#CC1D222C"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BoxShadow" Value="{StaticResource ShadowCard}"/>
+            <Setter Property="Padding" Value="{StaticResource CardPad}"/>
+        </Style>
+        <!-- ColumnDefinitions 非 AvaloniaProperty（AVLN3000），列定义由各 Grid 显式声明；此处只统一行内间距 -->
+        <Style Selector="Grid.setting-row">
+            <Setter Property="ColumnSpacing" Value="10"/>
+        </Style>
+        <Style Selector="TextBlock.setting-label">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
         <!-- 列表行：扁平 + hover 背景过渡 + 分隔线（缩放会跳动，不做） -->
         <Style Selector="Border.row">
             <Setter Property="Background" Value="Transparent"/>
@@ -207,6 +304,18 @@
         </Style>
         <Style Selector="Border.row:hover">
             <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+        </Style>
+
+        <!-- AL11：下载任务行着重标识（覆盖 row 底部虚线为左强调条；active 优先于 hover） -->
+        <Style Selector="Border.taskRow.active">
+            <Setter Property="Background" Value="#262DD4BF"/>
+            <Setter Property="BorderBrush" Value="#2DD4BF"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+        </Style>
+        <Style Selector="Border.taskRow.failed">
+            <Setter Property="Background" Value="#263A2020"/>
+            <Setter Property="BorderBrush" Value="#E05A5A"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
         </Style>
 
         <!-- 下载角标：下载中呼吸脉冲（高亮标记下载导航项） -->

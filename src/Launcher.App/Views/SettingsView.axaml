@@ -1,183 +1,67 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="using:Launcher.App.ViewModels"
-             x:Class="Launcher.App.Views.SettingsView"
-             x:DataType="vm:SettingsViewModel">
+             xmlns:behaviors="using:Launcher.App.Animations"
+             x:Class="Launcher.App.Views.SettingsView">
 
     <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,12">
-            <TextBlock Text="设置" FontSize="20" FontWeight="Bold"/>
-            <TextBlock Text="游戏目录 / 启动参数 / 下载选项（改动即时生效）" Classes="sub" FontSize="12"/>
-        </StackPanel>
-
-        <ScrollViewer>
-            <StackPanel Spacing="8" MaxWidth="760" HorizontalAlignment="Center">
-
-                <!-- 游戏目录 -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="游戏目录" FontSize="14" FontWeight="SemiBold"/>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                            <TextBox Grid.Column="0" Text="{Binding GameDirectoryText}" IsReadOnly="True"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <Button Content="浏览…" Classes="ghost" Click="OnBrowseGameDir"/>
-                                <Button Content="默认" Classes="ghost" Click="OnResetGameDir"/>
-                            </StackPanel>
-                        </Grid>
-                        <TextBlock Text="{Binding SourceLabelText}" Classes="dim" FontSize="11"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="版本隔离（各版本独立存档/模组，不串门）" Classes="sub" FontSize="12"
-                                       VerticalAlignment="Center"/>
-                            <ToggleSwitch IsChecked="{Binding VersionIsolation}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- 启动 -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="启动" FontSize="14" FontWeight="SemiBold"/>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                            <TextBlock Text="内存分配" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding MemoryPresets}"
-                                      SelectedItem="{Binding SelectedMemoryPreset}" HorizontalAlignment="Left">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:MemoryPresetVM">
-                                        <TextBlock Text="{Binding Name}"/>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
-                                        IsVisible="{Binding IsCustomMemory}">
-                                <TextBox Width="90" Text="{Binding MemoryCustomText}"
-                                         KeyDown="OnMemoryCustomKeyDown" LostFocus="OnMemoryCustomLostFocus"/>
-                                <TextBlock Text="MB" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                            <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <TextBox Grid.Column="1" Text="{Binding JavaPathText}" Watermark="自动选配（PCL 运行库 / PATH）"/>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                                <Button Content="浏览…" Classes="ghost" Click="OnBrowseJava"/>
-                                <Button Content="自动" Classes="ghost" Click="OnResetJava"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"
-                                     Watermark="-Dxxx=1 -Xss2m（空格分隔）"/>
-                        </Grid>
-
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="启动时自动写入中文语言" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <ToggleSwitch IsChecked="{Binding AutoChineseEnabled}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- 外观 -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="外观" FontSize="14" FontWeight="SemiBold"/>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                            <TextBlock Text="窗口透明度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <Slider Grid.Column="1" Minimum="0.7" Maximum="1.0" TickFrequency="0.05"
-                                    Value="{Binding WindowOpacity}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding WindowOpacity, StringFormat={}{0:0.0}}" 
-                                       Classes="dim" FontSize="12" Width="36" TextAlignment="Center"
-                                       VerticalAlignment="Center"/>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="强调色" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <ItemsControl ItemsSource="{x:Static vm:SettingsViewModel.AccentPresets}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" Spacing="6"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Button Width="24" Height="24" CornerRadius="12" Padding="0"
-                                                Background="{Binding}" Click="OnAccentClick"
-                                                CommandParameter="{Binding}"/>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="界面密度" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <Button Content="紧凑" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                                    CommandParameter="0"/>
-                            <Button Content="标准" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                                    CommandParameter="1"/>
-                            <Button Content="舒适" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
-                                    CommandParameter="2"/>
-                        </StackPanel>
-                        <TextBlock Text="改动即时预览；点击「保存并应用」才永久生效" Classes="dim" FontSize="11"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="保存并应用" Classes="primary" FontSize="12" Padding="16,6"
-                                    Command="{Binding SaveAppearanceCommand}"/>
-                            <Button Content="重置设置" Classes="danger" FontSize="12" Padding="16,6"
-                                    Command="{Binding ResetAppearanceCommand}"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- 下载 -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="下载" FontSize="14" FontWeight="SemiBold"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="官方源失败时回退镜像（BMCLAPI）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <ToggleSwitch IsChecked="{Binding MirrorFallbackEnabled}"/>
-                        </StackPanel>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                            <TextBlock Text="最大并发下载数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <Slider Grid.Column="1" Minimum="1" Maximum="16" TickFrequency="1" Value="{Binding MaxConcurrentDownloads}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
-                                       Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="分片并发档位" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <Button Content="低（8 连接）" Classes="ghost" FontSize="12" Padding="12,5"
-                                    Click="OnTierClick" CommandParameter="0"/>
-                            <Button Content="中（16 连接）" Classes="ghost" FontSize="12" Padding="12,5"
-                                    Click="OnTierClick" CommandParameter="1"/>
-                            <Button Content="高（24 连接）" Classes="ghost" FontSize="12" Padding="12,5"
-                                    Click="OnTierClick" CommandParameter="2"/>
-                        </StackPanel>
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                            <TextBlock Text="CurseForge API Key" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <TextBox Grid.Column="1" Text="{Binding CurseForgeApiKeyText}" PasswordChar="*"
-                                     Watermark="可选：配置后启用 CurseForge 模组源（console.curseforge.com 申请）"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                            <TextBlock Text="下载限速（KB/s，0=不限）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                            <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
-                            <TextBlock Grid.Column="2" Text="{Binding SpeedLimitKbps}" Classes="dim" FontSize="12"
-                                       Width="56" TextAlignment="Center" VerticalAlignment="Center"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- 关于 / 卸载（善后：删除启动器本体 + 应用数据 + 游戏目录，不留一个东西） -->
-                <Border Classes="card" Padding="12">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="关于" FontSize="14" FontWeight="SemiBold"/>
-                        <TextBlock Text="YanKa Launcher · 基于 Avalonia / .NET 10 · PCL.Core (Apache-2.0)" Classes="dim" FontSize="11"/>
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
-                            <Button Content="卸载启动器" Classes="danger" Padding="14,6" Click="OnUninstall"/>
-                            <TextBlock Text="删除启动器本体 + 应用数据 + 游戏目录（含世界存档），不可恢复"
-                                       Classes="dim" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
+        <!-- 顶部：汉堡菜单按钮（打开分类下拉）+ 标题 -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+            <Button x:Name="SettingsMenuButton" Grid.Column="0" Content="☰" FontSize="18"
+                    Width="34" Height="34" Padding="0" CornerRadius="8" Background="Transparent"
+                    Click="OnToggleMenu"
+                    behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                    behaviors:HoverBrushBehavior.Enabled="False"
+                    PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                    PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+            <StackPanel Grid.Column="1" Spacing="2" Margin="10,0,0,0">
+                <TextBlock Text="设置" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="游戏目录 / 启动参数 / 下载选项" Classes="sub" FontSize="12"/>
             </StackPanel>
+        </Grid>
+
+        <!-- 分类菜单：☰ 点开的下拉（激活项高亮；选完自动收起） -->
+        <Popup x:Name="SettingsMenu" Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False"
+               Opened="OnSettingsMenuOpened">
+            <Border Classes="glass-card" Padding="6">
+                <StackPanel MinWidth="150" Spacing="2">
+                    <Button x:Name="SettingsNavGameDir" Content="游戏目录" CommandParameter="0"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavLaunch" Content="启动" CommandParameter="1"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavAppearance" Content="外观" CommandParameter="2"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavDownload" Content="下载" CommandParameter="3"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavAbout" Content="关于" CommandParameter="4"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- 分区内容：每分类一个独立 UserControl，code-behind 按索引切换
+             （覆盖式布局——直接替换 + 新分区淡入上移，无需旧分区淡出防跳位） -->
+        <ScrollViewer>
+            <ContentControl x:Name="ContentHost"/>
         </ScrollViewer>
     </DockPanel>
 </UserControl>

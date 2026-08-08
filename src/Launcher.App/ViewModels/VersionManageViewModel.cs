@@ -21,7 +21,6 @@ public partial class VersionManageViewModel : ViewModelBase
     private readonly string _gameDir;
     private readonly string _versionId;
     private readonly Action _onDeleted;
-    private readonly bool _isolated;
 
     public ObservableCollection<ModItemVM> Mods { get; } = [];
     public ObservableCollection<SaveItemVM> Saves { get; } = [];
@@ -70,15 +69,16 @@ public partial class VersionManageViewModel : ViewModelBase
     public string ModsCountText => $"MOD（{Mods.Count}）";
     public string SavesCountText => $"存档（{Saves.Count}）";
 
-    /// <summary>版本根目录（隔离 → versions/{id}；否则共享根）</summary>
-    private string RootDir => _isolated ? Path.Combine(_gameDir, "versions", _versionId) : _gameDir;
+    /// <summary>版本根目录（隔离 → versions/{id}；否则共享根）——每次读设置，改隔离开关即时生效（不再构造快照）</summary>
+    private string RootDir => LauncherSettings.Current.VersionIsolation
+        ? Path.Combine(_gameDir, "versions", _versionId)
+        : _gameDir;
 
     public VersionManageViewModel(string gameDir, string versionId, Action onDeleted)
     {
         _gameDir = gameDir;
         _versionId = versionId;
         _onDeleted = onDeleted;
-        _isolated = LauncherSettings.Current.VersionIsolation;
         _ = LoadAsync();
     }
 
@@ -213,19 +213,76 @@ public partial class VersionManageViewModel : ViewModelBase
     {
         var owner = DialogService.MainWindow();
         if (owner is null || !await DialogService.Confirm(owner,
-                $"删除版本「{_versionId}」？此操作不可恢复（可先备份）。", "删除版本", "删除", "取消"))
+                $"确认删除版本「{_versionId}」？删除后无法恢复，建议先备份。", "删除版本", "删除", "取消"))
         {
             return;
         }
         try
         {
             var dir = Path.Combine(_gameDir, "versions", _versionId);
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            if (Directory.Exists(dir))
+            {
+                // Windows 递归删除不原子：中途任一文件被占（游戏进程/杀毒扫描/索引器）会抛错，
+                // 已删部分不恢复 → 留下 json-only 残件 → 版本页显示「缺文件」红字。
+                // 策略：重试等短锁释放 → 仍失败则改名隔离（版本立刻消失）→ 后台续删。
+                if (!await TryDeleteWithRetryAsync(dir))
+                {
+                    var quarantine = dir + $".deleting-{Guid.NewGuid():N}";
+                    try
+                    {
+                        Directory.Move(dir, quarantine); // 目录内文件被独占占用时 rename 也失败 → 走 catch 报错
+                    }
+                    catch (Exception mvEx)
+                    {
+                        StatusText = $"删除失败：部分文件被占用（{mvEx.Message}）。请先停止该版本，再删除一次。";
+                        return;
+                    }
+                    _ = Task.Run(() => CleanupQuarantine(quarantine));
+                    NotificationService.Info($"「{_versionId}」已移除，残留文件正在后台清理（不影响使用）");
+                }
+            }
             _onDeleted();
         }
         catch (Exception ex)
         {
             StatusText = $"删除失败: {ex.Message}";
+        }
+    }
+
+    /// <summary>删目录，短锁（Defender/索引器）重试 3 次：0.5s / 2s / 4.5s</summary>
+    private static async Task<bool> TryDeleteWithRetryAsync(string dir)
+    {
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            try
+            {
+                Directory.Delete(dir, true);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 3) return false;
+                await Task.Delay(500 * (attempt + 1) * (attempt + 1));
+            }
+        }
+        return false;
+    }
+
+    /// <summary>后台清理隔离目录：30s 内每 3s 重试一次（游戏结束/扫描器放锁后删净）；
+    /// 仍失败就留 .deleting- 目录供手动处理——绝不把没删干净冒充成删除成功。</summary>
+    private static void CleanupQuarantine(string dir)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            try
+            {
+                Directory.Delete(dir, true);
+                return;
+            }
+            catch
+            {
+                Thread.Sleep(3000);
+            }
         }
     }
 

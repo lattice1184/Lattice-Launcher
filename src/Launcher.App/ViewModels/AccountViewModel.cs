@@ -145,7 +145,7 @@ public partial class AccountViewModel : ViewModelBase
 
             // 1. 设备码
             var device = await MicrosoftAuth.RequestDeviceCodeAsync(http, CancellationToken.None);
-            MsAuthStatus = $"请在浏览器打开 {device.VerificationUri} 并输入代码：{device.UserCode}";
+            MsAuthStatus = $"浏览器打开 {device.VerificationUri}，输入代码：{device.UserCode}";
             try { Process.Start(new ProcessStartInfo(device.VerificationUri) { UseShellExecute = true }); }
             catch { /* 无法自动打开则手动 */ }
 

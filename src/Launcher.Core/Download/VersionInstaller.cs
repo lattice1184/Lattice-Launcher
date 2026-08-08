@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
 
@@ -49,17 +50,46 @@ public sealed class VersionInstaller
     }
 
     /// <summary>全量安装（client jar / libraries / assets / logging），进度经 DownloadProgressHandler 上报（旧展平路径）</summary>
-    public async Task InstallAsync(VersionJson version, DownloadProgressHandler? progress, CancellationToken ct)
-    {
-        await _downloads.DownloadVersionAsync(version, null, progress, ct);
-        InstallMarker.Mark(_gameDirectory, version.Id); // 本启动器安装标记（来源标签）
-    }
+    public Task InstallAsync(VersionJson version, DownloadProgressHandler? progress, CancellationToken ct)
+        => InstallCoreAsync(version, ctx: null, progress, ct);
 
     /// <summary>全量安装（组任务路径：阶段全并行 + 文件级子任务）</summary>
-    public async Task InstallAsync(VersionJson version, DownloadGroupContext ctx, CancellationToken ct)
+    public Task InstallAsync(VersionJson version, DownloadGroupContext ctx, CancellationToken ct)
+        => InstallCoreAsync(version, ctx, progress: null, ct);
+
+    /// <summary>
+    /// 事务化安装：下载 → 先校验、后打完整安装标记（半装版本不带标记）；
+    /// 任一步失败删除本次新建的 client jar——json 留作缓存（重试免拉取），libraries 共享目录不删。
+    /// 半装态消失后「已安装」判定（json+jar）恢复诚实，不再"显示已安装→启动才报缺文件"。
+    /// </summary>
+    private async Task InstallCoreAsync(VersionJson version, DownloadGroupContext? ctx,
+        DownloadProgressHandler? progress, CancellationToken ct)
     {
-        await _downloads.DownloadVersionAsync(version, ctx, null, ct);
-        InstallMarker.Mark(_gameDirectory, version.Id);
+        try
+        {
+            await _downloads.DownloadVersionAsync(version, ctx, progress, ct);
+            VerifyInstalled(version);
+            InstallMarker.Mark(_gameDirectory, version.Id); // 完整安装后才打标记
+        }
+        catch
+        {
+            // 半装清理：本次新建的 client jar 删掉（安装前本不存在，删除幂等安全）
+            try { File.Delete(Path.Combine(_gameDirectory, "versions", version.Id, $"{version.Id}.jar")); } catch { }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// AL29 H6：安装后完整性校验——下载完成必须 == 文件完整，不得「虚假成功」
+    /// （下载列表曾静默跳过 url 形式库；缺失如实报错，由修复路径补全）。
+    /// 父 json 缺失时链保留 → 只校验子版本自身文件。
+    /// </summary>
+    private void VerifyInstalled(VersionJson version)
+    {
+        var missing = AutoRepairService.VerifyVersion(version, _gameDirectory);
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"安装完成但校验失败：缺 {missing.Count} 个文件（首例：{missing[0]}）。可重新下载补全");
     }
 
     /// <summary>路径安全化：拒绝 .. 与分隔符（与启动管道一致）</summary>

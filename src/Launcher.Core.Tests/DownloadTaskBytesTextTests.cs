@@ -8,6 +8,7 @@ public class DownloadTaskBytesTextTests
     [Fact]
     public async Task UnknownSize_ShowsDash()
     {
+        System.Threading.SynchronizationContext.SetSynchronizationContext(null); // xunit AsyncTestSyncContext 会挂起 Post → State 读旧值
         var mgr = new DownloadManager();
         var task = mgr.Enqueue("叶子", (_, _) => Task.CompletedTask);
         await task.Completion;

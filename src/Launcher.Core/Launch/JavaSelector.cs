@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Launcher.Core.Model.Mojang;
 
 namespace Launcher.Core.Launch;
 
@@ -25,6 +26,29 @@ public static class JavaSelector
 
     /// <summary>选择 Java 可执行文件路径；找不到匹配版本时返回 null（调用方决定下载或提示）。</summary>
     public static string? Pick(int? requiredMajor) => BestMatch(ScanInstalled(), requiredMajor);
+
+    /// <summary>
+    /// 解析版本所需 Java 大版本：自身 javaVersion → 沿 InheritsFrom 链向父版本继承 → 按 MC 版本号推断。
+    /// 客户端与服务端共用——服务端曾只读自身 json，Fabric/整合包 profile 无 javaVersion → 默认 17，
+    /// 26.2（需 Java 25）开服直接 UnsupportedClassVersionError。
+    /// </summary>
+    public static int ResolveRequiredMajor(VersionJson version, Func<string, VersionJson?> loadParent)
+    {
+        if (version.JavaVersion?.MajorVersion is { } m && m > 0) return m;
+        if (version.InheritsFrom is { } parentId && loadParent(parentId) is { } parent)
+            return ResolveRequiredMajor(parent, loadParent); // 递归沿链（父版本再继承）
+        return InferMajorFromId(version.Id);
+    }
+
+    /// <summary>按 MC 版本推断所需 Java 大版本（无 javaVersion 时兜底）：1.17+ → 17；更旧 → 8</summary>
+    private static int InferMajorFromId(string versionId)
+    {
+        var m = Regex.Match(versionId, @"^(\d+)\.(\d+)");
+        if (!m.Success) return 17;
+        var major = int.Parse(m.Groups[1].Value);
+        var minor = int.Parse(m.Groups[2].Value);
+        return major > 1 || (major == 1 && minor >= 17) ? 17 : 8;
+    }
 
     /// <summary>纯选型逻辑（可单测）：版本要求是"最低 Java"，选 ≥ 要求且最接近的
     /// （JVM 向后兼容低 class 文件版本，不能向前）；无要求选最高可用。</summary>

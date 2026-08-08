@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SectionDownloadView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 下载 -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="8">
+            <TextBlock Text="下载" Classes="group-header"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="下载源策略" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding DownloadSourceOptions}"
+                          SelectedItem="{Binding SelectedDownloadSource}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DownloadSourceOption">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Grid.Column="2" Text="镜像加速仅对官方游戏文件生效" Classes="dim" FontSize="11"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="最大并发下载数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="1" Maximum="16" TickFrequency="1" Value="{Binding MaxConcurrentDownloads}"/>
+                <TextBlock Grid.Column="2" Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
+                           Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="改动对新下载任务生效" Classes="dim" FontSize="11"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="分片数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="1" Maximum="32" TickFrequency="1"
+                        Value="{Binding ChunkCount}"/>
+                <TextBlock Grid.Column="2" Text="{Binding ChunkCount}" Classes="dim" FontSize="12"
+                           Width="28" TextAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="每文件并发连接数（1-32），改动对新下载任务生效" Classes="dim" FontSize="11"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="CurseForge API Key" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding CurseForgeApiKeyText}" PasswordChar="*"
+                         Watermark="填写后启用 CurseForge 模组源"
+                         LostFocus="OnApiKeyLostFocus"/>
+            </Grid>
+            <TextBlock Text="{Binding CurseForgeApiKeyStatus}" Classes="dim" FontSize="11"
+                       TextWrapping="Wrap"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="CF 文件加速前缀" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding CurseForgeCdnPrefixText}"
+                         Watermark="留空 = 官方 CDN；填镜像根地址替换 edge.forgecdn.net"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="下载限速（KB/s，0=不限）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
+                <TextBlock Grid.Column="2" Text="{Binding SpeedLimitKbps}" Classes="dim" FontSize="12"
+                           Width="56" TextAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="清理下载缓存" Classes="ghost" FontSize="12" Padding="12,5"
+                        Click="OnClearDownloadCache"/>
+                <TextBlock Text="删除断点续传残留的临时目录（不影响已装版本）" Classes="dim" FontSize="11"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -3,8 +3,9 @@ using Launcher.Core.Download;
 
 namespace Launcher.App.Services;
 
-/// <summary>下载历史条目（任务名/状态/时间/错误）</summary>
-public sealed record DownloadHistoryEntry(string Name, string State, DateTime Time, string? Error)
+/// <summary>下载历史条目（任务名/状态/时间/错误；SourceUrl/TargetPath 供「重新下载/打开位置」，旧 json 缺失为 null）</summary>
+public sealed record DownloadHistoryEntry(string Name, string State, DateTime Time, string? Error,
+    string? SourceUrl = null, string? TargetPath = null)
 {
     public string TimeText => Time.ToString("MM-dd HH:mm");
 }
@@ -32,7 +33,8 @@ public static class DownloadHistoryService
     {
         var state = task.State;
         if (state is not (DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)) return;
-        Entries.Insert(0, new DownloadHistoryEntry(task.Name, task.StateText, DateTime.Now, task.Error));
+        Entries.Insert(0, new DownloadHistoryEntry(task.Name, task.StateText, DateTime.Now, task.Error,
+            task.SourceUrl, task.TargetPath));
         if (Entries.Count > MaxEntries) Entries.RemoveRange(MaxEntries, Entries.Count - MaxEntries);
         Save();
         Changed?.Invoke();

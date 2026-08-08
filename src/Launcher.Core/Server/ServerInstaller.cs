@@ -100,6 +100,8 @@ public sealed class ServerInstaller
                 await _downloads.DownloadFileAsync(url, jarPath, serverSha1, expectedSize, progress, ct);
                 if (IsValidServerJar(jarPath))
                 {
+                    // AL31：记录期望大小（sidecar）供启动预检比对——截断残件检测
+                    try { File.WriteAllText(jarPath + ".size", new FileInfo(jarPath).Length.ToString()); } catch { }
                     last = null;
                     break;
                 }
@@ -169,7 +171,7 @@ public sealed class ServerInstaller
     /// <summary>从 Mojang 版本清单拿指定 MC 版本的服务端下载信息（url/size/sha1）</summary>
     private async Task<(string Url, long Size, string? Sha1)> FetchServerInfoAsync(string mcVersion, CancellationToken ct)
     {
-        var manifest = await _http.GetStringAsync(Launcher.Core.Services.VersionManifestService.ManifestUrl, ct);
+        var manifest = await Launcher.Core.Services.VersionManifestService.FetchManifestJsonAsync(_http, ct);
         using var doc = JsonDocument.Parse(manifest);
         foreach (var v in doc.RootElement.GetProperty("versions").EnumerateArray())
         {
@@ -189,15 +191,26 @@ public sealed class ServerInstaller
         throw new InvalidDataException($"Mojang 清单中找不到 Minecraft {mcVersion} 的服务端（版本可能过旧/不存在）");
     }
 
-    /// <summary>服务端 jar 有效性：≥1MB 且 zip 魔数（PK）——拦 200 错误页/挑战页</summary>
-    private static bool IsValidServerJar(string path)
+    /// <summary>
+    /// 服务端 jar 有效性：≥1MB 且 zip 魔数（PK）——拦 200 错误页/挑战页（开服/联机预检共用）；
+    /// 有 sidecar（server.jar.size，下载成功后记录期望大小）时再比对大小：< 期望×0.9 判截断残件
+    /// （>1MB 但被砍半的旧 jar 能穿过魔数检查，只有大小比对能抓住）。无 sidecar（手动放置/旧文件）按原判据。
+    /// </summary>
+    public static bool IsValidServerJar(string path)
     {
         try
         {
             var fi = new FileInfo(path);
             if (!fi.Exists || fi.Length < 1024 * 1024) return false;
             using var fs = File.OpenRead(path);
-            return fs.ReadByte() == 0x50 && fs.ReadByte() == 0x4B;
+            if (!(fs.ReadByte() == 0x50 && fs.ReadByte() == 0x4B)) return false;
+            var sidecar = path + ".size";
+            if (File.Exists(sidecar)
+                && long.TryParse(File.ReadAllText(sidecar), out var expected)
+                && expected > 0
+                && fi.Length < expected * 0.9)
+                return false;
+            return true;
         }
         catch { return false; }
     }

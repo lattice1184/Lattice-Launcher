@@ -30,6 +30,7 @@ public partial class EcosystemViewModel : ViewModelBase
         _type = type;
         SelectedSort = SortOptions[0];
         SelectedGameVersion = GameVersionOptions[0];
+        BuildSourceOptions();
         SelectedSource = SourceOptions[0];
         // 全局版本绑定：主页切换版本 → 本页实例下拉跟随（AF1）
         if (MainViewModel.Current is { } main)
@@ -90,15 +91,18 @@ public partial class EcosystemViewModel : ViewModelBase
 
     public sealed record SortOption(string Display, EcosystemService.SortIndex Index);
 
-    /// <summary>来源筛选（全部 = 双源并行合并；CurseForge 未配置 key 时提示）</summary>
-    public static IReadOnlyList<SourceOption> SourceOptions { get; } =
-    [
-        new SourceOption("全部", null),
-        new SourceOption("Modrinth", "modrinth"),
-        new SourceOption("CurseForge", "curseforge"),
-    ];
+    /// <summary>来源筛选（全部 = 双源并行合并）。CurseForge 未配置 key 时选项带标记（视觉置灰提示）。</summary>
+    public IReadOnlyList<SourceOption> SourceOptions { get; private set; } = [];
 
     public sealed record SourceOption(string Display, string? Key);
+
+    private void BuildSourceOptions() =>
+        SourceOptions =
+        [
+            new SourceOption("全部", null),
+            new SourceOption("Modrinth", "modrinth"),
+            new SourceOption(_cf.IsEnabled ? "CurseForge" : "CurseForge（未配置 Key）", "curseforge"),
+        ];
 
     [ObservableProperty]
     public partial SourceOption? SelectedSource { get; set; }
@@ -234,7 +238,8 @@ public partial class EcosystemViewModel : ViewModelBase
                 {
                     var id = Path.GetFileName(d);
                     if (all.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                    if (File.Exists(Path.Combine(d, $"{id}.json")))
+                    // AL29：已安装 = json+jar（残件版本不作 mod 安装目标）
+                    if (VersionManifestService.IsInstalled(dir, id))
                         all.Add(new VersionInstanceVM(id, Launcher.Core.Utils.GameDirectory.SourceLabel(
                             Launcher.Core.Utils.GameDirectory.SourceOf(dir)), dir,
                             Launcher.Core.Launch.LoaderDetector.Detect(dir, id) ?? ""));
@@ -350,19 +355,35 @@ public partial class EcosystemViewModel : ViewModelBase
     private async Task RunBothSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
     {
         var sort = CfSortOf(SelectedSort?.Index);
-        var mr = _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+        // 双源并行发起、独立捕获：单源失败（超时/网络/限流）只降级该源，另一源照常显示
+        var mrTask = _eco.SearchAsync(_type, Query, gameVersion, loader, category,
             index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
             limit: PageSize, offset: CurrentPage * PageSize, ct);
-        var cf = _cf.IsEnabled
+        var cfTask = _cf.IsEnabled
             ? _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct)
             : Task.FromResult<CurseForgeSearchPage?>(null);
-        await Task.WhenAll(mr, cf);
+        string? mrErr = null, cfErr = null;
+        var mr = await TrySearchAsync(mrTask, ex => mrErr = ex.Message);
+        var cf = await TrySearchAsync(cfTask, ex => cfErr = ex.Message);
         if (seq != _requestSeq) return;
         Cards.Clear();
-        foreach (var h in mr.Result?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
-        foreach (var p in cf.Result?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
-        var total = (mr.Result?.TotalHits ?? 0) + (cf.Result?.TotalCount ?? 0);
-        FinishPage(seq, total, gameVersion, mr.Result is null && cf.Result is null ? "无响应" : null);
+        foreach (var h in mr?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
+        foreach (var p in cf?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
+        var total = (mr?.TotalHits ?? 0) + (cf?.TotalCount ?? 0);
+        var note = mrErr is null && cfErr is null
+            ? (mr is null && cf is null ? "无响应" : null)
+            : mrErr is null ? $"CurseForge 搜索失败（{cfErr}），仅显示 Modrinth 结果"
+            : cfErr is null ? $"Modrinth 搜索失败（{mrErr}），仅显示 CurseForge 结果"
+            : "双源搜索均失败";
+        FinishPage(seq, total, gameVersion, note);
+    }
+
+    /// <summary>单源搜索容错：失败只记录不抛（双源模式用）。取消必须向上（新请求竞态），不能吞。</summary>
+    private static async Task<T?> TrySearchAsync<T>(Task<T> task, Action<Exception> onError)
+    {
+        try { return await task; }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { onError(ex); return default; }
     }
 
     /// <summary>分页状态统一收尾（CF 无分页信息时总数=当前页条数，分页栏按此算）</summary>
@@ -483,12 +504,12 @@ public partial class EcosystemViewModel : ViewModelBase
             {
                 var list = string.Join("、", deps.Take(6)) + (deps.Count > 6 ? "…" : "");
                 includeDeps = await DialogService.Confirm(owner,
-                    $"将安装 {deps.Count} 个前置：{list}", $"安装 {card.Title}", "全部安装", "仅主文件");
+                    $"要装 {deps.Count} 个前置：{list}", $"安装 {card.Title}", "全部安装", "仅主文件");
             }
 
             if (instance is null)
             {
-                NotificationService.Error("请先选择目标实例");
+                NotificationService.Error("先选目标实例");
                 return;
             }
             var instanceName = instance.Name;
@@ -500,12 +521,16 @@ public partial class EcosystemViewModel : ViewModelBase
                         gameVersion, loader, dp => p(dp), ct)
                     : await InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, p, ct);
             });
+            // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
+            MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
+            {
                 NotificationService.Success(
                     report is { Installed.Count: > 0 }
                         ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
                         : $"{card.Title} 安装完成", 4500);
+            }
             else if (task.Error is { } err)
                 NotificationService.Error(err);
         }
@@ -543,12 +568,12 @@ public partial class EcosystemViewModel : ViewModelBase
             if (depCount > 0 && DialogService.MainWindow() is { } owner)
             {
                 includeDeps = await DialogService.Confirm(owner,
-                    $"将安装 {depCount} 个前置依赖", $"安装 {card.Title}", "全部安装", "仅主文件");
+                    $"要装 {depCount} 个前置依赖", $"安装 {card.Title}", "全部安装", "仅主文件");
             }
 
             if (instance is null)
             {
-                NotificationService.Error("请先选择目标实例");
+                NotificationService.Error("先选目标实例");
                 return;
             }
             var instanceName = instance.Name;
@@ -568,12 +593,16 @@ public partial class EcosystemViewModel : ViewModelBase
                     report = r;
                 }
             });
+            // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
+            MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
+            {
                 NotificationService.Success(
                     report is { Installed.Count: > 0 }
                         ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
                         : $"{card.Title} 安装完成", 4500);
+            }
             else if (task.Error is { } err)
                 NotificationService.Error(err);
         }

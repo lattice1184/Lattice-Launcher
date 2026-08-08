@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SectionLaunchView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 启动 -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="8">
+            <TextBlock Text="启动" Classes="group-header"/>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="内存分配" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding MemoryPresets}"
+                          SelectedItem="{Binding SelectedMemoryPreset}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:MemoryPresetVM">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6"
+                            IsVisible="{Binding IsCustomMemory}">
+                    <TextBox x:Name="MemoryCustomText" Width="90" Text="{Binding MemoryCustomText}"
+                             KeyDown="OnMemoryCustomKeyDown" LostFocus="OnMemoryCustomLostFocus"/>
+                    <TextBlock Text="MB" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding JavaPathText}" Watermark="自动选配（PCL 运行库 / PATH）"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button Content="浏览…" Classes="ghost" Click="OnBrowseJava"/>
+                    <Button Content="自动" Classes="ghost" Click="OnResetJava"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"
+                         Watermark="-Dxxx=1 -Xss2m（空格分隔）"/>
+            </Grid>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="性能档位" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding JvmProfileOptions}"
+                          SelectedItem="{Binding SelectedJvmProfile}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:JvmProfileOption">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Grid.Column="2" Text="GC 优化参数，不影响内存" Classes="dim" FontSize="11"
+                           VerticalAlignment="Center"/>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="启动时自动写入中文语言" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <ToggleSwitch IsChecked="{Binding AutoChineseEnabled}"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

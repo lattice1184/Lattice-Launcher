@@ -1,0 +1,75 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.MultiplayerView"
+             x:DataType="vm:MultiplayerViewModel">
+
+    <DockPanel>
+        <!-- 顶部：标题 + 引导说明 + 跳开服页 -->
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="局域网联机" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+                <Button Content="＋ 创建房间" Classes="primary" FontSize="12" Padding="14,5"
+                        Command="{Binding CreateRoomCommand}"/>
+            </StackPanel>
+            <TextBlock Text="点「创建房间」以本机为服务端开房（自动广播）；同一局域网内的 Lattice 用户会自动发现，点「加入」即启动游戏并自动连接。"
+                       Foreground="{StaticResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- 状态行 -->
+        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="#8A93A6" FontSize="12" Margin="0,0,0,6"/>
+
+        <!-- 防火墙提示条（规则缺失时显示；一键放行） -->
+        <Border DockPanel.Dock="Top" Background="#33291A" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                IsVisible="{Binding IsFwMissing}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Foreground="#E8B45A" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center">
+                    防火墙未放行 UDP 34198：别人看不到你的房间，你也收不到别人的。放行一次（需管理员确认）即可；点「放行」后仍看不到房间，可手动添加（Windows Defender 防火墙 → 高级设置 → 入站规则 → 端口 UDP 34198）。
+                </TextBlock>
+                <Button Grid.Column="1" Content="放行" Classes="primary" FontSize="11" Padding="12,4"
+                        Command="{Binding AllowFirewallCommand}"/>
+            </Grid>
+        </Border>
+
+        <!-- 空态提示（收不到房间常见原因） -->
+        <StackPanel DockPanel.Dock="Top" Spacing="4" IsVisible="{Binding IsEmpty}" Margin="0,30,0,0">
+            <TextBlock Text="没有发现房间" Foreground="#8A93A6" FontSize="13" HorizontalAlignment="Center"/>
+            <TextBlock Text="对方需在同一局域网（同一 WiFi / 路由器下），且两台电脑都要放行 UDP 34198 端口（Windows 防火墙首次弹窗点允许）"
+                       Foreground="{StaticResource TextDim}" FontSize="11" HorizontalAlignment="Center" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- 房间列表 -->
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Rooms}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LanRoomVM">
+                        <Border Classes="modcard" Margin="0,1" Padding="12,9" BorderThickness="0,0,0,1"
+                                BorderBrush="{StaticResource BorderColor}" Background="Transparent">
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="3" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"
+                                                   MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                        <Border CornerRadius="3" Padding="5,1" Background="#12332F" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding VersionId}" FontSize="10" Foreground="#B5F4E9"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock FontSize="12" Foreground="{StaticResource TextSecondary}" Text="{Binding Host}"/>
+                                    <TextBlock FontSize="11" Foreground="{StaticResource TextDim}" Text="{Binding World}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="复制" Classes="ghost" FontSize="12" Padding="12,5"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding $parent[UserControl].((vm:MultiplayerViewModel)DataContext).CopyCommand}"
+                                        CommandParameter="{Binding}"/>
+                                <Button Grid.Column="2" Content="加入" Classes="primary" FontSize="12" Padding="16,5"
+                                        VerticalAlignment="Center"
+                                        Command="{Binding $parent[UserControl].((vm:MultiplayerViewModel)DataContext).JoinCommand}"
+                                        CommandParameter="{Binding}"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

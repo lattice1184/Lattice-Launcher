@@ -44,16 +44,16 @@ public class VersionJsonMergerTests
     }
 
     [Fact]
-    public void Merge_ArgumentsReplacedNotConcatenated()
+    public void Merge_ArgumentsParentFirstChildAppend()
     {
         var child = Parse("""{"id":"1.20-f","inheritsFrom":"1.20","arguments":{"game":["--a"],"jvm":["-Da=1"]}}""");
         var parent = Parse(VanillaJson);
 
         var merged = VersionJsonMerger.Merge(child, parent);
 
-        Assert.Equal(["--a"], merged.Arguments!.Game!.Select(e => e.GetString()));
-        Assert.Equal(["-Da=1"], merged.Arguments.Jvm!.Select(e => e.GetString()));
-        Assert.DoesNotContain("--b", merged.Arguments.Game.Select(e => e.GetString()));
+        // 父在前、子追加：fabric profile 的 game 常为 []，必须回退父版参数（--assetsDir/--assetIndex 等），否则资源链断裂
+        Assert.Equal(["--b", "--c", "--a"], merged.Arguments!.Game!.Select(e => e.GetString()));
+        Assert.Equal(["-Db=2", "-Da=1"], merged.Arguments.Jvm!.Select(e => e.GetString()));
     }
 
     [Fact]

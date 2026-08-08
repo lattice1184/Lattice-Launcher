@@ -20,19 +20,21 @@
                     </Button>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding PlayerName}" FontSize="15" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="180" ToolTip.Tip="{Binding PlayerName}"/>
                             <Border CornerRadius="3" Padding="6,1" BorderBrush="{DynamicResource Accent}" BorderThickness="1"
                                     VerticalAlignment="Center" IsVisible="{Binding Account.IsLoggedIn}">
                                 <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{DynamicResource Accent}"/>
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="YanKa Launcher" FontSize="11" Classes="dim"/>
+                        <TextBlock Text="Lattice Launcher" FontSize="11" Classes="dim"/>
                     </StackPanel>
                     <ComboBox Grid.Column="2" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
                               PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">
                         <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:VersionInstanceVM">
-                                <TextBlock Text="{Binding DisplayName}"/>
+                                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
+                                           MaxWidth="220" ToolTip.Tip="{Binding DisplayName}"/>
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
@@ -151,7 +153,7 @@
 
                     <!-- 控制台面板（后声明=选中时在最上层） -->
                     <Grid IsVisible="{Binding IsConsoleTabSelected}">
-                        <ScrollViewer x:Name="LogScroll">
+                        <ScrollViewer x:Name="LogScroll" HorizontalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding GameLogs}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -165,7 +167,7 @@
                         <StackPanel IsVisible="{Binding !HasLogs}" Spacing="6" VerticalAlignment="Center"
                                     HorizontalAlignment="Center">
                             <TextBlock Text="控制台空闲" Classes="sub" FontSize="15" HorizontalAlignment="Center"/>
-                            <TextBlock Text="选择版本并点击「启动游戏」，日志将实时显示在这里" Classes="dim" FontSize="11"/>
+                            <TextBlock Text="选版本点「启动游戏」，日志实时显示在这" Classes="dim" FontSize="11"/>
                         </StackPanel>
                     </Grid>
                 </Grid>

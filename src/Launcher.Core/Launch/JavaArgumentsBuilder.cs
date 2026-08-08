@@ -52,7 +52,7 @@ public sealed class JavaArgumentsBuilder
         {
             v = VersionJsonMerger.ResolveChain(v, id => LoadParent(gameDir, id));
             if (v.InheritsFrom is { } unresolved)
-                throw new FileNotFoundException(
+                throw new ParentVersionMissingException(
                     $"加载器版本依赖的父版本 {unresolved} 未安装（请先在版本页安装原版 {unresolved}）");
         }
 
@@ -68,6 +68,9 @@ public sealed class JavaArgumentsBuilder
             Path.Combine(versionDir, $"{safeId}.jar"),
         };
         var nativesJars = new List<string>();
+        // AL27：同 group:artifact 只保留最后出现的（fabric loader 校验重复 ASM 拒绝启动——
+        // 原版库 asm-9.6 + fabric 库 asm-9.10.1 冲突；继承链末尾是加载器自己的库，版本更新）
+        var seenLibs = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var lib in v.Libraries ?? [])
         {
             if (!_rules.IsAllowed(lib.Rules)) continue;
@@ -88,7 +91,15 @@ public sealed class JavaArgumentsBuilder
             if (lib.Name is { Length: > 0 } libName)
             {
                 var rel = Utils.MavenPath.FullPath(libName).Replace('/', Path.DirectorySeparatorChar);
-                classPathParts.Add(Path.Combine(librariesDir, rel));
+                var path = Path.Combine(librariesDir, rel);
+                var key = MavenKey(libName);
+                if (seenLibs.TryGetValue(key, out var idx))
+                    classPathParts[idx] = path; // 覆盖旧版本路径（保留继承链末尾的）
+                else
+                {
+                    seenLibs[key] = classPathParts.Count;
+                    classPathParts.Add(path);
+                }
             }
         }
         var classPath = string.Join(Path.PathSeparator, classPathParts);
@@ -249,6 +260,13 @@ public sealed class JavaArgumentsBuilder
         }
 
         return [];
+    }
+
+    /// <summary>Maven 坐标去重键：group:artifact（带 classifier 时含 classifier，避免 natives/普通撞键）</summary>
+    private static string MavenKey(string name)
+    {
+        var parts = name.Split(':');
+        return parts.Length >= 4 ? $"{parts[0]}:{parts[1]}:{parts[3]}" : parts.Length >= 2 ? $"{parts[0]}:{parts[1]}" : name;
     }
 
     /// <summary>解析 natives：(是否为 natives, 完整 Maven 名, 是否旧版样式)。旧版 natives 字段映射需拼 classifier；新版条目名自带。</summary>

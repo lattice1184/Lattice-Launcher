@@ -1,0 +1,26 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SectionAboutView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 关于 / 卸载（善后：删除启动器本体 + 应用数据 + 游戏目录，不留一个东西） -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="8">
+            <TextBlock Text="关于" Classes="group-header"/>
+            <TextBlock Text="Lattice Launcher · 基于 Avalonia / .NET 10 · PCL.Core (Apache-2.0)" Classes="dim" FontSize="11"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
+                <Button Content="卸载启动器" Classes="danger" Padding="14,6" Click="OnUninstall"/>
+                <TextBlock Text="将删除启动器本体、应用数据及游戏目录（含存档），删除后无法恢复。"
+                           Classes="dim" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="启动时随机小提示（彩蛋）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <ToggleSwitch IsChecked="{Binding StartupTipEnabled}"/>
+            </StackPanel>
+            <TextBlock Text="下次启动生效" Classes="dim" FontSize="11"/>
+        </StackPanel>
+    </Border>
+</UserControl>

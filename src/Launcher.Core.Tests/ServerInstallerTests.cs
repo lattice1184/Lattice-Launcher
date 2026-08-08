@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
 using Launcher.Core.Server;
 
@@ -11,10 +12,11 @@ namespace Launcher.Core.Tests;
 /// </summary>
 public class ServerInstallerTests
 {
-    /// <summary>按 host+path 返回状态/内容；跟踪请求序列（与 MirrorFallbackTests 同款）</summary>
+    /// <summary>按 host+path 返回状态/内容；跟踪请求序列（与 MirrorFallbackTests 同款；竞速并行打请求，加锁防丢条目）</summary>
     private sealed class HostStubHandler : HttpMessageHandler
     {
         public readonly List<string> Requests = [];
+        private readonly object _lock = new();
         private readonly Dictionary<string, (int Status, byte[] Body)> _routes = [];
 
         public void RouteBytes(string hostPath, int status, byte[] body) => _routes[hostPath] = (status, body);
@@ -22,7 +24,7 @@ public class ServerInstallerTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var key = $"{request.RequestUri!.Host}{request.RequestUri.AbsolutePath}";
-            Requests.Add($"{request.Method} {key}");
+            lock (_lock) Requests.Add($"{request.Method} {key}");
             if (_routes.TryGetValue(key, out var route))
             {
                 return Task.FromResult(route.Status == 200
@@ -36,7 +38,7 @@ public class ServerInstallerTests
     private static DownloadService CreateService(HostStubHandler handler) => new(
         new HttpClient(handler),
         new ResolvingDlSourceMapper(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper()),
-        new DownloadOptions { MirrorFallbackEnabled = true, MaxSourceAttempts = 2, BackoffProvider = _ => TimeSpan.Zero },
+        new DownloadOptions { MaxSourceAttempts = 2, BackoffProvider = _ => TimeSpan.Zero },
         Path.GetTempPath(),
         (_, _) => Task.FromResult(true)); // 跳过真实网络预检——全走 stub（测试不依赖外网）
 
@@ -71,6 +73,33 @@ public class ServerInstallerTests
     }
 
     [Fact]
+    public async Task FixServerJar_DeletesCorruptJarAndRedownloads()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
+        var gameDir = MakeGameDir();
+        try
+        {
+            // 预先放一个损坏的旧 jar（非 zip、不足 1MB）
+            var dir = ServerInstaller.ServerDir(gameDir, "1.21.10");
+            Directory.CreateDirectory(dir);
+            var jar = Path.Combine(dir, "server.jar");
+            File.WriteAllBytes(jar, [0x00, 0x01, 0x02]);
+
+            var result = await AutoRepairService.FixServerJarAsync("1.21.10", gameDir,
+                new ServerInstaller(CreateService(handler)), CancellationToken.None);
+            Assert.Contains("重新下载", result);
+
+            // 修复后 jar 有效（≥1MB + zip 魔数 PK）
+            Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
+            using var fs = File.OpenRead(jar);
+            Assert.Equal(0x50, fs.ReadByte());
+            Assert.Equal(0x4B, fs.ReadByte());
+        }
+        finally { CleanUp(gameDir); }
+    }
+
+    [Fact]
     public async Task InstallAsync_OfficialFails_FallsBackToBmclapi()
     {
         var handler = new HostStubHandler();
@@ -91,7 +120,7 @@ public class ServerInstallerTests
     }
 
     [Fact]
-    public async Task InstallAsync_OfficialOk_NoMirrorRequest()
+    public async Task InstallAsync_OfficialOk_Succeeds()
     {
         var handler = new HostStubHandler();
         handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
@@ -103,7 +132,8 @@ public class ServerInstallerTests
 
             Assert.True(File.Exists(jar));
             Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
-            Assert.DoesNotContain(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com"));
+            // 竞速语义：镜像并行发起，官方赢后镜像可能被取消在请求前——不断言镜像请求不出现
+            Assert.Contains(handler.Requests, r => r.Contains("piston-data.mojang.com"));
         }
         finally { CleanUp(dir); }
     }
@@ -124,7 +154,7 @@ public class ServerInstallerTests
             Assert.True(File.Exists(jar));
             Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
             Assert.Contains(handler.Requests, r => r.Contains("launcher.mojang.com/v1/objects/abc/server.jar"));
-            Assert.DoesNotContain(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com"));
+            // 竞速语义：bmclapi 并行发起是预期行为（赢家确定后被取消），不断言它不出现
         }
         finally { CleanUp(dir); }
     }
@@ -197,6 +227,35 @@ public class ServerInstallerTests
             Assert.True(new FileInfo(jar).Length >= 1024 * 1024);
             Assert.Contains(handler.Requests, r => r.Contains("version_manifest_v2.json")); // 走了清单推断
             Assert.Contains(handler.Requests, r => r.Contains("piston-data.mojang.com/v1/objects/abc/server.jar"));
+        }
+        finally { CleanUp(dir); }
+    }
+
+    /// <summary>官方清单 500 → BMCLAPI 镜像清单兜底（版本 json 内 url 仍官方，不受清单源影响）</summary>
+    [Fact]
+    public async Task InstallAsync_LoaderVersion_ManifestMirrorFallback()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("piston-meta.mojang.com/mc/game/version_manifest_v2.json", 500, []);
+        const string mirrorManifest = """
+            {"latest":{"release":"26.2"},"versions":[
+              {"id":"1.21.1","type":"release","url":"https://piston-meta.mojang.com/v1/packages/aaa/1.21.1.json"}
+            ]}
+            """;
+        handler.RouteBytes("bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json", 200, System.Text.Encoding.UTF8.GetBytes(mirrorManifest));
+        handler.RouteBytes("piston-meta.mojang.com/v1/packages/aaa/1.21.1.json", 200,
+            System.Text.Encoding.UTF8.GetBytes(
+                """{"id":"1.21.1","downloads":{"server":{"url":"https://piston-data.mojang.com/v1/objects/abc/server.jar"}}}"""));
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
+        var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+        var dir = MakeLoaderGameDir();
+        try
+        {
+            var jar = await installer.InstallAsync("1.21.1-Fabric 0.19.3", dir);
+
+            Assert.True(File.Exists(jar));
+            Assert.Contains(handler.Requests,
+                r => r.Contains("bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json")); // 镜像清单被用
         }
         finally { CleanUp(dir); }
     }
@@ -316,5 +375,48 @@ public class ServerInstallerTests
             Assert.Contains("9.9.9", ex.Message);
         }
         finally { CleanUp(dir); }
+    }
+
+    /// <summary>AL31：sidecar（server.jar.size）大小比对——截断残件（>1MB 但被砍半）被拒；匹配/无 sidecar 按原判据</summary>
+    [Fact]
+    public void IsValidServerJar_SidecarSize_RejectsTruncatedJar()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"srvjar-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var jar = Path.Combine(dir, "server.jar");
+            File.WriteAllBytes(jar, FakeJar()); // 1MB+PK：魔数检查放行，但 < 期望×0.9
+
+            File.WriteAllText(jar + ".size", (1024L * 1024 * 51).ToString()); // 期望 51MB
+            Assert.False(ServerInstaller.IsValidServerJar(jar), "截断残件必须被拒");
+
+            File.WriteAllText(jar + ".size", new FileInfo(jar).Length.ToString()); // 期望匹配实际
+            Assert.True(ServerInstaller.IsValidServerJar(jar), "大小匹配应通过");
+
+            File.Delete(jar + ".size"); // 无 sidecar（旧文件/手动放置）
+            Assert.True(ServerInstaller.IsValidServerJar(jar), "无 sidecar 按原判据");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>AL31：下载验证通过后写 sidecar（记录实际落盘大小），供启动预检比对</summary>
+    [Fact]
+    public async Task InstallAsync_WritesSizeSidecar()
+    {
+        var handler = new HostStubHandler();
+        handler.RouteBytes("piston-data.mojang.com/v1/objects/abc/server.jar", 200, FakeJar());
+        var gameDir = MakeGameDir();
+        try
+        {
+            var installer = new ServerInstaller(CreateService(handler), new HttpClient(handler));
+            var jar = await installer.InstallAsync("1.21.10", gameDir);
+            var sidecar = jar + ".size";
+            Assert.True(File.Exists(sidecar), "下载成功必须写 size sidecar");
+            // sidecar = 落盘 jar 的实际大小（stub 对 Range 请求返回全量 body → 分片合并后
+            // 大小与 FakeJar 不同倍率，断言实际值而非固定字节数）
+            Assert.Equal(new FileInfo(jar).Length.ToString(), File.ReadAllText(sidecar).Trim());
+        }
+        finally { CleanUp(gameDir); }
     }
 }
