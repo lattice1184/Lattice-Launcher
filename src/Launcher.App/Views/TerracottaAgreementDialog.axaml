@@ -13,8 +13,8 @@
         <!-- 许可证声明 + 项目链接 -->
         <StackPanel Spacing="8">
             <TextBlock Classes="dim" FontSize="12" TextWrapping="Wrap">
-                联机功能由 <Run FontWeight="SemiBold" Foreground="White">Terracotta | 陶瓦联机</Run> 提供，底层基于 EasyTier。
-                使用联机功能时，您必须遵守中国大陆相关法律法规，不得用于违法用途。
+                联机功能由 <Run FontWeight="SemiBold" Foreground="White">Terracotta | 陶瓦联机</Run> 提供，底层基于 EasyTier 联机引擎。
+                使用时须遵守中国大陆相关法律法规，不得用于违法用途。
             </TextBlock>
             <Button Content="Terracotta | 陶瓦联机项目" Classes="ghost" FontSize="11"
                     Padding="10,3" HorizontalAlignment="Left"
@@ -23,7 +23,7 @@
 
         <!-- 同意前说明 -->
         <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap">
-            首次使用需要下载联机模块（约 15 MB，来自 Gitee / GitHub），下载完成后即可创建房间或加入房间。
+            首次使用需下载联机模块（约 15 MB，来自 Gitee / GitHub），下载完成后即可使用。
         </TextBlock>
 
         <!-- 下载进度（状态 + 百分比 + 进度条，与下载页同模式） -->
