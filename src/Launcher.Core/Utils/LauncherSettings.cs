@@ -85,6 +85,9 @@ public sealed class LauncherSettings
     /// <summary>强调色（#RRGGBB；空 = 默认青绿）</summary>
     public string AccentColor { get; set; } = "#2DD4BF";
 
+    /// <summary>自定义背景图片（绝对路径；null/空 = 无背景，用亚克力纯色）</summary>
+    public string? BackgroundImagePath { get; set; }
+
     /// <summary>界面密度（紧凑/标准/舒适 → 整 UI 缩放）</summary>
     public DensityMode Density { get; set; } = DensityMode.Normal;
 

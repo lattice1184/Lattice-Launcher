@@ -28,7 +28,15 @@
         <!-- 强调（青绿，唯一饱和色）与状态 -->
         <Color x:Key="Accent">#2DD4BF</Color>
         <Color x:Key="AccentHover">#45E3CF</Color>
+        <!-- 强调派生（主题系统：ApplyAccentColor 运行时按 Accent 计算覆盖；此处默认值兜底 XAML 加载期） -->
+        <Color x:Key="AccentDark">#12332F</Color>
+        <Color x:Key="AccentLight">#B5F4E9</Color>
+        <Color x:Key="AccentSoft">#262DD4BF</Color>
         <Color x:Key="OnAccent">#0B1F1C</Color>
+        <!-- 语义固定色（不随主题：警告/成功条须保持可辨识） -->
+        <Color x:Key="WarnBg">#33291A</Color>
+        <Color x:Key="WarnText">#E8B45A</Color>
+        <Color x:Key="SuccessBg">#1E3A2E</Color>
         <Color x:Key="Danger">#E05A5A</Color>
         <Color x:Key="Success">#5AD07C</Color>
         <!-- 圆角与间距基准（圆滑不锐利） -->
@@ -133,7 +141,7 @@
         <!-- 主操作按钮（唯一饱和面；hover 亮青绿由行为驱动） -->
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="{DynamicResource Accent}"/>
-            <Setter Property="Foreground" Value="{StaticResource OnAccent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource AccentHover}"/>
         </Style>
@@ -162,8 +170,8 @@
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
         </Style>
         <Style Selector="Button.tab.active">
-            <Setter Property="Background" Value="#12332F"/>
-            <Setter Property="Foreground" Value="#B5F4E9"/>
+            <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentLight}"/>
         </Style>
 
         <!-- 输入控件 -->
@@ -308,8 +316,8 @@
 
         <!-- AL11：下载任务行着重标识（覆盖 row 底部虚线为左强调条；active 优先于 hover） -->
         <Style Selector="Border.taskRow.active">
-            <Setter Property="Background" Value="#262DD4BF"/>
-            <Setter Property="BorderBrush" Value="#2DD4BF"/>
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
             <Setter Property="BorderThickness" Value="3,0,0,0"/>
         </Style>
         <Style Selector="Border.taskRow.failed">

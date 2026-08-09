@@ -280,4 +280,24 @@ public sealed class EcosystemService
         if (files is null || files.Count == 0) return null;
         return files.FirstOrDefault(f => f.Primary) ?? files[0];
     }
+
+    // ---------- 中文搜索重排（A 修复：Modrinth relevance 对中文把「描述子串匹配」当强相关，
+    // 「字幕高亮」因描述含「自定义」排第一 → 客户端按匹配质量稳定重排） ----------
+
+    /// <summary>Query 含 CJK（中文搜索）→ 源 relevance 不可靠，需重排；纯英文信任源排序</summary>
+    public static bool IsChineseQuery(string? q)
+        => !string.IsNullOrEmpty(q) && q.Any(c => c is >= '一' and <= '鿿');
+
+    /// <summary>匹配分：标题包含 query=3（强相关），描述/摘要包含=2（弱相关），无=0</summary>
+    public static int MatchScore(string title, string description, string query)
+    {
+        if (title.Contains(query, StringComparison.OrdinalIgnoreCase)) return 3;
+        if (description.Contains(query, StringComparison.OrdinalIgnoreCase)) return 2;
+        return 0;
+    }
+
+    /// <summary>按匹配分降序稳定重排（同分保持源顺序）；非中文 query 调用方不应调用</summary>
+    public static List<T> ReorderMatches<T>(IEnumerable<T> items, string? query,
+        Func<T, string> titleOf, Func<T, string> descriptionOf)
+        => [.. items.OrderByDescending(x => MatchScore(titleOf(x), descriptionOf(x), query ?? ""))];
 }

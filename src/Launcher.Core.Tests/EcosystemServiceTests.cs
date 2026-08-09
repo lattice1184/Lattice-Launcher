@@ -200,4 +200,56 @@ public class EcosystemServiceTests
         Assert.Null(EcosystemService.PickPrimaryFile(null));
         Assert.Null(EcosystemService.PickPrimaryFile([]));
     }
+
+    // ---------- 中文搜索重排（A 修复） ----------
+
+    [Theory]
+    [InlineData("自定义", true)]
+    [InlineData("自定义联机", true)]
+    [InlineData("custom", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsChineseQuery_DetectsCjk(string? q, bool expected)
+        => Assert.Equal(expected, EcosystemService.IsChineseQuery(q));
+
+    [Fact]
+    public void MatchScore_TitleBeatsDescriptionBeatsNone()
+    {
+        Assert.Equal(3, EcosystemService.MatchScore("自定义联机 Mod", "描述", "自定义"));
+        Assert.Equal(2, EcosystemService.MatchScore("普通模组", "支持自定义配置", "自定义"));
+        Assert.Equal(0, EcosystemService.MatchScore("普通模组", "普通描述", "自定义"));
+        // 大小写不敏感（英文词也适用）
+        Assert.Equal(3, EcosystemService.MatchScore("Custom Recipes", "x", "custom"));
+    }
+
+    [Fact]
+    public void ReorderMatches_ChineseQuery_PutsTitleMatchesFirst()
+    {
+        // 模拟 Modrinth 中文搜索：字幕高亮因描述含「自定义」排第一，标题匹配的沉在后面
+        var items = new List<(string Title, string Desc)>
+        {
+            ("字幕高亮", "为不同字幕添加样式以区分，同时提供对单个字幕的自定义"),
+            ("BLZYの自定义进度", "Replaces the vanilla advancement screen"),
+            ("马夫鱼的弩", "The original Crossbow is enhanced"),
+        };
+        var reordered = EcosystemService.ReorderMatches(items, "自定义", x => x.Title, x => x.Desc);
+
+        Assert.Equal("BLZYの自定义进度", reordered[0].Title); // 标题匹配升顶
+        Assert.Equal("字幕高亮", reordered[1].Title);          // 描述匹配次之
+        Assert.Equal("马夫鱼的弩", reordered[2].Title);        // 无匹配沉底
+    }
+
+    [Fact]
+    public void ReorderMatches_SameScoreKeepsSourceOrder()
+    {
+        var items = new List<(string Title, string Desc)>
+        {
+            ("甲", "都含自定义A"),
+            ("乙", "都含自定义B"),
+            ("丙", "都含自定义C"),
+        };
+        var reordered = EcosystemService.ReorderMatches(items, "自定义", x => x.Title, x => x.Desc);
+
+        Assert.Equal(["甲", "乙", "丙"], reordered.Select(x => x.Title));
+    }
 }

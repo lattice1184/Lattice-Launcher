@@ -13,10 +13,10 @@
         </StackPanel>
 
         <!-- 未同意协议提示条（琥珀警告：联机页约定色） -->
-        <Border x:Name="DeclinedBanner" DockPanel.Dock="Top" Background="#33291A" CornerRadius="6" Padding="10,6"
+        <Border x:Name="DeclinedBanner" DockPanel.Dock="Top" Background="{DynamicResource WarnBg}" CornerRadius="6" Padding="10,6"
                 Margin="0,0,0,8" IsVisible="{Binding IsDeclined}">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                <TextBlock Foreground="#E8B45A" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center">
+                <TextBlock Foreground="{DynamicResource WarnText}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center">
                     尚未同意联机功能使用协议，联机功能暂不可用。同意后即可创建或加入房间。
                 </TextBlock>
                 <Button Grid.Column="1" Content="阅读并同意" Classes="primary" FontSize="11" Padding="12,4"
@@ -99,12 +99,12 @@
                     </StackPanel>
 
                     <!-- 房间码高亮卡（项目约定加载器蓝） -->
-                    <Border Classes="card" Padding="14,10" Background="#12332F" BorderBrush="#12332F">
+                    <Border Classes="card" Padding="14,10" Background="{DynamicResource AccentDark}" BorderBrush="{DynamicResource AccentDark}">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                             <StackPanel Spacing="2" VerticalAlignment="Center">
                                 <TextBlock Text="房间代码" Classes="sub" FontSize="11"/>
                                 <TextBlock Text="{Binding RoomCode}" FontSize="22" FontWeight="Bold"
-                                           Foreground="#B5F4E9" FontFamily="Consolas"/>
+                                           Foreground="{DynamicResource AccentLight}" FontFamily="Consolas"/>
                             </StackPanel>
                             <Button Grid.Column="1" Content="复制" Classes="primary" Padding="16,6"
                                     VerticalAlignment="Center" Command="{Binding CopyCodeCommand}"/>
@@ -123,9 +123,9 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"
                                                                MaxLines="1" TextTrimming="CharacterEllipsis"/>
-                                                    <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                    <Border CornerRadius="3" Padding="5,1" Background="{DynamicResource AccentDark}"
                                                             IsVisible="{Binding IsHost}" VerticalAlignment="Center">
-                                                        <TextBlock Text="房主" FontSize="10" Foreground="#B5F4E9"/>
+                                                        <TextBlock Text="房主" FontSize="10" Foreground="{DynamicResource AccentLight}"/>
                                                     </Border>
                                                     <Border CornerRadius="3" Padding="5,1" Background="#2DD4BF"
                                                             IsVisible="{Binding IsLocal}" VerticalAlignment="Center">

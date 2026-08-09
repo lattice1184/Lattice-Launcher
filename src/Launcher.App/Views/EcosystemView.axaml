@@ -18,8 +18,8 @@
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <TextBlock Text="{Binding Name}"/>
                                 <Border CornerRadius="3" Padding="5,0" VerticalAlignment="Center"
-                                        Background="#12332F" IsVisible="{Binding LoaderBadge, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                    <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="#B5F4E9"/>
+                                        Background="{DynamicResource AccentDark}" IsVisible="{Binding LoaderBadge, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="{DynamicResource AccentLight}"/>
                                 </Border>
                             </StackPanel>
                         </DataTemplate>
@@ -143,9 +143,9 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
                                                                MaxLines="1" TextTrimming="CharacterEllipsis"/>
-                                                    <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                    <Border CornerRadius="3" Padding="5,1" Background="{DynamicResource AccentDark}"
                                                             VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding SourceText}" FontSize="10" Foreground="#B5F4E9"/>
+                                                        <TextBlock Text="{Binding SourceText}" FontSize="10" Foreground="{DynamicResource AccentLight}"/>
                                                     </Border>
                                                     <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
                                                 </StackPanel>

@@ -146,7 +146,11 @@
                     <Border.RenderTransform>
                         <ScaleTransform ScaleX="1" ScaleY="1"/>
                     </Border.RenderTransform>
-                    <DockPanel>
+                    <Grid>
+                        <!-- 自定义背景：图片层（ApplyBackgroundImage 设置画刷）+ 65% 黑压暗（保文字可读）。
+                             页面根无背景 → 图片透出；Border.card/glass-card 实色保持不透明 -->
+                        <Border x:Name="BgDim" Background="#A6000000" IsVisible="False" IsHitTestVisible="False"/>
+                        <DockPanel>
                         <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="36" Background="#B81D222C"
                                 PointerPressed="TitleBar_PointerPressed">
                             <!-- 窗口按钮：纯 Border+字形、手动 hover 变色，绝无缩放/位移/模板行为（错位根治）。
@@ -169,7 +173,8 @@
                         <Border Padding="12">
                             <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentPage}"/>
                         </Border>
-                    </DockPanel>
+                        </DockPanel>
+                    </Grid>
                 </Border>
             </DockPanel>
 
