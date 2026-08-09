@@ -31,19 +31,29 @@ public partial class App : Application
             {
                 DataContext = new MainViewModel(),
             };
-            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色。
+            // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色 + 自定义背景。
             // AL7：预览必须传 VM 值（Settings 未写盘时读不到新值——旧版预览永远不生效）
             if (desktop.MainWindow.DataContext is MainViewModel mainVm)
             {
-                mainVm.Settings.AppearanceChanged += () => ApplyAccentColor(LauncherSettings.Current.AccentColor);
-                mainVm.Settings.PreviewChanged += () => ApplyAccentColor(mainVm.Settings.AccentColor);
+                var window = desktop.MainWindow as MainWindow;
+                mainVm.Settings.AppearanceChanged += () =>
+                {
+                    ApplyAccentColor(LauncherSettings.Current.AccentColor);
+                    window?.ApplyBackgroundImage(LauncherSettings.Current.BackgroundImagePath);
+                };
+                mainVm.Settings.PreviewChanged += () =>
+                {
+                    ApplyAccentColor(mainVm.Settings.AccentColor);
+                    window?.ApplyBackgroundImage(mainVm.Settings.BackgroundImagePathText);
+                };
             }
             // 启动序列在 Opened 里触发（小窗 logo → 窗口放大）；这里同步做初始化，任一失败只记日志不阻止窗口出现
             // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
-            // 应用个性化强调色（设置页可改，运行时可换）
+            // 应用个性化强调色与自定义背景（设置页可改，运行时可换）
             ApplyAccentColor(LauncherSettings.Current.AccentColor);
+            (desktop.MainWindow as MainWindow)?.ApplyBackgroundImage(LauncherSettings.Current.BackgroundImagePath);
 
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
@@ -118,7 +128,10 @@ public partial class App : Application
         catch { }
     }
 
-    /// <summary>应用强调色：替换 Accent/AccentHover 资源（按钮/进度条/激活态全跟随）</summary>
+    /// <summary>
+    /// 应用强调色（主题系统）：替换 Accent/AccentHover 及派生色 AccentDark（深卡）/AccentLight（亮字）/
+    /// AccentSoft（半透明深卡）/OnAccent（前景对比色）——按钮/进度条/tab/卡片徽章全跟随。
+    /// </summary>
     private void ApplyAccentColor(string hex)
     {
         try
@@ -133,6 +146,15 @@ public partial class App : Application
                 (byte)Math.Min(255, h.G + 255 * 0.08),
                 (byte)Math.Min(255, h.B + 255 * 0.08));
             Resources["AccentHover"] = h;
+            // 派生色（纯字节数学，Core 可测）
+            var rgb = AccentColorMath.TryNormalizeHex(hex) ?? new Rgb24(0x2D, 0xD4, 0xBF);
+            var dark = AccentColorMath.DeriveDark(rgb);
+            Resources["AccentDark"] = Avalonia.Media.Color.FromRgb(dark.R, dark.G, dark.B);
+            Resources["AccentSoft"] = Avalonia.Media.Color.FromArgb(AccentColorMath.SoftAlpha, dark.R, dark.G, dark.B);
+            var light = AccentColorMath.DeriveLight(rgb);
+            Resources["AccentLight"] = Avalonia.Media.Color.FromRgb(light.R, light.G, light.B);
+            var on = AccentColorMath.DeriveOnAccent(rgb);
+            Resources["OnAccent"] = Avalonia.Media.Color.FromRgb(on.R, on.G, on.B);
         }
         catch { /* 强调色非法则保持默认 */ }
     }

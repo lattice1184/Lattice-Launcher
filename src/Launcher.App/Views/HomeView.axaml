@@ -140,7 +140,7 @@
                                                        Foreground="{StaticResource Danger}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"/>
                                             <Border Grid.Column="3" CornerRadius="3" Padding="6,1" VerticalAlignment="Center"
-                                                    Background="#1E3A2E">
+                                                    Background="{DynamicResource SuccessBg}">
                                                 <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"
                                                            VerticalAlignment="Center"/>
                                             </Border>
@@ -204,9 +204,9 @@
                                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,2">
                                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" FontSize="12"/>
-                                            <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                            <Border CornerRadius="3" Padding="5,1" Background="{DynamicResource AccentDark}"
                                                     VerticalAlignment="Center" IsVisible="{Binding IsCurrent}">
-                                                <TextBlock Text="当前" FontSize="9" Foreground="#B5F4E9"/>
+                                                <TextBlock Text="当前" FontSize="9" Foreground="{DynamicResource AccentLight}"/>
                                             </Border>
                                             <TextBlock Text="{Binding TypeText}" Classes="dim" FontSize="10"/>
                                         </StackPanel>
@@ -234,8 +234,8 @@
                             HorizontalAlignment="Left" Click="OnPickSkin"/>
 
                     <!-- 正版授权进度 / 操作状态 -->
-                    <Border CornerRadius="6" Padding="8,6" Background="#12332F" IsVisible="{Binding Account.IsMsAuthBusy}">
-                        <TextBlock Text="{Binding Account.MsAuthStatus}" FontSize="11" Foreground="#B5F4E9"
+                    <Border CornerRadius="6" Padding="8,6" Background="{DynamicResource AccentDark}" IsVisible="{Binding Account.IsMsAuthBusy}">
+                        <TextBlock Text="{Binding Account.MsAuthStatus}" FontSize="11" Foreground="{DynamicResource AccentLight}"
                                    TextWrapping="Wrap"/>
                     </Border>
                     <TextBlock Text="{Binding Account.Status}" Classes="dim" FontSize="11" TextWrapping="Wrap"/>

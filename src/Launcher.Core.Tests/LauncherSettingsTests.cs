@@ -106,6 +106,29 @@ public class LauncherSettingsTests
     }
 
     [Fact]
+    public void Defaults_BackgroundImagePath_Null()
+    {
+        // 主题系统：默认无背景（null/空 → 亚克力纯色）
+        var s = new LauncherSettings();
+        Assert.Null(s.BackgroundImagePath);
+    }
+
+    [Fact]
+    public void SaveAndLoad_BackgroundImagePath_RoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            var s = new LauncherSettings { BackgroundImagePath = @"D:\壁纸\晚霞.png" };
+            s.Save(path);
+
+            var loaded = LauncherSettings.Load(path);
+            Assert.Equal(@"D:\壁纸\晚霞.png", loaded.BackgroundImagePath);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
     public void SaveAndLoad_DownloadTierFields_RoundTrip()
     {
         var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");

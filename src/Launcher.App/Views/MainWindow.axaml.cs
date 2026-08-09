@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Launcher.App.Animations;
 using Launcher.App.Services;
@@ -257,6 +258,40 @@ public partial class MainWindow : Window
             ApplyNavVisuals();
     }
 
+    /// <summary>
+    /// 自定义背景：内容区铺满图片 + 65% 黑压暗（保文字可读）。
+    /// 空路径还原默认半透明背板（#B81D222C）；图片失效（被删/损坏）回退默认，不崩。
+    /// 内存：DecodeToWidth 限 2560 宽；换图前释放旧 Bitmap。
+    /// </summary>
+    public void ApplyBackgroundImage(string? path)
+    {
+        // 释放旧图（若有）
+        if (ContentSurface.Background is ImageBrush { Source: Bitmap old })
+        {
+            old.Dispose();
+            ContentSurface.Background = null;
+        }
+        var fallback = new SolidColorBrush(Color.Parse("#B81D222C"));
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ContentSurface.Background = fallback;
+            BgDim.IsVisible = false;
+            return;
+        }
+        try
+        {
+            var bitmap = new Bitmap(path);
+            ContentSurface.Background = new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
+            BgDim.IsVisible = true;
+        }
+        catch (Exception ex)
+        {
+            System.Console.Error.WriteLine($"[BACKGROUND] 背景图片加载失败 {path}: {ex.Message}");
+            ContentSurface.Background = fallback;
+            BgDim.IsVisible = false;
+        }
+    }
+
     /// <summary>按 VM 激活态刷新全部导航视觉（active：深青底 + 白字；左色条由独立元素滑动定位）</summary>
     private void ApplyNavVisuals()
     {
@@ -265,7 +300,11 @@ public partial class MainWindow : Window
         {
             if (IsPageActive(main, page))
             {
-                btn.Background = new SolidColorBrush(Color.Parse("#12332F"));
+                // 主题系统：激活底跟随 AccentDark 派生色（ApplyAccentColor 已写入；缺 key 兜底默认）
+                btn.Background = new SolidColorBrush(
+                    App.Current.Resources.TryGetResource("AccentDark", null, out var dark) && dark is Color dc
+                        ? dc
+                        : Color.Parse("#12332F"));
                 btn.Foreground = Brushes.White;
                 MoveNavIndicator(btn);
             }

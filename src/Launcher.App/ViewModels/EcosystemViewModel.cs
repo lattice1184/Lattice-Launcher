@@ -331,7 +331,7 @@ public partial class EcosystemViewModel : ViewModelBase
             limit: PageSize, offset: CurrentPage * PageSize, ct);
         if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
         Cards.Clear(); // 服务器分页：每次重建当前页
-        foreach (var h in resp?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
+        AddCards(resp?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
         FinishPage(seq, resp?.TotalHits ?? 0, gameVersion, resp is null ? "无响应" : null);
     }
 
@@ -348,7 +348,7 @@ public partial class EcosystemViewModel : ViewModelBase
         var page = await _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct);
         if (seq != _requestSeq) return;
         Cards.Clear();
-        foreach (var p in page?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
+        AddCards(page?.Projects ?? [], p => p.name, p => p.summary, p => new ProjectCardVM(p));
         FinishPage(seq, page?.TotalCount ?? 0, gameVersion, page is null ? "无响应" : null);
     }
 
@@ -367,8 +367,8 @@ public partial class EcosystemViewModel : ViewModelBase
         var cf = await TrySearchAsync(cfTask, ex => cfErr = ex.Message);
         if (seq != _requestSeq) return;
         Cards.Clear();
-        foreach (var h in mr?.Hits ?? []) Cards.Add(new ProjectCardVM(h));
-        foreach (var p in cf?.Projects ?? []) Cards.Add(new ProjectCardVM(p));
+        AddCards(mr?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
+        AddCards(cf?.Projects ?? [], p => p.name, p => p.summary, p => new ProjectCardVM(p));
         var total = (mr?.TotalHits ?? 0) + (cf?.TotalCount ?? 0);
         var note = mrErr is null && cfErr is null
             ? (mr is null && cf is null ? "无响应" : null)
@@ -376,6 +376,14 @@ public partial class EcosystemViewModel : ViewModelBase
             : cfErr is null ? $"Modrinth 搜索失败（{mrErr}），仅显示 CurseForge 结果"
             : "双源搜索均失败";
         FinishPage(seq, total, gameVersion, note);
+    }
+
+    /// <summary>结果填充：中文 query 先按匹配质量重排（标题匹配&gt;描述匹配&gt;无），英文信任源排序</summary>
+    private void AddCards<T>(IEnumerable<T> items, Func<T, string> titleOf, Func<T, string> descOf, Func<T, ProjectCardVM> toCard)
+    {
+        if (EcosystemService.IsChineseQuery(Query))
+            items = EcosystemService.ReorderMatches(items, Query, titleOf, descOf);
+        foreach (var x in items) Cards.Add(toCard(x));
     }
 
     /// <summary>单源搜索容错：失败只记录不抛（双源模式用）。取消必须向上（新请求竞态），不能吞。</summary>
