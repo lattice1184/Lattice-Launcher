@@ -504,10 +504,10 @@ public partial class HomeViewModel : ViewModelBase
             var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
                 : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var shouldFix = !_autoFixApplied
-                && (ex is FileNotFoundException || await TryAutoFixWithRetryAsync(version, gameDir, ex.Message + "\n" + string.Join("\n", GameLogs)));
+                && (ex is FileNotFoundException or ParentVersionMissingException || await TryAutoFixWithRetryAsync(version, gameDir, ex.Message + "\n" + string.Join("\n", GameLogs)));
             if (shouldFix)
             {
-                if (ex is FileNotFoundException)
+                if (ex is FileNotFoundException or ParentVersionMissingException)
                 {
                     AppendLog("§ 检测到问题：客户端文件缺失，正在自动重新下载补全…");
                     var fixedOk = false;
@@ -550,7 +550,7 @@ public partial class HomeViewModel : ViewModelBase
     /// 返回 true 表示修复成功（调用方负责自动重新启动一次）；AdviceOnly 或修复失败返回 false。</summary>
     private async Task<bool> TryAutoFixAsync(VersionInstanceVM version, string gameDir, string diagText)
     {
-        var hit = LogDiagnostics.DiagnoseDetailed(diagText).FirstOrDefault(h => h.Fix != FixKind.AdviceOnly);
+        var hit = LogDiagnostics.DiagnoseDetailed(diagText).FirstOrDefault(h => h.Fix is FixKind.Redownload or FixKind.ReExtractNatives);
         if (hit is null) return false;
         AppendLog($"§ 检测到问题：{hit.Explanation}，正在自动修复…");
         try

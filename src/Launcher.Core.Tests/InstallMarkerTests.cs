@@ -46,6 +46,7 @@ public class InstallMarkerTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
+    [Fact]
     public void Unmark_Removes()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"marker-{Guid.NewGuid():N}");
