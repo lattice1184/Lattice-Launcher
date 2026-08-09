@@ -241,6 +241,9 @@ public partial class VersionManageViewModel : ViewModelBase
                     NotificationService.Info($"「{_versionId}」已移除，残留文件正在后台清理（不影响使用）");
                 }
             }
+            // AL41：删除完整性——预取残留的父版本（json-only、无标记无 jar）一并清掉，
+            // 不再留下「删了加载器版本，原版还挂红字缺文件」的幽灵条目
+            VersionInstaller.CleanupOrphanParents(_gameDir, _versionId);
             _onDeleted();
         }
         catch (Exception ex)

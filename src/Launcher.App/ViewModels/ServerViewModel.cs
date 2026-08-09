@@ -8,7 +8,6 @@ using Launcher.App.Services;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
 using Launcher.Core.Launch;
-using Launcher.Core.Multiplayer;
 using Launcher.Core.Server;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
@@ -173,10 +172,6 @@ public partial class ServerViewModel : ViewModelBase
     private static string VersionGameDir(VersionInstanceVM? v) =>
         string.IsNullOrEmpty(v?.GameDir) ? GameDirectory.InstallDir() : v!.GameDir;
 
-    /// <summary>联机创建房间过滤：该版本的服务端 jar 是否有效就绪（≥1MB + zip 魔数，坏 jar 不进房间列表）</summary>
-    public bool HasServerJar(VersionInstanceVM v) =>
-        ServerInstaller.IsValidServerJar(Path.Combine(ServerInstaller.ServerDir(VersionGameDir(v), v.Name), "server.jar"));
-
     /// <summary>当前服务端目录（servers/{versionId}）</summary>
     private string? ServerDir => SelectedVersion is null
         ? null
@@ -211,7 +206,6 @@ public partial class ServerViewModel : ViewModelBase
             Dispatcher.UIThread.Post(async () =>
             {
                 IsRunning = false;
-                LanDiscoveryService.Shared.StopBroadcast(); // 进程退出（含崩溃）→ 停播房间
                 if (_worldGenDone)
                 {
                     // 预生成世界流程：世界已落盘，正常结束
@@ -689,41 +683,12 @@ public partial class ServerViewModel : ViewModelBase
                 AppendLog($"§ 启动命令：" + LaunchProcess.DescribeCommandLine(java, cmd));
             RefreshOps(); // 启动后 ops.json 已就绪（含已授予的 OP）
             RefreshBanned(); // 启动后 banned-players.json 已就绪
-            StartBroadcastRoom(version.Name, dir); // 联机：向局域网广播房间（同网段 Lattice 联机页可见）
         }
         catch (Exception ex)
         {
             SetStatus($"启动失败: {ex.Message}", error: true);
             NotificationService.Error(ex.Message);
         }
-    }
-
-    /// <summary>联机创建房间：写入 server-port + motd（server.properties；目录不存在自动创建，服务器启动时读回）</summary>
-    public void ApplyRoomSettings(int port, string? roomName)
-    {
-        if (SelectedVersion is null) return;
-        var dir = ServerInstaller.ServerDir(VersionGameDir(SelectedVersion), SelectedVersion.Name);
-        var path = Path.Combine(dir, "server.properties");
-        var props = ServerProperties.Load(path);
-        props.Set("server-port", port.ToString());
-        if (!string.IsNullOrWhiteSpace(roomName)) props.Set("motd", roomName.Trim());
-        props.Save(path);
-    }
-
-    /// <summary>广播房间信息（服务端启动成功后调用；停止/退出时由 StopBroadcast 停播）</summary>
-    private void StartBroadcastRoom(string versionId, string serverDir)
-    {
-        var props = ServerProperties.Load(Path.Combine(serverDir, "server.properties"));
-        var motd = props.Get("motd", "");
-        var room = new LanRoomInfo(
-            Name: string.IsNullOrWhiteSpace(motd) ? $"我的 {versionId} 服务器" : motd,
-            HostName: Environment.MachineName,
-            Ip: LanDiscoveryService.LocalIp(),
-            VersionId: versionId,
-            Port: props.GetInt("server-port", 25565),
-            WorldName: props.Get("level-name", "world"));
-        LanDiscoveryService.Shared.StartBroadcast(room);
-        AppendLog($"§ 已向局域网广播房间「{room.Name}」（{room.Ip}:{room.Port}）");
     }
 
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>
@@ -848,7 +813,6 @@ public partial class ServerViewModel : ViewModelBase
     private async Task StopServer()
     {
         if (!IsRunning) return;
-        LanDiscoveryService.Shared.StopBroadcast(); // 立即停播（不等进程真正退出）
         Status = "正在停止…";
         AppendLog("§ 发送 stop 命令…");
         await Task.Run(() => _process.Stop());

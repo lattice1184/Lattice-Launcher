@@ -5,71 +5,149 @@
              x:DataType="vm:MultiplayerViewModel">
 
     <DockPanel>
-        <!-- 顶部：标题 + 引导说明 + 跳开服页 -->
+        <!-- 顶部：标题 + 说明 -->
         <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <TextBlock Text="局域网联机" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
-                <Button Content="＋ 创建房间" Classes="primary" FontSize="12" Padding="14,5"
-                        Command="{Binding CreateRoomCommand}"/>
-            </StackPanel>
-            <TextBlock Text="点「创建房间」以本机为服务端开房（自动广播）；同一局域网内的 Lattice 用户会自动发现，点「加入」即启动游戏并自动连接。"
+            <TextBlock Text="联机" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+            <TextBlock Text="联机服务由 Terracotta | 陶瓦联机提供：房主开游戏内置的局域网世界，启动器自动架隧道出房间码，朋友输码即可加入——不开服务器，不吃性能。"
                        Foreground="{StaticResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
         </StackPanel>
 
-        <!-- 状态行 -->
-        <TextBlock DockPanel.Dock="Top" Text="{Binding Status}" Foreground="#8A93A6" FontSize="12" Margin="0,0,0,6"/>
-
-        <!-- 防火墙提示条（规则缺失时显示；一键放行） -->
-        <Border DockPanel.Dock="Top" Background="#33291A" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
-                IsVisible="{Binding IsFwMissing}">
+        <!-- 未同意协议提示条（琥珀警告：联机页约定色） -->
+        <Border x:Name="DeclinedBanner" DockPanel.Dock="Top" Background="#33291A" CornerRadius="6" Padding="10,6"
+                Margin="0,0,0,8" IsVisible="{Binding IsDeclined}">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                 <TextBlock Foreground="#E8B45A" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center">
-                    防火墙未放行 UDP 34198：别人看不到你的房间，你也收不到别人的。放行一次（需管理员确认）即可；点「放行」后仍看不到房间，可手动添加（Windows Defender 防火墙 → 高级设置 → 入站规则 → 端口 UDP 34198）。
+                    未同意联机功能使用协议，联机功能暂不可用。阅读并同意后即可创建房间或加入房间。
                 </TextBlock>
-                <Button Grid.Column="1" Content="放行" Classes="primary" FontSize="11" Padding="12,4"
-                        Command="{Binding AllowFirewallCommand}"/>
+                <Button Grid.Column="1" Content="阅读并同意" Classes="primary" FontSize="11" Padding="12,4"
+                        Command="{Binding ReopenAgreementCommand}"/>
             </Grid>
         </Border>
 
-        <!-- 空态提示（收不到房间常见原因） -->
-        <StackPanel DockPanel.Dock="Top" Spacing="4" IsVisible="{Binding IsEmpty}" Margin="0,30,0,0">
-            <TextBlock Text="没有发现房间" Foreground="#8A93A6" FontSize="13" HorizontalAlignment="Center"/>
-            <TextBlock Text="对方需在同一局域网（同一 WiFi / 路由器下），且两台电脑都要放行 UDP 34198 端口（Windows 防火墙首次弹窗点允许）"
-                       Foreground="{StaticResource TextDim}" FontSize="11" HorizontalAlignment="Center" TextWrapping="Wrap"/>
-        </StackPanel>
+        <!-- 错误提示条（项目约定错误红） -->
+        <Border DockPanel.Dock="Top" Background="#3A2020" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                IsVisible="{Binding HasError}">
+            <TextBlock Foreground="#E05A5A" FontSize="12" TextWrapping="Wrap" Text="{Binding ErrorText}"/>
+        </Border>
 
-        <!-- 房间列表 -->
         <ScrollViewer>
-            <ItemsControl ItemsSource="{Binding Rooms}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:LanRoomVM">
-                        <Border Classes="modcard" Margin="0,1" Padding="12,9" BorderThickness="0,0,0,1"
-                                BorderBrush="{StaticResource BorderColor}" Background="Transparent">
-                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12">
-                                <StackPanel Spacing="3" VerticalAlignment="Center">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"
-                                                   MaxLines="1" TextTrimming="CharacterEllipsis"/>
-                                        <Border CornerRadius="3" Padding="5,1" Background="#12332F" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding VersionId}" FontSize="10" Foreground="#B5F4E9"/>
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock FontSize="12" Foreground="{StaticResource TextSecondary}" Text="{Binding Host}"/>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextDim}" Text="{Binding World}"/>
+            <StackPanel Spacing="12">
+                <!-- 主界面：tab 切换（创建 / 加入） -->
+                <StackPanel x:Name="WelcomeBlock" IsVisible="{Binding IsWelcome}" Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Classes="tab" Classes.active="{Binding IsCreateTab}" Content="创建房间"
+                                Command="{Binding SwitchTabCommand}" CommandParameter="create"/>
+                        <Button Classes="tab" Classes.active="{Binding IsJoinTab}" Content="加入房间"
+                                Command="{Binding SwitchTabCommand}" CommandParameter="join"/>
+                    </StackPanel>
+
+                    <Border Classes="card" Padding="18">
+                        <Grid>
+                            <!-- 创建房间（三步引导） -->
+                            <StackPanel x:Name="CreateTabContent" IsVisible="{Binding IsCreateTab}" Spacing="10">
+                                <TextBlock Text="创建房间" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+                                <TextBlock Classes="dim" FontSize="12" TextWrapping="Wrap">
+                                    电脑性能有限？不开服务端，用游戏自带的局域网世界联机：
+                                </TextBlock>
+                                <StackPanel Spacing="6">
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：进入要联机的游戏世界。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：在游戏菜单中点击「创建局域网世界」。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第三步：返回启动器，点击「创建房间」。</TextBlock>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="复制" Classes="ghost" FontSize="12" Padding="12,5"
-                                        VerticalAlignment="Center"
-                                        Command="{Binding $parent[UserControl].((vm:MultiplayerViewModel)DataContext).CopyCommand}"
-                                        CommandParameter="{Binding}"/>
-                                <Button Grid.Column="2" Content="加入" Classes="primary" FontSize="12" Padding="16,5"
-                                        VerticalAlignment="Center"
-                                        Command="{Binding $parent[UserControl].((vm:MultiplayerViewModel)DataContext).JoinCommand}"
-                                        CommandParameter="{Binding}"/>
-                            </Grid>
+                                <Button Content="创建房间" Classes="primary" HorizontalAlignment="Left" Padding="18,7"
+                                        Command="{Binding CreateRoomCommand}"/>
+                            </StackPanel>
+
+                            <!-- 加入房间 -->
+                            <StackPanel x:Name="JoinTabContent" IsVisible="{Binding IsJoinTab}" Spacing="10">
+                                <TextBlock Text="加入房间" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+                                <StackPanel Spacing="6">
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：输入由房主提供的房间代码。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：点击「加入房间」，稍候即可在游戏里看到对方。</TextBlock>
+                                </StackPanel>
+                                <TextBox Text="{Binding JoinCode}" MaxLength="256" PlaceholderText="请输入房间代码"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="粘贴" Classes="ghost" Padding="14,6" Command="{Binding PasteCodeCommand}"/>
+                                    <Button Content="加入房间" Classes="primary" Padding="18,6" Command="{Binding JoinRoomCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <!-- 创建中 / 加入中（呼吸指示点 + 状态文字） -->
+                <StackPanel x:Name="BusyBlock" IsVisible="{Binding IsBusy}" Spacing="10" Margin="0,40,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                        <Border Classes.stagedot="True" Classes.current="True" Width="8" Height="8" CornerRadius="4"
+                                Background="{StaticResource Accent}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding BusyText}" FontSize="14" Foreground="White" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Center" MaxWidth="420"
+                               IsVisible="{Binding IsHost}"
+                               Text="还没被检测到？先确认游戏里已经点过「创建局域网世界」（游戏菜单 → 对局域网开放）。"/>
+                    <Button Content="取消" Classes="ghost" HorizontalAlignment="Center" Padding="20,6"
+                            Command="{Binding CancelBusyCommand}"/>
+                </StackPanel>
+
+                <!-- 房间已就绪 -->
+                <StackPanel x:Name="ActiveBlock" IsVisible="{Binding IsActive}" Spacing="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding HostName, StringFormat={}{0}的游戏房间}"
+                                   FontSize="16" FontWeight="SemiBold" Foreground="White"/>
+                        <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
+                                   Text="把房间代码发给朋友，对方加入后就能在游戏里看到你——和开服是同一张地图，但不用开服务器。"/>
+                    </StackPanel>
+
+                    <!-- 房间码高亮卡（项目约定加载器蓝） -->
+                    <Border Classes="card" Padding="14,10" Background="#12332F" BorderBrush="#12332F">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="房间代码" Classes="sub" FontSize="11"/>
+                                <TextBlock Text="{Binding RoomCode}" FontSize="22" FontWeight="Bold"
+                                           Foreground="#B5F4E9" FontFamily="Consolas"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Content="复制" Classes="primary" Padding="16,6"
+                                    VerticalAlignment="Center" Command="{Binding CopyCodeCommand}"/>
+                        </Grid>
+                    </Border>
+
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="玩家列表" Classes="sub" FontSize="12"/>
+                        <Border Classes="card" Padding="0">
+                            <ItemsControl ItemsSource="{Binding Players}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TerracottaPlayerVM">
+                                        <Border Classes="row" Padding="12,8" BorderThickness="0,0,0,1"
+                                                BorderBrush="{StaticResource BorderColor}">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White"
+                                                               MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                                    <Border CornerRadius="3" Padding="5,1" Background="#12332F"
+                                                            IsVisible="{Binding IsHost}" VerticalAlignment="Center">
+                                                        <TextBlock Text="房主" FontSize="10" Foreground="#B5F4E9"/>
+                                                    </Border>
+                                                    <Border CornerRadius="3" Padding="5,1" Background="#2DD4BF"
+                                                            IsVisible="{Binding IsLocal}" VerticalAlignment="Center">
+                                                        <TextBlock Text="我" FontSize="10" Foreground="#0B1F1C"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{Binding LatencyText}"
+                                                           Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    </StackPanel>
+
+                    <Button Content="退出并解散" Classes="danger" HorizontalAlignment="Left" Padding="16,6"
+                            IsVisible="{Binding IsHost}" Command="{Binding LeaveRoomCommand}"/>
+                    <Button Content="离开房间" Classes="danger" HorizontalAlignment="Left" Padding="16,6"
+                            IsVisible="{Binding !IsHost}" Command="{Binding LeaveRoomCommand}"/>
+                </StackPanel>
+            </StackPanel>
         </ScrollViewer>
     </DockPanel>
 </UserControl>

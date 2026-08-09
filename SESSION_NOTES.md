@@ -900,3 +900,117 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
   9. 外观分区：强调色选色器显示「紫」= settings 存 #8B5CF6 正确匹配预设（选色器初始化逻辑验证）✓
 - 未自动验证（单测已覆盖）：断网秒接/镜像回退（#210/211 测试）、CF key 四态（#212 测试）、动画帧观感
 - 遗留：点 ✕ 2.5s 未退出（可能动画/确认），force kill 收尾；进程全程 292MB 无泄漏式增长
+
+## 2026-08-08 S 批次：联机与开服彻底分离 + 陶瓦（Terracotta）联机集成（完成）
+- **背景**：用户拍板——联机不再走开服（2 人开服成本高），照 BlockHelm-Launcher 走陶瓦联机；旧局域网扫描整套删除
+- **Core**（TerracottaModels/TerracottaProvisioningService/TerracottaLobbyService）：锁版 0.4.2 内置 SHA256（x86_64/arm64），Gitee 优先 GitHub 兜底，tar.gz 预检（扁平名/≤64MB/仅2文件）+ staging 原子发布；handoff 启动（12s）→ lock 复用（/meta 校验）→ 750ms 所有权 → 500ms 轮询状态机（host 20s 超时）→ /state/ide + /panic?peaceful=true 收尾
+- **App**：协议弹窗（下载进度/失败重试/AGPL 声明）+ 联机页重写（创建三步引导/粘贴房间码/房间码大字号+复制/玩家列表 HOST·我 打标/离开确认）；ServerViewModel 清联机残留
+- **删除**：LanDiscoveryService/FirewallRules/CreateRoomWindow/LanDiscoveryTests
+- **测试**：+28（Provenance 下载校验安装 8 + Lobby 状态机 20），328/328 全绿；20s 超时用例含真实等待
+- **测试揪出 3 个生产 bug**：type/latency_ms 解析未防御 ValueKind.Null（服务端显式 null 会崩）；GetOrStartEndpointAsync 握手失败不清理进程（僵尸）；StopRuntimeAsync 拿 mode 判 started → 主动离开永远跳过 /state/ide
+- **发布**：发布.ps1 成功 → 发布\Lattice启动器.exe（自包含单文件，已签名）
+- **待办**：真机两机验收（清单见下）；netsh 旧防火墙规则一次性清理放发版说明；THIRD_PARTY_NOTICES（Terracotta AGPL-3.0 / EasyTier / BHL GPL-3.0）
+- **验收清单**：A 首进联机页下载 → A 游戏内开局域网 → 房间码 → B 输码加入 → 双方互见 → A 关世界双方复位 → A 离开无 terracotta.exe 残留 → 双启动器 lock 复用 → 断网下载失败提示
+
+## 2026-08-08 T 批次：联机 UI 重做（换掉 BHL 式布局，用项目排版+动画）（完成）
+- **背景**：用户指出联机 UI 是照 BHL 搬的（左右双卡并排）+ 下载进度 UI 与项目风格不符 + 全程无动画
+- **布局**：欢迎态改为 Tab 切换式（Button.tab 项目样式 + active 高亮）——创建/加入内容共用一个 Border.card 大卡，随 tab 动画切换（用户拍板）
+- **动画**：区块切换（Welcome/Busy/Active/Declined）UiAnim.PopIn 弹入；tab 内容切换同样 PopIn；Busy 态加 stagedot.current 呼吸点（HomeView 同款）；协议窗 Opened 时 PopIn(Root)
+- **配色规范化**：房间码卡改项目约定加载器蓝（#12332F 底/#B5F4E9 字，删硬编码 #7FE7C8）；徽章「我」改 Accent 底/#0B1F1C（删金色 #3A2F12/#F0C960）；玩家行用 Classes="row"（项目 hover 过渡）；错误条改约定错误红 #3A2020/#E05A5A；琥珀警告条保留
+- **下载进度对齐项目**：状态文字 + 独立百分比（Accent 色，ViewModel 拆出 PercentText）+ 6px 进度条（全局 Value 0.3s 过渡）
+- **改动**：MultiplayerViewModel（+IsCreateTab/IsJoinTab/SwitchTab）、MultiplayerView.axaml(.cs)（重写+动画）、TerracottaAgreementDialogViewModel（+PercentText）、TerracottaAgreementDialog.axaml(.cs)（进度区+入场动画）
+- **验证**：构建 0 错误；Core 测试 328/328 全绿（Core 零改动）
+- **待办**：真机过四态 + 协议窗下载三段式（进页→弹窗动画→下载百分比→失败重试）；上一批（S 批次）真机两机验收清单仍挂着
+
+## 2026-08-08 体积优化：186MB → 84MB（-55%）
+- 原因：发布.ps1 只开了 PublishSingleFile + IncludeNativeLibrariesForSelfExtract，程序集未压缩
+- 修复：加 `-p:EnableCompressionInSingleFile=true` → exe 83614861 字节（83.6MB）；启动时程序集自解压约 1-2s（实测压缩版冒烟通过：能走到单例检测阶段）
+- 踩坑：PowerShell 反引号续行块内严禁插入注释行（续行链被打断，-p: 被当独立命令报错 CommandNotFoundException）；注释只能放参数块结束之后
+- 结构性说明：PCL2 才几十 MB 是因为 .NET Framework 4.8 Windows 自带，不用打包运行时；我们是 .NET 10 self-contained 必须带 ~70MB 运行时——83.6MB 已是该技术栈近下限（PublishTrimmed 可再省但 Avalonia+反射易炸，不赌）
+- 发布：22:57 更新，签名 2 文件
+
+## 2026-08-08 双版本发布（用户拍板：自包含 + fdep 轻量版）
+- 发布.ps1 重写为 Publish-One 函数跑两遍；产物：发布\Lattice启动器.exe（自包含 83.6MB，双击即用）+ Lattice启动器-轻量版.exe（fdep 46.6MB，需装 .NET 10 Desktop Runtime，弹窗引导）+ 使用说明.txt；3 文件全部签名
+- 轻量版 46.6MB 构成：托管代码 ~23MB + native 库嵌入（IncludeNativeLibrariesForSelfExtract，SKIA 等 ~23MB）——fdep 单文件形态的下限；不带该属性则 native 变散文件（23MB exe + 一堆 dll，失去单文件意义），维持嵌入
+- 轻量版 runtimeconfig 已带 rollForward=LatestMajor（防 .NET 11 版本地狱，grep 验证）；自包含版无（自带运行时，MSBuild 忽略该属性，正常）
+- 踩坑：Publish-One 里 dotnet publish 的 stdout 泄漏进函数管道 → $finalSelf 变成数组 → Get-Item 报「语法不正确」exit=1；修复 = publish 输出接 `| Out-Null`（$LASTEXITCODE 检查不受影响）
+- 用户选择背景：自包含 83.6MB 是「开箱即用」；轻量版是给在意体积的用户（省 44%，换装一次运行时）
+
+---
+## 2026-08-08 深夜批次：联机失败真根因 + CF key 清空修复 + DPAPI 加密（发布 00:14）
+
+**1. 联机失败根因闭环（本批最大成就，用户"给我抓住他"）**
+- 打点：MultiplayerLog（%AppData%\Launcher\logs\multiplayer.log，毫秒级线程安全）+ TerracottaLobbyService/Provisioning/协议窗全链路
+- 手动复现：`/state/scanning`、`/state/guesting` 是**动作端点**——200 + 空 body（立即/延迟 2s 都是），状态只靠 `/state` 轮询（`{"index":1,"state":"host-scanning"}`）；无效房间码 → 400 HTML
+- 根因：CallStateAsync 把动作端点响应当 JSON 解析 → JsonReaderException。证据链：[23:59:54.919] handoff 端口=1710 → [23:59:54.960] CreateHostAsync 失败
+- 修复：新 FireActionAsync（只查状态码 400→InvalidRoomCode）+ ParseJsonAsync（非 JSON 留证据再抛）；CreateHost/Join 改调
+- **测试 mock 失真教训**：StubHandler 的 /state/scanning 返回 `Json(200,"{}")` ≠ 真实空 body → 测试全绿真机必炸；已改真实行为
+- 遗留未解：23:35 会话「HostOk 成功但进程被清理」未复现（FireActionAsync 可能覆盖其一部分）
+
+**2. CF key 清空 bug（用户"为什么重启启动器我的curseforgeapi没了"）**
+- 根因：SettingsViewModel 构造器属性赋值无条件触发 OnXxxChanged → Save()，加载完前字段是默认值 → 空值覆盖文件（文件里值长度 0 实测确认）
+- 修复：`_loading` 标志（构造末尾置 false；Save/OnSelectedMemoryPresetChanged 拦截）
+- 其余 VM 核查安全：ServerViewModel(438)/ThirdPartyDownloadViewModel(117) 的 Save 都在用户操作路径
+
+**3. CF key DPAPI 加密（用户"KEY 不能直接放里面"）**
+- 新 Secrets.cs：DPAPI CurrentUser + "dpapi:" 前缀；无前缀=旧明文原样返回（下次保存自动迁移加密）；解密失败→null
+- LauncherSettings：Load 后 Secrets.Read；Save 时 Protect（内存保持明文，finally 还原）
+- SecretsTests 6 测试（往返/不含明文/明文迁移/空串/Settings 加密往返/旧文件迁移）
+- 换 Windows 账户/重装系统 → 密文失效需重填
+
+**验证**：构建 0 错误；全量 334/334 测试全绿；发布成功（00:14 轻量版 + 00:14 自包含）
+**踩坑**：构建产物陈旧两次——MultiplayerLog 在构建后落盘；App 无 RID build 不更新历史 win-x64 残留目录（rebuild 只更 net10.0-windows）→ 发布/手动测试前验证产物（rg 搜 IL 字符串 + 时间戳）；运行中进程锁 DLL 复制失败被静默跳过（exit=0）→ 先 Stop-Process
+
+**待办（用户尚未反馈）**：
+- ① 设置页重填 CF key → 重启 → key 还在 + settings.json 无明文（验收）
+- ② 联机创建房间真机测试（验收）
+- ③ SHA256 校验加进发布脚本 + 使用说明.txt（SAC/SmartScreen 透明化三件套，用户未答复做不做）
+- ④ 网卡 metric 修复后续（承诺过"不用关任何东西也能用"的修复，未排期）
+- LittleSkin 集成方案已给，未排期
+
+---
+## 2026-08-09 凌晨 跨启动器联机侦察(BHL × Lattice,单机)
+
+**BHL 获取**:GitHub zqq-699/BlockHelm-Launcher release v0.9.13(12,637,280 字节,与本地源码 dotnet publish fdd-single 产物字节数完全一致——官方 release 即同源码同配置);本地源码在 AppData\Local\Temp\BlockHelm-Launcher,发布脚本 BuildSingleRelease.bat(WinX64FrameworkDependentSingleFile)。编译缺 CF/Microsoft key 文件仅 warning,不影响联机。产物拷到 桌面\BlockHelm\ 稳定位置。
+
+**协议互认四条实锤**(日志证据):
+1. 锁协议:BHL 认 Lattice 的 terracotta.lock(2 字节大端端口)→ 显示「被其他启动器占用」= 互认
+2. meta 探测互认:Lattice 能探测 BHL 实例的版本/状态
+3. 房间码互通:双方同 U/xxxx-xxxx-xxxx-xxxx 格式;HostOk 状态双方日志都能解读(profiles/machine_id/vendor)
+4. 异常码映射一致(400→InvalidRoomCode 等,抄的同一套 TERRACOTTA_SPEC)
+
+**「Lattice 输 BHL 码显示无效」真相**:时间差——BHL 建房 HostOk(00:54:54)后被 web API 命令杀掉(日志 `[Core]: Closed by web API. Shutting down.`),用户输码时房间已死。停止命令大概率来自 Lattice 加入流程对已有实例的清理/接管。
+
+**单机双启动器物理不可行**(重要认知):陶瓦每机一实例(锁设计)。房主实例不能当 guest(对 host-ok 态实例发 guesting → 400);杀房主再起 guest → 房间没了。两条路都死。**跨启动器完整闭环必须两台机器**(房主机 + guest 机)。单机只能验证协议层互认,已验证完毕。
+
+**EasyTier 隐患**(新发现):BHL 建房日志 100 条 `dns lookup_ip failed`(easytier.cn 公共节点解析失败;etnode.zkitefly.eu.org 握手 ConnectionReset)——跨机联机(含 Lattice 对 Lattice)最大坑,优先级记入待办。23:59 Lattice 建房成功那次的日志无 DNS 失败——网络时好时坏。
+
+**死锁残留现象**:实例异常退出(强杀/被 web API 杀)锁不删 → 后来者读到僵尸锁报「被占用」(已手动删过一次)。Lattice 是否自动清理死锁未确认,待查。
+
+**Lattice 改进点(低优先级)**:加入时探测到「已有实例且为 host 态」应提示「本机已有房间,请先退出」而非 400「无效」。
+
+**2026-08-09 凌晨 启动耗时实测(同机比对,数据源:用户实测)**
+- BHL:点击开始 15s → 主页 41s,点启动到主页 = 26s(窗口出现时刻未录,无数据)
+- Lattice:点启动 53s → 窗口+彩蛋弹窗同时出现 → 主页 1:13,耗时 = 20s
+- Lattice 快 ~23%;且窗口拉起即有反馈(彩蛋同框)——BHL 窗口出现时刻无数据,静默段不成立,仅比点击→主页
+- 注:对比前提需同版本同 Java 才干净;下载速度差(秒下 vs 几十KB)比启动差更悬殊,视频建议两个都录
+
+**2026-08-09 台风夜 「进度条满了还在等」修复(视频素材暴露)**
+- 现象:视频对比发现——字节下完进度即 100%,但合并分片+SHA1 校验+落盘无进度表达 → UI 钉在 100%「下载中/排队等待」,观感像卡死;BHL 单连接直下无收尾,100% 即完成
+- 修复:底层全部进度上报点封顶 99%(DownloadService 4 处 + VersionDownloadPipeline assets 1 处),「100%」只由任务真正完成时的 Post 给出(DownloadTask.cs:173/238 已有)→ 99% → 瞬间 100% + 完成,观感对齐 BHL
+- 测试:新增 Progress_Overall_StaysBelow100_UntilTaskCompletes(先红后绿);全套 335 通过;App 构建 0 错误
+- 待办:发布新版本给朋友(顺带 SmartScreen 话术),明天两机联机实测
+
+**2026-08-09 台风夜 探针最终结果:asm-9.10.1.jar「神秘取消」根因 + 修复(AL34)**
+- 现象:探针全量下载 1.21.10+fabric 0.19.3,127/128 完成,唯一 asm-9.10.1.jar 为 Canceled(p=0%、Error=null、stage=排队等待、文件缺失)→ 父报「缺 1 个文件」;且 Canceled 在 UI 上不可重试(RetryCommand 只认 Failed)
+- 根因:asm 是 fabric 8 库之一(顶层 url maven.fabricmc.net)→ 镜像 mapper 无映射 → 单候选直连路径。HttpClient.Timeout(默认 100s 等响应头)抛 TaskCanceledException(OCE 但 token 未被请求),单候选 catch 只拦 HttpRequestException/InvalidDataException → OCE 漏出 → 叶子 catch(OperationCanceledException) 一律标 Canceled(不看 token 是否被请求)→ 无错误、不重试、不可重试
+- 修复(三层):
+  1. DownloadService 单候选路径加 `catch (OCE) when (!ct.IsCancellationRequested)` → 转可重试错误「等待响应头超时(>100s)」走退避下一轮;`catch (OCE) { throw; }` 用户取消原样上抛(DownloadService.cs:164 附近)
+  2. DownloadTask 叶子 catch(OCE) 加 `when (_cts.IsCancellationRequested)` 过滤;未被请求的 OCE → Failed 带信息「下载中断(TaskCanceledException: …)」(防未来泄漏再变神秘取消)
+  3. RunGroupAsync 同款防御(「安装中断…」)
+- 测试:SingleCandidateTimeoutTests.cs 3 个(超时→重试成功 / 超时耗尽→HttpRequestException 带"超时"/ 叶子 OCE 未请求→Failed)——先红后绿;全套 338 通过;App 构建 0 错误
+- 探针重跑:state=Completed 19.6s(幂等跳过已有 127 文件,只补 asm),0 违规,versions 下 1.21.10 + fabric-loader-0.19.3-1.21.10 齐全
+- 注:竞速路径(RaceOneAsync)OCE 已静默转 (false,null) → 换轮重试 → 最终 Failed,本就不受影响;只有单候选路径漏
+- 探针目录:launcher/.probe/ + %TEMP%\lattice-probe(真实网络下载产物),#221 验收后再删
+- 发布：08-09 02:13 完成（自包含 79.7MB + 轻量版 44.5MB，签名 + 使用说明.txt）；自 08-08 联机第一批以来第 7 版
+- 今日开发日志：2026-08-09-开发记录.md（含版本统计表 / 联机完成时间回顾 / 明日待办）

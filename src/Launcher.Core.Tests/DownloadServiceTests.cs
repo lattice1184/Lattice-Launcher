@@ -185,6 +185,30 @@ public class DownloadServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Progress_Overall_StaysBelow100_UntilTaskCompletes()
+    {
+        // 字节读完 ≠ 任务完成：分片合并 + SHA1 校验 + 落盘还有成本。
+        // 进度提前报 100 → UI「进度条满但还挂着下载中/排队等待」观感卡死
+        // （BHL 对照：100% 即完成）。修复：底层进度封顶 99，100 只由任务完成时给出。
+        var sha1 = Convert.ToHexStringLower(SHA1.HashData(_payload));
+        var dest = TempPath();
+        try
+        {
+            var peaks = new List<double>();
+            var svc = new DownloadService();
+            await svc.DownloadFileAsync($"http://localhost:{Port}/big.bin", dest, sha1, _payload.Length,
+                p => { lock (peaks) peaks.Add(p.OverallPercent); });
+
+            lock (peaks)
+            {
+                Assert.NotEmpty(peaks);
+                Assert.All(peaks, v => Assert.True(v < 100, $"完成前进度不应到 100，实际 {v}"));
+            }
+        }
+        finally { File.Delete(dest); }
+    }
+
+    [Fact]
     public async Task SmallFile_SingleConnection_Works()
     {
         var small = _smallPayload;

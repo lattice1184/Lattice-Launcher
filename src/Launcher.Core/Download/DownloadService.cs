@@ -165,6 +165,14 @@ public sealed class DownloadService
                 {
                     last = ex;
                 }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // AL34：HttpClient.Timeout（默认 100s 等响应头）超时抛 TaskCanceledException——源级故障，
+                    // 不是用户取消。此前漏出 → 叶子任务误判"已取消"（无错误、UI 不可重试、文件缺失）；
+                    // 实机 08-09 探针 asm-9.10.1.jar（maven.fabricmc.net 单候选）即此。转可重试错误走退避下一轮。
+                    last = new HttpRequestException("等待响应头超时（>100s）", null);
+                }
+                catch (OperationCanceledException) { throw; } // 用户取消原样上抛
                 if (attempt < _options.MaxSourceAttempts - 1)
                 {
                     var delay = backoff(attempt);
@@ -320,7 +328,7 @@ public sealed class DownloadService
                 await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 read += n;
                 progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
-                    total > 0 ? read * 100.0 / total : 0));
+                    total > 0 ? Math.Min(read * 100.0 / total, 99) : 0));
             }
             await dst.FlushAsync(ct);
         }
@@ -484,7 +492,7 @@ public sealed class DownloadService
             if (!force && done <= cp.Reported) return;
             cp.Reported = done;
             progress(new DownloadProgress("", destName, done, totalSize,
-                totalSize > 0 ? done * 100.0 / totalSize : 0));
+                totalSize > 0 ? Math.Min(done * 100.0 / totalSize, 99) : 0));
         }
     }
 
@@ -570,7 +578,7 @@ public sealed class DownloadService
             return p =>
             {
                 if (p.FileBytesDone > fileDone) fileDone = p.FileBytesDone;
-                var overall = estimated > 0 ? (accumulated + fileDone) * 100.0 / estimated : p.OverallPercent;
+                var overall = estimated > 0 ? Math.Min((accumulated + fileDone) * 100.0 / estimated, 99) : p.OverallPercent;
                 progress(new DownloadProgress(stage, fileName, p.FileBytesDone, p.FileTotalBytes, overall));
             };
         }
@@ -694,7 +702,7 @@ public sealed class DownloadService
                             if (progress is not null)
                                 progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", h, n, totalAssets,
                                     estimated > 0
-                                        ? (accumulated + (long)((double)n / totalAssets * assetsBytes)) * 100.0 / estimated
+                                        ? Math.Min((accumulated + (long)((double)n / totalAssets * assetsBytes)) * 100.0 / estimated, 99)
                                         : 0));
                         }
                         finally { assetSemaphore.Release(); }

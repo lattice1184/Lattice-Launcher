@@ -5,164 +5,347 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.App.Views;
+using Launcher.Core.Account;
 using Launcher.Core.Multiplayer;
-using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
 
-/// <summary>局域网房间行（展示便捷属性）</summary>
-public sealed record LanRoomVM(LanRoomInfo Room)
+/// <summary>联机页区块（互斥显示）</summary>
+public enum MultiplayerPageStep
 {
-    public string Name => Room.Name;
-    public string VersionId => Room.VersionId;
-    public string Host => $"{Room.HostName} · {Room.Ip}:{Room.Port}";
-    public string World => $"世界：{Room.WorldName}";
+    Welcome,  // 主界面：创建 / 加入卡片
+    Busy,     // 创建中 / 加入中（可取消）
+    Active,   // 房间已就绪
+    Declined, // 未同意协议，功能不可用
+}
+
+/// <summary>房间内玩家行（展示便捷属性）</summary>
+public sealed record TerracottaPlayerVM(TerracottaPlayer Player)
+{
+    public string Name => Player.Name;
+    public string LatencyText => Player.LatencyMs is { } ms ? $"{ms} ms" : "—";
+    public bool IsHost => Player.IsHost;
+    public bool IsLocal => Player.IsLocal;
 }
 
 /// <summary>
-/// 联机页：监听局域网房间广播，列表实时刷新（6s 未心跳视为离线）。
-/// 开房间 = 开服页启动服务端（自动广播）；加入 = 复用主页一键进服链路（--server IP --port）。
+/// 联机页：走陶瓦（Terracotta）联机，与开服完全分离。
+/// 房主：游戏内开「局域网世界」→ 本页「创建房间」→ 出房间码；客机：输码加入。
+/// 未装模块 → 弹协议窗下载；失败/停止 → 复位 + 人话文案。
 /// </summary>
 public partial class MultiplayerViewModel : ViewModelBase
 {
-    private const int TimeoutSeconds = 6;
+    private readonly TerracottaProvisioningService _provisioning = new();
+    private TerracottaLobbyService? _lobby;
+    private CancellationTokenSource? _sessionCts;
+    private bool _initialized;
+    private bool _resetting;
 
-    private readonly Dictionary<string, DateTime> _lastSeen = [];
-    private readonly DispatcherTimer _ticker;
-
-    public ObservableCollection<LanRoomVM> Rooms { get; } = [];
+    /// <summary>当前区块</summary>
+    [ObservableProperty]
+    public partial MultiplayerPageStep Step { get; set; } = MultiplayerPageStep.Welcome;
 
     [ObservableProperty]
-    public partial string Status { get; set; } = "正在扫描局域网…";
+    public partial bool IsWelcome { get; set; } = true;
 
     [ObservableProperty]
-    public partial bool IsEmpty { get; set; } = true;
+    public partial bool IsBusy { get; set; }
 
-    /// <summary>防火墙规则缺失（联机页打开时检测；缺失则显示提示条+放行按钮）</summary>
     [ObservableProperty]
-    public partial bool IsFwMissing { get; set; }
+    public partial bool IsActive { get; set; }
 
-    public MultiplayerViewModel()
+    [ObservableProperty]
+    public partial bool IsDeclined { get; set; }
+
+    partial void OnStepChanged(MultiplayerPageStep value)
     {
-        LanDiscoveryService.Shared.StartListen(OnRoomReceived);
-        _ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _ticker.Tick += (_, _) => Prune();
-        _ticker.Start();
-        // 防火墙检测较慢（netsh 查询）——后台跑，结果回 UI 线程
-        _ = Task.Run(() =>
-        {
-            var missing = !FirewallRules.RuleExists();
-            Dispatcher.UIThread.Post(() => IsFwMissing = missing);
-        });
+        IsWelcome = value == MultiplayerPageStep.Welcome;
+        IsBusy = value == MultiplayerPageStep.Busy;
+        IsActive = value == MultiplayerPageStep.Active;
+        IsDeclined = value == MultiplayerPageStep.Declined;
     }
 
-    /// <summary>一键放行防火墙（UAC 提权一次；失败给手动步骤）</summary>
+    /// <summary>欢迎态 tab：默认创建房间</summary>
+    [ObservableProperty]
+    public partial bool IsCreateTab { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool IsJoinTab { get; set; }
+
+    partial void OnIsCreateTabChanged(bool value) => IsJoinTab = !value;
+
+    /// <summary>欢迎态 tab 切换（create / join）</summary>
     [RelayCommand]
-    private void AllowFirewall()
+    private void SwitchTab(string which) => IsCreateTab = which == "create";
+
+    /// <summary>创建中 / 加入中的说明文字</summary>
+    [ObservableProperty]
+    public partial string BusyText { get; set; } = "";
+
+    /// <summary>错误/停止原因文案（人话）</summary>
+    [ObservableProperty]
+    public partial string? ErrorText { get; set; }
+
+    [ObservableProperty]
+    public partial bool HasError { get; set; }
+
+    partial void OnErrorTextChanged(string? value) => HasError = value is not null;
+
+    /// <summary>房主 / 客机</summary>
+    [ObservableProperty]
+    public partial bool IsHost { get; set; }
+
+    /// <summary>房间码（XXXX-XXXX）</summary>
+    [ObservableProperty]
+    public partial string? RoomCode { get; set; }
+
+    /// <summary>房主名（房间标题用）</summary>
+    [ObservableProperty]
+    public partial string? HostName { get; set; }
+
+    /// <summary>客机：房间码输入</summary>
+    [ObservableProperty]
+    public partial string JoinCode { get; set; } = "";
+
+    /// <summary>房间内玩家</summary>
+    public ObservableCollection<TerracottaPlayerVM> Players { get; } = [];
+
+    private static string PlayerName => AccountService.Shared.Current?.Name ?? "Player";
+
+    /// <summary>进入联机页（View Loaded）：首次检查模块，未装弹协议窗</summary>
+    public async Task OnPageLoadedAsync()
     {
-        if (FirewallRules.TryAddRule())
-        {
-            IsFwMissing = false;
-            NotificationService.Success("防火墙已放行 UDP 34198，联机房间可被发现");
-        }
-        else
-        {
-            NotificationService.Error("未放行（已取消或失败）。" + Environment.NewLine + FirewallRules.ManualHint());
-        }
+        if (_initialized) return;
+        _initialized = true;
+        await EnsureAgreementAsync();
     }
 
-    /// <summary>UDP 回调在后台线程——切回 UI 线程更新集合</summary>
-    private void OnRoomReceived(LanRoomInfo room)
-    {
-        if (Dispatcher.UIThread.CheckAccess()) UpdateRoom(room);
-        else Dispatcher.UIThread.Post(() => UpdateRoom(room));
-    }
+    // ---------- 协议 ----------
 
-    private void UpdateRoom(LanRoomInfo room)
+    /// <summary>模块已装直接过；未装弹协议窗，不同意 → Declined 区块</summary>
+    private async Task<bool> EnsureAgreementAsync()
     {
-        var key = $"{room.Ip}:{room.Port}";
-        _lastSeen[key] = DateTime.Now;
-        for (var i = 0; i < Rooms.Count; i++)
+        var installed = _provisioning.TryGetAvailable();
+        MultiplayerLog.Log($"协议检查: 已装模块={(installed is null ? "无" : $"v{installed.Version}")}");
+        if (installed is not null) return true;
+        MultiplayerLog.Log("协议检查: 弹协议窗");
+        if (DialogService.MainWindow() is not { } owner) return false;
+        var ok = await new TerracottaAgreementDialog(_provisioning).ShowDialog<bool>(owner);
+        if (!ok)
         {
-            if ($"{Rooms[i].Room.Ip}:{Rooms[i].Room.Port}" != key) continue;
-            if (!Rooms[i].Room.Equals(room)) Rooms[i] = new LanRoomVM(room); // 信息变化才替换（避免每心跳重渲染）
-            return;
+            Step = MultiplayerPageStep.Declined;
+            return false;
         }
-        Rooms.Add(new LanRoomVM(room));
-        IsEmpty = false;
-        Status = $"发现 {Rooms.Count} 个房间";
+        return true;
     }
 
-    /// <summary>每秒清理超时房间（心跳 2s，6s 无心跳 = 主机退出/断网）</summary>
-    private void Prune()
+    /// <summary>Declined 区块：重新阅读并同意协议</summary>
+    [RelayCommand]
+    private async Task ReopenAgreement()
     {
-        var now = DateTime.Now;
-        for (var i = Rooms.Count - 1; i >= 0; i--)
-        {
-            var key = $"{Rooms[i].Room.Ip}:{Rooms[i].Room.Port}";
-            if (!_lastSeen.TryGetValue(key, out var seen) || (now - seen).TotalSeconds <= TimeoutSeconds) continue;
-            _lastSeen.Remove(key);
-            Rooms.RemoveAt(i);
-        }
-        IsEmpty = Rooms.Count == 0;
-        if (IsEmpty) Status = "正在扫描局域网…";
-        else if (Rooms.Count > 0) Status = $"发现 {Rooms.Count} 个房间";
+        if (await EnsureAgreementAsync()) Step = MultiplayerPageStep.Welcome;
     }
 
-    /// <summary>创建房间：选版本/房间名/端口 → 防火墙放行 → 启动服务端（自动广播，本机回环可见自己的房间）</summary>
+    // ---------- 房主：创建房间 ----------
+
     [RelayCommand]
     private async Task CreateRoom()
     {
-        if (MainViewModel.Current is not { } main) return;
-        if (main.Server.IsRunning) { Status = "服务端已在运行中，同一时间只能开一个房间"; return; }
-        if (DialogService.MainWindow() is not { } owner) return;
+        if (!await EnsureAgreementAsync()) return;
+        var module = _provisioning.TryGetAvailable();
+        if (module is null) return;
 
-        // 只列服务端 jar 就绪的版本——缺文件的版本选了会弹下载确认，直接过滤掉
-        var usable = main.Server.InstalledVersions.Where(v => main.Server.HasServerJar(v)).ToList();
-        if (usable.Count == 0)
+        StartSession(isHost: true, module);
+        BusyText = "正在扫描局域网世界…";
+        try
         {
-            NotificationService.Error("没有可开服的版本：先到开服页下载服务端");
-            return;
+            await _lobby!.CreateHostAsync(PlayerName, _sessionCts!.Token);
         }
-
-        var result = await new CreateRoomWindow(usable)
-            .ShowDialog<CreateRoomResult?>(owner);
-        if (result is null) return; // 取消
-
-        // 防火墙放行（缺失才提权；被拒给手动步骤——不阻断创建）
-        if (!FirewallRules.RuleExists() && !FirewallRules.TryAddRule())
+        catch (OperationCanceledException)
         {
-            NotificationService.Error("防火墙未放行 UDP 34198，其他电脑可能看不到房间。" + Environment.NewLine + FirewallRules.ManualHint());
+            ResetAfterFailure();
         }
-
-        var ver = main.Server.InstalledVersions.FirstOrDefault(
-            v => v.Name.Equals(result.VersionId, StringComparison.OrdinalIgnoreCase));
-        if (ver is null) { Status = $"未找到版本 {result.VersionId}"; return; }
-        main.Server.SelectedVersion = ver;
-        main.Server.ApplyRoomSettings(result.Port, result.RoomName);
-        main.Server.StartServerCommand.Execute(null); // 启动后自动广播房间
-        Status = $"房间「{(string.IsNullOrWhiteSpace(result.RoomName) ? "我的 " + result.VersionId + " 服务器" : result.RoomName)}」创建中…";
-        NotificationService.Success("正在创建房间（服务端启动后自动广播）");
+        catch (TerracottaLobbyException ex)
+        {
+            ShowFailure(ex);
+        }
     }
 
-    /// <summary>复制房间地址（ip:port）——发给朋友可在游戏内手动直连</summary>
+    // ---------- 客机：加入房间 ----------
+
     [RelayCommand]
-    private async Task Copy(LanRoomVM row)
+    private async Task JoinRoom()
+    {
+        var code = JoinCode.Trim();
+        if (code.Length == 0)
+        {
+            ErrorText = "请先输入房主提供的房间代码。";
+            return;
+        }
+        if (!await EnsureAgreementAsync()) return;
+        var module = _provisioning.TryGetAvailable();
+        if (module is null) return;
+
+        StartSession(isHost: false, module);
+        BusyText = "正在加入房间…";
+        try
+        {
+            await _lobby!.JoinAsync(code, PlayerName, _sessionCts!.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            ResetAfterFailure();
+        }
+        catch (TerracottaLobbyException ex)
+        {
+            ShowFailure(ex);
+        }
+    }
+
+    /// <summary>从剪贴板粘贴房间码</summary>
+    [RelayCommand]
+    private async Task PasteCode()
     {
         if (DialogService.MainWindow() is not { } top) return;
         var cb = Avalonia.Controls.TopLevel.GetTopLevel(top)?.Clipboard;
         if (cb is null) return;
-        await cb.SetTextAsync($"{row.Room.Ip}:{row.Room.Port}");
-        NotificationService.Success($"已复制 {row.Room.Ip}:{row.Room.Port}");
+        var text = await cb.TryGetTextAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ErrorText = "剪贴板中没有可用的房间代码。";
+            return;
+        }
+        JoinCode = text.Trim();
     }
 
-    /// <summary>加入房间：切主页启动客户端并自动连接（复用一键进服链路）</summary>
+    // ---------- 房间内 ----------
+
+    /// <summary>复制房间码（发给朋友用）</summary>
     [RelayCommand]
-    private async Task Join(LanRoomVM row)
+    private async Task CopyCode()
     {
-        if (MainViewModel.Current is not { } main) return;
-        var dir = GameDirectory.Detect();
-        main.NavigateTo("home");
-        await main.Home.RequestLaunchWithServerAsync(row.Room.VersionId, dir, row.Room.Ip, row.Room.Port);
+        if (RoomCode is null || DialogService.MainWindow() is not { } top) return;
+        var cb = Avalonia.Controls.TopLevel.GetTopLevel(top)?.Clipboard;
+        if (cb is null) return;
+        await cb.SetTextAsync(RoomCode);
+        NotificationService.Success("已复制房间代码");
+    }
+
+    /// <summary>离开房间：确认 → 陶瓦收尾（/state/ide → /panic）→ 复位</summary>
+    [RelayCommand]
+    private async Task LeaveRoom()
+    {
+        if (_lobby is null) return;
+        var (title, message, confirm) = IsHost
+            ? ("退出并解散房间？", "退出后房间将被解散，其他玩家也会断开连接。是否确认退出？", "退出")
+            : ("离开房间？", "离开后将断开与房间的连接。", "离开房间");
+        if (!await DialogService.Confirm(DialogService.MainWindow(), message, title, confirm, "取消")) return;
+
+        _resetting = true; // 主动路径不发 Stopped，事件也忽略
+        try
+        {
+            await _lobby.StopAsync(CancellationToken.None);
+        }
+        catch { /* 收尾失败也复位 */ }
+        finally
+        {
+            _resetting = false;
+            Reset();
+        }
+    }
+
+    /// <summary>创建中 / 加入中：取消</summary>
+    [RelayCommand]
+    private void CancelBusy() => _sessionCts?.Cancel();
+
+    // ---------- 会话管理 ----------
+
+    private void StartSession(bool isHost, TerracottaModule module)
+    {
+        _lobby = new TerracottaLobbyService(module);
+        _lobby.SnapshotChanged += OnSnapshotChanged;
+        _lobby.Stopped += OnStopped;
+        _sessionCts = new CancellationTokenSource();
+        IsHost = isHost;
+        ErrorText = null;
+        RoomCode = null;
+        Players.Clear();
+        Step = MultiplayerPageStep.Busy;
+    }
+
+    /// <summary>Core 轮询线程回调 → 切回 UI 线程应用快照（Core 已做签名去重，只在变化时发）</summary>
+    private void OnSnapshotChanged(TerracottaSnapshot snap)
+    {
+        if (_resetting) return;
+        if (Dispatcher.UIThread.CheckAccess()) ApplySnapshot(snap);
+        else Dispatcher.UIThread.Post(() => ApplySnapshot(snap));
+    }
+
+    private void ApplySnapshot(TerracottaSnapshot snap)
+    {
+        if (_resetting || snap.State != TerracottaSessionState.Active) return;
+        Step = MultiplayerPageStep.Active;
+        RoomCode = snap.RoomCode;
+        HostName = snap.Players.FirstOrDefault(p => p.IsHost)?.Name ?? PlayerName;
+        Players.Clear();
+        foreach (var p in snap.Players) Players.Add(new TerracottaPlayerVM(p));
+    }
+
+    /// <summary>异常终止（陶瓦退出 / 世界关闭 / 服务异常）→ 复位 + 文案</summary>
+    private void OnStopped(TerracottaStopReason reason)
+    {
+        if (_resetting) return;
+        if (Dispatcher.UIThread.CheckAccess()) HandleStopped(reason);
+        else Dispatcher.UIThread.Post(() => HandleStopped(reason));
+    }
+
+    private void HandleStopped(TerracottaStopReason reason)
+    {
+        if (_resetting) return;
+        Reset();
+        ErrorText = reason switch
+        {
+            TerracottaStopReason.TerracottaExited => "陶瓦联机模块已停止，房间已自动解散。",
+            TerracottaStopReason.MinecraftWorldClosed => "局域网世界已关闭，房间已自动解散。",
+            TerracottaStopReason.ServiceFailed => "陶瓦联机服务异常，房间已自动解散。",
+            _ => null,
+        };
+    }
+
+    /// <summary>失败复位（无文案——取消场景），随后带文案时再 set</summary>
+    private void ResetAfterFailure() => Reset();
+
+    private void ShowFailure(TerracottaLobbyException ex)
+    {
+        Reset();
+        ErrorText = ex.Failure switch
+        {
+            TerracottaLobbyFailure.InvalidRoomCode => "房间代码格式无效，请检查后重试。",
+            TerracottaLobbyFailure.MinecraftWorldUnavailable => "未检测到可用的局域网世界。请先进入游戏点「创建局域网世界」，再回来点「创建房间」。",
+            TerracottaLobbyFailure.TerracottaUnavailable => "陶瓦联机模块不可用，请重新进入联机页或重启启动器后重试。",
+            TerracottaLobbyFailure.TerracottaBusy => "陶瓦联机服务正被其他启动器使用，请关闭其他启动器后重试。",
+            TerracottaLobbyFailure.ProtocolFailed => "陶瓦联机服务异常，请关闭其他 Terracotta 实例后重试。",
+            TerracottaLobbyFailure.StartupFailed => "创建房间失败，请稍后重试。",
+            TerracottaLobbyFailure.RoomConnectionFailed => "加入房间失败，请确认房间仍然有效并检查网络后重试。",
+            _ => null,
+        };
+    }
+
+    private void Reset()
+    {
+        if (_lobby is not null)
+        {
+            _lobby.SnapshotChanged -= OnSnapshotChanged;
+            _lobby.Stopped -= OnStopped;
+            _lobby.Dispose();
+            _lobby = null;
+        }
+        _sessionCts?.Dispose();
+        _sessionCts = null;
+        RoomCode = null;
+        HostName = null;
+        IsHost = false;
+        Players.Clear();
+        Step = MultiplayerPageStep.Welcome;
     }
 }

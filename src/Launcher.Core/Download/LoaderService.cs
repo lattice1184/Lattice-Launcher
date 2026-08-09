@@ -37,7 +37,9 @@ public sealed class LoaderService
         // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
         _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
-        _downloads = downloads ?? new DownloadService();
+        // 探针实测 08-09：不传 downloads 时自建服务必须带 gameDirectory，否则内部下载写到
+        // GameDirectory.Detect()（默认安装位）而本服务 gameDirectory 指向别处 → Verify 查错目录报"缺文件"
+        _downloads = downloads ?? new DownloadService(gameDirectory: gameDirectory);
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _installerProcess = installerProcess ?? InstallerProcess.RunAsync;
     }
@@ -46,20 +48,44 @@ public sealed class LoaderService
 
     public async Task<List<LoaderMetaVersion>> GetLoaderVersionsAsync(LoaderKind kind, string mcVersion, CancellationToken ct)
     {
-        // AL28 本地缓存（24h）：meta 服务国内访问慢（实测 12s+），二次打开秒出；
-        // 列表含新版本延迟最多 24h（loader 版本更新不频繁，可接受）
+        // AL28 本地缓存 + AL37 stale-while-revalidate：meta.fabricmc.net 国内实测 6-26s（08-09 真机），
+        // PCL 秒出靠内置数据——这里过期缓存也立即返回（新版本延迟可见可接受），后台静默拉新，UI 永不阻塞。
         var cachePath = CacheFilePath(kind, mcVersion);
-        if (TryLoadCache(cachePath, out var cached)) return cached;
+        if (TryLoadCache(cachePath, out var cached))
+        {
+            if (IsStale(cachePath)) _ = RefreshCacheAsync(kind, mcVersion, cachePath);
+            return cached;
+        }
 
-        var list = kind switch
+        var list = await FetchVersionsAsync(kind, mcVersion, ct);
+        TrySaveCache(cachePath, list);
+        return list;
+    }
+
+    private async Task<List<LoaderMetaVersion>> FetchVersionsAsync(LoaderKind kind, string mcVersion, CancellationToken ct)
+        => kind switch
         {
             LoaderKind.Fabric => await GetFabricVersionsAsync(mcVersion, ct),
             LoaderKind.Quilt => await GetQuiltVersionsAsync(mcVersion, ct),
             LoaderKind.NeoForge => await GetNeoForgeVersionsAsync(mcVersion, ct),
             _ => await GetForgeVersionsAsync(mcVersion, ct),
         };
-        TrySaveCache(cachePath, list);
-        return list;
+
+    /// <summary>后台刷新（fire-and-forget）：失败保留旧缓存，不影响已返回的列表</summary>
+    private async Task RefreshCacheAsync(LoaderKind kind, string mcVersion, string cachePath)
+    {
+        try
+        {
+            var list = await FetchVersionsAsync(kind, mcVersion, CancellationToken.None);
+            TrySaveCache(cachePath, list);
+        }
+        catch { /* 刷新失败保留旧缓存 */ }
+    }
+
+    private static bool IsStale(string path)
+    {
+        try { return DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromHours(24); }
+        catch { return true; }
     }
 
     // ---------- AL28 版本列表本地缓存（TTL 24h，损坏/空列表回退网络） ----------
@@ -74,7 +100,7 @@ public sealed class LoaderService
         try
         {
             if (!File.Exists(path)) return false;
-            if (DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > TimeSpan.FromHours(24)) return false;
+            // AL37：不再按 TTL 拒绝——过期缓存照样返回（IsStale 触发后台刷新），文件存在即可用
             var cached = JsonSerializer.Deserialize<List<LoaderMetaVersion>>(File.ReadAllText(path));
             if (cached is null || cached.Count == 0) return false;
             list = cached;
@@ -235,7 +261,9 @@ public sealed class LoaderService
             VersionJson? version = null;
             await ctx.AddChild($"加载器配置 {plan.Kind}", 0, async (p, c) =>
             {
-                p(new DownloadProgress("查询加载器版本", null, 0, 0, 0));
+                // AL40：文案明确——「正在安装加载器」让用户知道卡在加载器（meta 源国内慢），
+                // 而非笼统的「排队等待」/「下载中」让人误以为 UI 卡死
+                p(new DownloadProgress("正在安装加载器…", null, 0, 0, 0));
                 var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, c);
                 version = JsonSerializer.Deserialize<VersionJson>(json)
                     ?? throw new InvalidDataException("加载器版本 JSON 解析失败");

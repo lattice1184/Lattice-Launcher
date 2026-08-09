@@ -173,11 +173,18 @@ public partial class DownloadTask : ObservableObject
                 if (!_cts.IsCancellationRequested) Post(() => ProgressPercent = 100);
             });
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // AL34：token 未被请求的 OCE（HttpClient 超时等内部泄漏）→ 失败并带信息——
+            // 静默"已取消"在 UI 上不可重试（RetryCommand 只认 Failed）还丢错误原因（探针 08-09 asm 即此）
+            TerminalState = DownloadTaskState.Failed;
+            SetState(DownloadTaskState.Failed, $"下载中断（{ex.GetType().Name}: {ex.Message}）");
         }
         catch (Exception ex)
         {
@@ -239,11 +246,17 @@ public partial class DownloadTask : ObservableObject
                 }
             });
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
+        }
+        catch (OperationCanceledException ex)
+        {
+            // AL34：token 未被请求的 OCE（内部泄漏）→ 失败并带信息，避免"神秘已取消"
+            TerminalState = DownloadTaskState.Failed;
+            SetState(DownloadTaskState.Failed, $"安装中断（{ex.GetType().Name}: {ex.Message}）");
         }
         catch (Exception ex)
         {
@@ -353,13 +366,21 @@ public partial class DownloadTask : ObservableObject
             active ??= Children.LastOrDefault(c => c is not null && c.State == DownloadTaskState.Downloading);
 
         var percent = total > 0 ? weighted / total : 0;
-        Stage = active?.Stage ?? (total > 0 ? "正在下载…" : "准备中…");
+        // AL38：叶子全完成后 active=null——此时组在收尾（VerifyInstalled 完整性校验 + 打标记，1-3s）。
+        // 兜底文案「正在下载…」会让人误以为「满了还在下」——收尾期如实显示「正在完成…」。
+        var anyRunning = Children.Any(c => c is not null
+            && c.State is DownloadTaskState.Queued or DownloadTaskState.Downloading);
+        Stage = active?.Stage ?? (total > 0 ? (anyRunning ? "正在下载…" : "正在完成…") : "准备中…");
         TotalBytes = total;
         // AL32：直接赋真实加权值。旧 clamp（只升不降）在阶段 2 晚挂载子任务时
         // （VersionDownloadPipeline 的 assets 差量，index 下完才知道清单）把父进度卡死在 100%，
         // 观感「大小已满但一直下载中」。子任务进度自身单调（DownloadService 层已保证），
         // 聚合唯一可能回落 = 新子任务挂载（真实进度变化，应如实显示，Stage 会同步指到新任务）。
-        ProgressPercent = percent;
+        // AL33（探针实测 08-09）：聚合封顶 99——已完成的子任务 Post(100) 是合法的（叶子终态），
+        // 但加权平均会把完成的 100 混入：client jar 99% + 若干已完成库 100% → 父聚合 >99 甚至
+        // 顶到 100，而父还没 SetState(Completed)（全部子任务完成瞬间聚合=100、State 仍 Downloading）。
+        // 100 只由 RunGroupAsync 完成路径 Post 给出。
+        ProgressPercent = Math.Min(percent, 99);
         BytesDone = (long)(total * percent / 100);
 
         // 聚合计速（聚合字节单调，无需重置基线）
@@ -413,7 +434,7 @@ public partial class DownloadTask : ObservableObject
             stage = string.IsNullOrEmpty(p.Stage) ? "下载中…" : p.Stage;
             done = p.FileBytesDone;
             total = p.FileTotalBytes;
-            overall = Math.Clamp(p.OverallPercent, 0, 100);
+            overall = Math.Clamp(p.OverallPercent, 0, 99); // AL33：叶子 100 只由完成 Post 给
 
             speedText = speed >= 1024 * 1024 ? $"{speed / 1024 / 1024:0.0} MB/s"
                 : speed >= 1024 ? $"{speed / 1024:0} KB/s" : "";

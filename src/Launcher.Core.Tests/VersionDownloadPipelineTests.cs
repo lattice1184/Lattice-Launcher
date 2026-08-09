@@ -109,7 +109,7 @@ public class VersionDownloadPipelineTests
                 .Replace("#H2#", AssetHash[..2]).Replace("#H#", AssetHash);
         try
         {
-            // index 门控时 assets 不得启动
+            // AL36：index 前置（无子任务）——门控时整个 RunAsync 等待，任何资源请求不得出现
             await Task.Delay(100);
             Assert.DoesNotContain(handler.Requests, r => r.EndsWith($"/{AssetHash[..2]}/{AssetHash}"));
 
@@ -118,10 +118,10 @@ public class VersionDownloadPipelineTests
             Assert.True(task.Error is null, "组失败: " + (task.Error ?? "") + "\n请求: " + string.Join(", ", handler.Requests));
             Assert.Equal(DownloadTaskState.Completed, task.State);
 
-            // assets 在 index 完成后启动
+            // assets 在 index 完成后并行启动
             Assert.Contains(handler.Requests, r => r.EndsWith($"/{AssetHash[..2]}/{AssetHash}"));
-            // 子任务结构：client + 2 库 + index + logging + 1 资源计数子任务 = 6
-            Assert.Equal(6, task.Children.Count);
+            // 子任务结构：client + 2 库 + logging + 1 资源计数子任务 = 5（index 前置不再建子任务）
+            Assert.Equal(5, task.Children.Count);
             Assert.Contains(task.Children, c => c.Name.StartsWith("资源文件"));
         }
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }

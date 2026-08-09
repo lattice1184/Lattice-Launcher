@@ -1,6 +1,8 @@
 ﻿# ============================================================
 #  Lattice Launcher 一键发布
-#  产物：发布\Lattice启动器.exe —— 单文件自包含，双击即用（无需安装 .NET）
+#  产物（发布\）：
+#    Lattice启动器.exe        —— 单文件自包含（约 84MB），双击即用，无需安装 .NET
+#    Lattice启动器-轻量版.exe —— 框架依赖（约 23MB），需装 .NET 10 Desktop Runtime
 #  用法：右键 → 使用 PowerShell 运行（或 powershell -ExecutionPolicy Bypass -File 发布.ps1）
 # ============================================================
 $ErrorActionPreference = "Stop"
@@ -10,8 +12,8 @@ $out  = Join-Path $root "发布"
 Write-Host ""
 Write-Host "=== Lattice Launcher 发布 ===" -ForegroundColor Cyan
 
-# 0) 自动关闭运行中的启动器（发布需覆盖 exe；用户不在时自动处理，无需手动关）
-$running = Get-Process -Name "Lattice启动器" -ErrorAction SilentlyContinue
+# 0) 自动关闭运行中的启动器（两个版本的进程名都匹配；用户不在时自动处理，无需手动关）
+$running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "Lattice启动器*" }
 if ($running) {
     Write-Host "检测到启动器正在运行，自动关闭..." -ForegroundColor Yellow
     $running | Stop-Process -Force
@@ -22,50 +24,69 @@ if ($running) {
 if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 
-# 2) 单文件自包含发布（win-x64，含 native 运行库）
-Write-Host "[1/3] dotnet publish（单文件自包含，约 2-4 分钟）..."
-$stage = Join-Path $out "stage"
-& dotnet publish (Join-Path $root "src/Launcher.App") `
-    -c Release -r win-x64 --self-contained true `
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:DebugType=None -p:DebugSymbols=false `
-    -o $stage
-if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
+# 2) 发布函数：publish → 取 exe → 移动到 发布\ 对应名字（跑两遍：自包含 + 轻量版）
+function Publish-One([string]$finalName, [switch]$SelfContained) {
+    $stage = Join-Path $out "stage"
+    & dotnet publish (Join-Path $root "src/Launcher.App") `
+        -c Release -r win-x64 --self-contained $SelfContained `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=$SelfContained `
+        -p:RollForward=LatestMajor `
+        -p:DebugType=None -p:DebugSymbols=false `
+        -o $stage | Out-Null
+    # 注：EnableCompressionInSingleFile 单文件压缩仅支持 self-contained（fdep 会报 NETSDK1176）；
+    # 反引号续行内严禁插入注释行（会打断续行链，-p: 被当独立命令）；
+    # | Out-Null 必须：dotnet publish 的 stdout 会进函数管道，泄漏到返回值（$finalSelf 变数组导致 Get-Item 报错）。
+    if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
 
-# 3) 取 exe → 移到 发布\ 并重命名为友好名，清掉 stage 残留
-$exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
-if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
-$final = Join-Path $out "Lattice启动器.exe"
-# 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
-if (Test-Path $final) {
-    try {
-        $fs = [System.IO.File]::Open($final, 'Open', 'Read', 'None')
-        $fs.Close()
-    } catch {
-        Write-Host "[错误] 检测到启动器正在运行（exe 被占用）——请先关闭 Lattice启动器 再运行本脚本" -ForegroundColor Red
-        exit 1
+    $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
+    if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
+    $final = Join-Path $out $finalName
+    # 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
+    if (Test-Path $final) {
+        try {
+            $fs = [System.IO.File]::Open($final, 'Open', 'Read', 'None')
+            $fs.Close()
+        } catch {
+            Write-Host "[错误] $finalName 被占用（启动器正在运行）——请先关闭再运行本脚本" -ForegroundColor Red
+            exit 1
+        }
     }
+    Move-Item $exe.FullName $final -Force
+    Remove-Item $stage -Recurse -Force
+    return $final
 }
-Move-Item $exe.FullName $final -Force
-Remove-Item $stage -Recurse -Force
 
-# 4) 签名（复用 LauncherDev 自签名证书；无证书时自动创建）
-Write-Host "[2/3] 签名..."
+Write-Host "[1/4] dotnet publish 自包含版（单文件压缩，约 2-4 分钟）..."
+$finalSelf = Publish-One "Lattice启动器.exe" -SelfContained
+
+Write-Host "[2/4] dotnet publish 轻量版（框架依赖，约 1-2 分钟）..."
+$finalLite = Publish-One "Lattice启动器-轻量版.exe"
+
+# 3) 签名（复用 LauncherDev 自签名证书；无证书时自动创建）
+Write-Host "[3/4] 签名..."
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts/sign-output.ps1") $out
 
-# 5) 使用说明
-$sizeMB = [Math]::Round((Get-Item $final).Length / 1MB)
+# 4) 使用说明
+$sizeSelf = [Math]::Round((Get-Item $finalSelf).Length / 1MB)
+$sizeLite = [Math]::Round((Get-Item $finalLite).Length / 1MB)
 @"
 Lattice Launcher（晶格启动器）
 =============================
-双击 [Lattice启动器.exe] 即可运行 —— 单文件自包含，无需安装 .NET 运行库。
-首次启动会解压运行库到系统临时目录，需要几秒到十几秒，属正常现象。
+两个版本，任选其一：
+
+[Lattice启动器.exe]（约 $sizeSelf MB）—— 自包含版，双击即用，无需安装任何东西。
+  首次启动会解压运行库到临时目录，需几秒到十几秒，属正常现象。
+
+[Lattice启动器-轻量版.exe]（约 $sizeLite MB）—— 轻量版，体积小，但需要先装
+  .NET 10 Desktop Runtime（https://dotnet.microsoft.com/download/dotnet/10.0）。
+  没装运行时会弹窗引导下载，装一次即可；以后更新只需下载小包。
 
 构建时间：$(Get-Date -Format "yyyy-MM-dd HH:mm")
-文件大小：约 $sizeMB MB
-位置：$final
+位置：$out
 "@ | Out-File (Join-Path $out "使用说明.txt") -Encoding UTF8
 
-Write-Host "[3/3] 完成！" -ForegroundColor Green
-Write-Host "  -> $final"
+Write-Host "[4/4] 完成！" -ForegroundColor Green
+Write-Host "  -> $finalSelf"
+Write-Host "  -> $finalLite"
 Write-Host "  -> $(Join-Path $out '使用说明.txt')"
