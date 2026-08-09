@@ -8,7 +8,7 @@
         <!-- 顶部：标题 + 说明 -->
         <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
             <TextBlock Text="联机" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
-            <TextBlock Text="联机服务由 Terracotta | 陶瓦联机提供：房主开游戏内置的局域网世界，启动器自动架隧道出房间码，朋友输码即可加入——不开服务器，不吃性能。"
+            <TextBlock Text="联机服务由 Terracotta | 陶瓦联机提供：房主在游戏内开启局域网世界，启动器自动生成房间码，朋友输码即可加入，无需开服务器。"
                        Foreground="{StaticResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
         </StackPanel>
 
@@ -17,7 +17,7 @@
                 Margin="0,0,0,8" IsVisible="{Binding IsDeclined}">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                 <TextBlock Foreground="#E8B45A" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center">
-                    未同意联机功能使用协议，联机功能暂不可用。阅读并同意后即可创建房间或加入房间。
+                    尚未同意联机功能使用协议，联机功能暂不可用。同意后即可创建或加入房间。
                 </TextBlock>
                 <Button Grid.Column="1" Content="阅读并同意" Classes="primary" FontSize="11" Padding="12,4"
                         Command="{Binding ReopenAgreementCommand}"/>
@@ -47,12 +47,12 @@
                             <StackPanel x:Name="CreateTabContent" IsVisible="{Binding IsCreateTab}" Spacing="10">
                                 <TextBlock Text="创建房间" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
                                 <TextBlock Classes="dim" FontSize="12" TextWrapping="Wrap">
-                                    电脑性能有限？不开服务端，用游戏自带的局域网世界联机：
+                                    无需独立服务器，用游戏内置的局域网世界即可联机：
                                 </TextBlock>
                                 <StackPanel Spacing="6">
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：进入要联机的游戏世界。</TextBlock>
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：在游戏菜单中点击「创建局域网世界」。</TextBlock>
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第三步：返回启动器，点击「创建房间」。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：进入要联机的世界。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：在游戏中开启「局域网世界」。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第三步：返回启动器创建房间。</TextBlock>
                                 </StackPanel>
                                 <Button Content="创建房间" Classes="primary" HorizontalAlignment="Left" Padding="18,7"
                                         Command="{Binding CreateRoomCommand}"/>
@@ -62,8 +62,8 @@
                             <StackPanel x:Name="JoinTabContent" IsVisible="{Binding IsJoinTab}" Spacing="10">
                                 <TextBlock Text="加入房间" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
                                 <StackPanel Spacing="6">
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：输入由房主提供的房间代码。</TextBlock>
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：点击「加入房间」，稍候即可在游戏里看到对方。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第一步：输入房主提供的房间代码。</TextBlock>
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap">第二步：点击「加入房间」，稍候即可在游戏中会合。</TextBlock>
                                 </StackPanel>
                                 <TextBox Text="{Binding JoinCode}" MaxLength="256" PlaceholderText="请输入房间代码"/>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -84,7 +84,7 @@
                     </StackPanel>
                     <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap" HorizontalAlignment="Center" MaxWidth="420"
                                IsVisible="{Binding IsHost}"
-                               Text="还没被检测到？先确认游戏里已经点过「创建局域网世界」（游戏菜单 → 对局域网开放）。"/>
+                               Text="未检测到？请确认游戏中已开启「局域网世界」（菜单 → 对局域网开放）。"/>
                     <Button Content="取消" Classes="ghost" HorizontalAlignment="Center" Padding="20,6"
                             Command="{Binding CancelBusyCommand}"/>
                 </StackPanel>

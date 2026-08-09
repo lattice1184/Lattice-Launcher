@@ -156,7 +156,7 @@ public partial class MultiplayerViewModel : ViewModelBase
         if (module is null) return;
 
         StartSession(isHost: true, module);
-        BusyText = "正在扫描局域网世界…";
+        BusyText = "正在查找局域网世界…";
         try
         {
             await _lobby!.CreateHostAsync(PlayerName, _sessionCts!.Token);
@@ -179,7 +179,7 @@ public partial class MultiplayerViewModel : ViewModelBase
         var code = JoinCode.Trim();
         if (code.Length == 0)
         {
-            ErrorText = "请先输入房主提供的房间代码。";
+            ErrorText = "请输入房主提供的房间代码。";
             return;
         }
         if (!await EnsureAgreementAsync()) return;
@@ -212,7 +212,7 @@ public partial class MultiplayerViewModel : ViewModelBase
         var text = await cb.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
-            ErrorText = "剪贴板中没有可用的房间代码。";
+            ErrorText = "剪贴板中没有房间代码。";
             return;
         }
         JoinCode = text.Trim();
@@ -237,8 +237,8 @@ public partial class MultiplayerViewModel : ViewModelBase
     {
         if (_lobby is null) return;
         var (title, message, confirm) = IsHost
-            ? ("退出并解散房间？", "退出后房间将被解散，其他玩家也会断开连接。是否确认退出？", "退出")
-            : ("离开房间？", "离开后将断开与房间的连接。", "离开房间");
+            ? ("退出并解散房间？", "解散后所有玩家都将断开连接。确定退出吗？", "退出")
+            : ("离开房间？", "离开后将断开连接。", "离开房间");
         if (!await DialogService.Confirm(DialogService.MainWindow(), message, title, confirm, "取消")) return;
 
         _resetting = true; // 主动路径不发 Stopped，事件也忽略
@@ -305,9 +305,9 @@ public partial class MultiplayerViewModel : ViewModelBase
         Reset();
         ErrorText = reason switch
         {
-            TerracottaStopReason.TerracottaExited => "陶瓦联机模块已停止，房间已自动解散。",
-            TerracottaStopReason.MinecraftWorldClosed => "局域网世界已关闭，房间已自动解散。",
-            TerracottaStopReason.ServiceFailed => "陶瓦联机服务异常，房间已自动解散。",
+            TerracottaStopReason.TerracottaExited => "联机模块已停止，房间已解散。",
+            TerracottaStopReason.MinecraftWorldClosed => "局域网世界已关闭，房间已解散。",
+            TerracottaStopReason.ServiceFailed => "联机服务异常，房间已解散。",
             _ => null,
         };
     }
@@ -320,13 +320,13 @@ public partial class MultiplayerViewModel : ViewModelBase
         Reset();
         ErrorText = ex.Failure switch
         {
-            TerracottaLobbyFailure.InvalidRoomCode => "房间代码格式无效，请检查后重试。",
-            TerracottaLobbyFailure.MinecraftWorldUnavailable => "未检测到可用的局域网世界。请先进入游戏点「创建局域网世界」，再回来点「创建房间」。",
-            TerracottaLobbyFailure.TerracottaUnavailable => "陶瓦联机模块不可用，请重新进入联机页或重启启动器后重试。",
-            TerracottaLobbyFailure.TerracottaBusy => "陶瓦联机服务正被其他启动器使用，请关闭其他启动器后重试。",
-            TerracottaLobbyFailure.ProtocolFailed => "陶瓦联机服务异常，请关闭其他 Terracotta 实例后重试。",
+            TerracottaLobbyFailure.InvalidRoomCode => "房间代码无效，请检查后重试。",
+            TerracottaLobbyFailure.MinecraftWorldUnavailable => "未检测到局域网世界。请在游戏中开启「局域网世界」后重试。",
+            TerracottaLobbyFailure.TerracottaUnavailable => "联机模块不可用，请重进联机页或重启启动器。",
+            TerracottaLobbyFailure.TerracottaBusy => "联机服务正被其他启动器占用，请关闭后重试。",
+            TerracottaLobbyFailure.ProtocolFailed => "联机服务异常，请关闭其他 Terracotta 实例后重试。",
             TerracottaLobbyFailure.StartupFailed => "创建房间失败，请稍后重试。",
-            TerracottaLobbyFailure.RoomConnectionFailed => "加入房间失败，请确认房间仍然有效并检查网络后重试。",
+            TerracottaLobbyFailure.RoomConnectionFailed => "加入房间失败，请检查房间码与网络后重试。",
             _ => null,
         };
     }

@@ -142,8 +142,8 @@ public sealed class TerracottaLobbyService : IDisposable
         }
         catch (Exception ex)
         {
-            MultiplayerLog.Log($"陶瓦进程启动失败: {ex.Message}");
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.TerracottaUnavailable, $"陶瓦进程启动失败：{ex.Message}", ex);
+            MultiplayerLog.Log($"联机模块启动失败: {ex.Message}");
+            throw new TerracottaLobbyException(TerracottaLobbyFailure.TerracottaUnavailable, $"联机模块启动失败：{ex.Message}", ex);
         }
         MultiplayerLog.Log($"陶瓦进程已启动: handoff={Path.GetFileName(handoffPath)}");
 
@@ -167,7 +167,7 @@ public sealed class TerracottaLobbyService : IDisposable
             {
                 throw new TerracottaLobbyException(
                     TerracottaLobbyFailure.TerracottaBusy,
-                    "陶瓦模块版本不匹配或正被其他启动器使用");
+                    "联机模块版本不匹配，或正被其他启动器使用");
             }
             _controllerPort = port;
             _ownedProcess = owns ? process : null;
@@ -216,7 +216,7 @@ public sealed class TerracottaLobbyService : IDisposable
             if (process.HasExited)
                 throw new TerracottaLobbyException(
                     TerracottaLobbyFailure.TerracottaBusy,
-                    "陶瓦进程启动即退出（可能正被其他启动器使用）");
+                    "联机模块启动后立即退出（可能正被其他启动器使用）");
             try
             {
                 if (File.Exists(handoffPath))
@@ -227,13 +227,13 @@ public sealed class TerracottaLobbyService : IDisposable
                         && portEl.TryGetInt32(out var port) && port is > 0 and <= 65535)
                         return port;
                     throw new TerracottaLobbyException(
-                        TerracottaLobbyFailure.ProtocolFailed, "陶瓦握手文件格式异常");
+                        TerracottaLobbyFailure.ProtocolFailed, "联机模块握手数据异常");
                 }
             }
             catch (IOException) { /* 进程写入中，稍后重读 */ }
             await Task.Delay(50, ct);
         }
-        throw new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "陶瓦握手超时（12 秒）");
+        throw new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "联机模块握手超时（12 秒）");
     }
 
     /// <summary>进程是否在宽限期内退出：退出 → true；存活 → false</summary>
@@ -253,7 +253,7 @@ public sealed class TerracottaLobbyService : IDisposable
             throw new TerracottaLobbyException(TerracottaLobbyFailure.InvalidRoomCode, "房间码无效（400）");
         if (!resp.IsSuccessStatusCode)
             throw new TerracottaLobbyException(
-                TerracottaLobbyFailure.ProtocolFailed, $"陶瓦接口返回 {(int)resp.StatusCode}");
+                TerracottaLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
         return await ParseStateAsync(resp, ct);
     }
 
@@ -266,7 +266,7 @@ public sealed class TerracottaLobbyService : IDisposable
             throw new TerracottaLobbyException(TerracottaLobbyFailure.InvalidRoomCode, "房间码无效（400）");
         if (!resp.IsSuccessStatusCode)
             throw new TerracottaLobbyException(
-                TerracottaLobbyFailure.ProtocolFailed, $"陶瓦接口返回 {(int)resp.StatusCode}");
+                TerracottaLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
     }
 
     private async Task<HttpResponseMessage> GetAsync(string path, CancellationToken ct)
@@ -279,7 +279,7 @@ public sealed class TerracottaLobbyService : IDisposable
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "陶瓦接口超时");
+            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块响应超时");
         }
     }
 
@@ -333,7 +333,7 @@ public sealed class TerracottaLobbyService : IDisposable
                 if (DateTime.UtcNow >= deadline)
                     throw new TerracottaLobbyException(
                         isHost ? TerracottaLobbyFailure.StartupFailed : TerracottaLobbyFailure.RoomConnectionFailed,
-                        "陶瓦服务无响应");
+                        "联机模块无响应");
                 await Task.Delay(PollIntervalMs, ct);
                 continue;
             }
@@ -345,7 +345,7 @@ public sealed class TerracottaLobbyService : IDisposable
             if (ready)
             {
                 if (string.IsNullOrWhiteSpace(state.Room))
-                    throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "陶瓦未返回房间码");
+                    throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块未返回房间码");
                 MultiplayerLog.Log($"就绪: {state.State}, room={state.Room}, profiles={state.Profiles.Count}");
                 var snapshot = MakeSnapshot(TerracottaSessionState.Active, state);
                 Publish(snapshot);
@@ -368,7 +368,7 @@ public sealed class TerracottaLobbyService : IDisposable
             {
                 MultiplayerLog.Log($"状态异常: {state.State}");
                 throw new TerracottaLobbyException(
-                    TerracottaLobbyFailure.ProtocolFailed, $"陶瓦状态异常：{state.State}");
+                    TerracottaLobbyFailure.ProtocolFailed, $"联机模块状态异常：{state.State}");
             }
 
             if (DateTime.UtcNow >= deadline)
@@ -380,7 +380,7 @@ public sealed class TerracottaLobbyService : IDisposable
                             ? TerracottaLobbyFailure.MinecraftWorldUnavailable
                             : TerracottaLobbyFailure.StartupFailed)
                         : TerracottaLobbyFailure.RoomConnectionFailed,
-                    isHost ? "没检测到局域网世界（20 秒超时）" : "加入房间超时（20 秒）");
+                    isHost ? "未检测到局域网世界（20 秒超时）" : "加入房间超时（20 秒）");
             }
             await Task.Delay(PollIntervalMs, ct);
         }
@@ -570,14 +570,14 @@ public sealed class TerracottaLobbyService : IDisposable
         {
             return type switch
             {
-                3 => new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "陶瓦服务退出（异常码 3）"),
+                3 => new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "联机模块退出（异常码 3）"),
                 4 => new TerracottaLobbyException(TerracottaLobbyFailure.MinecraftWorldUnavailable, "局域网世界关闭（异常码 4）"),
-                _ => new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"陶瓦异常（码 {type}）"),
+                _ => new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）"),
             };
         }
         return type is 0 or 1 or 2
             ? new TerracottaLobbyException(TerracottaLobbyFailure.RoomConnectionFailed, "连不上房主")
-            : new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"陶瓦异常（码 {type}）");
+            : new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）");
     }
 
     private static TerracottaStopReason ReasonForType(int? type) => type switch
@@ -639,7 +639,7 @@ public sealed class TerracottaLobbyService : IDisposable
     {
         var contentLength = resp.Content.Headers.ContentLength ?? 0;
         if (contentLength > MaxResponseBytes)
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "陶瓦响应过大");
+            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块响应过大");
         using var doc = await ParseJsonAsync(resp, ct);
         var root = doc.RootElement;
         var state = new ControllerState
