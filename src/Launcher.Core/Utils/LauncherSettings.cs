@@ -104,7 +104,12 @@ public sealed class LauncherSettings
             if (File.Exists(path))
             {
                 var s = JsonSerializer.Deserialize<LauncherSettings>(File.ReadAllText(path));
-                if (s is not null) return s;
+                if (s is not null)
+                {
+                    // 落盘为 DPAPI 密文；旧版明文自动迁移（读取原样返回）
+                    s.CurseForgeApiKey = Secrets.Read(s.CurseForgeApiKey) ?? "";
+                    return s;
+                }
             }
         }
         catch { /* 坏 JSON 回退默认 */ }
@@ -116,8 +121,17 @@ public sealed class LauncherSettings
         path ??= DefaultPath;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            var plain = CurseForgeApiKey;
+            CurseForgeApiKey = Secrets.Protect(plain); // 落盘加密（DPAPI）
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true }));
+            }
+            finally
+            {
+                CurseForgeApiKey = plain; // 内存保持明文，其他调用方不受影响
+            }
         }
         catch { /* 保存失败不阻塞 */ }
     }

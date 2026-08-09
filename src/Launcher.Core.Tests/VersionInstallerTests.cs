@@ -107,4 +107,109 @@ public class VersionInstallerTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
     }
+
+    // ---------- AL41 删除完整性：清理预取残留的父版本 ----------
+
+    private static void WriteVersion(string gameDir, string id, string? inheritsFrom,
+        bool withJar = false, bool withMarker = false, bool prefetched = false)
+    {
+        var dir = Path.Combine(gameDir, "versions", id);
+        Directory.CreateDirectory(dir);
+        var json = $"{{\"id\":\"{id}\",{(inheritsFrom is null ? "" : $"\"inheritsFrom\":\"{inheritsFrom}\",")}\"mainClass\":\"x\"}}";
+        File.WriteAllText(Path.Combine(dir, $"{id}.json"), json);
+        if (withJar) File.WriteAllBytes(Path.Combine(dir, $"{id}.jar"), [1, 2, 3]);
+        if (withMarker) InstallMarker.Mark(gameDir, id);
+        if (prefetched) InstallMarker.MarkPrefetched(gameDir, id);
+    }
+
+    [Fact]
+    public void DeleteLoader_CleansOrphanPrefetchedParent()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "1.21.10", null, prefetched: true); // 预取残留（.prefetched 标记）
+
+            VersionInstaller.CleanupOrphanParents(gameDir, "fabric-loader-0.19.3-1.21.10");
+
+            Assert.False(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10"))); // 残留被清
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void DeleteLoader_KeepsUnmarkedResidue()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "1.21.10", null); // 无标记残件（下载中断）——需保留可修
+
+            VersionInstaller.CleanupOrphanParents(gameDir, "fabric-loader-0.19.3-1.21.10");
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10"))); // 残件不碰
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void DeleteLoader_KeepsInstalledParent()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "1.21.10", null, withJar: true, withMarker: true); // 正式安装
+
+            VersionInstaller.CleanupOrphanParents(gameDir, "fabric-loader-0.19.3-1.21.10");
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10"))); // 正式安装保留
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void DeleteLoader_KeepsSharedParent()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "fabric-loader-0.19.4-1.21.10", "1.21.10"); // 另一版本共享同一原版
+            WriteVersion(gameDir, "1.21.10", null, prefetched: true);
+
+            VersionInstaller.CleanupOrphanParents(gameDir, "fabric-loader-0.19.3-1.21.10");
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10"))); // 被引用不删
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public async Task GetOrFetchVersionJson_MarksPrefetched()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            var http = new HttpClient(new JsonHandler());
+            var installer = new VersionInstaller(http, new DownloadService(http, gameDirectory: gameDir), gameDir);
+
+            _ = await installer.GetOrFetchVersionJsonAsync("1.21.10", "http://test/mc.json", CancellationToken.None);
+
+            Assert.True(InstallMarker.IsPrefetched(gameDir, "1.21.10"), "预取 json 必须带 .prefetched 标记");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>返回合法版本 json（GetOrFetch 解析用）</summary>
+    private sealed class JsonHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"id":"1.21.10","mainClass":"x"}"""),
+            });
+    }
 }

@@ -124,6 +124,10 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>验证序列号：key 输入变化即递增，丢弃过期验证结果（防抖 + 防旧结果覆盖新输入状态）</summary>
     private int _keyValidateSeq;
 
+    /// <summary>构造加载阶段：属性赋值会触发 OnXxxChanged → Save，此时未加载字段还是默认值——
+    /// 若不拦截，会把空值写回文件覆盖已保存的设置（如 CurseForgeApiKey）。</summary>
+    private bool _loading = true;
+
     /// <summary>CF 服务（构造含 GameDirectory.Detect() 文件扫描——缓存实例避免每次验证重扫）</summary>
     private readonly CurseForgeService _curseForge = new();
 
@@ -231,12 +235,15 @@ public partial class SettingsViewModel : ViewModelBase
         // 已有 key 的老用户打开设置页即验证一次（结果只含状态，不含 key）
         if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyText))
             _ = ValidateApiKeyAsync();
+
+        _loading = false; // 加载完成，之后属性变化才允许落盘
     }
 
     // ---------- 写入 ----------
 
     private void Save()
     {
+        if (_loading) return; // 构造加载阶段不落盘（防未加载字段的空值覆盖）
         var s = LauncherSettings.Current;
         s.VersionIsolation = VersionIsolation;
         s.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
@@ -257,6 +264,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     partial void OnSelectedMemoryPresetChanged(MemoryPresetVM? value)
     {
+        if (_loading) return; // 构造加载阶段：仅完成 UI 赋值，不落盘
         OnPropertyChanged(nameof(IsCustomMemory));
         if (value is { } preset)
         {

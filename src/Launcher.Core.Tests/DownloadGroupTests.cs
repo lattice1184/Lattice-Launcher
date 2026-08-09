@@ -90,9 +90,10 @@ public class DownloadGroupTests
             await release.Task;
         });
 
-        // 子任务报告后仍挂起 → 聚合 = (100×50 + 300×100)/400 = 87.5
-        for (var i = 0; i < 50 && task.ProgressPercent < 87; i++) await Task.Delay(10);
-        Assert.Equal(87.5, task.ProgressPercent, 1);
+        // AL33：子任务 Report 的 100 被封顶 99（100 只由完成路径 Post 给）→
+        // 聚合 = (100×50 + 300×99)/400 = 86.75，而不是旧的 87.5（子任务报 100 直接混入聚合）
+        for (var i = 0; i < 50 && task.ProgressPercent < 86; i++) await Task.Delay(10);
+        Assert.Equal(86.75, task.ProgressPercent, 1);
         Assert.Equal(400, task.TotalBytes);
 
         hold.SetResult();     // 子任务完成 → 聚合收敛 100
@@ -209,9 +210,9 @@ public class DownloadGroupTests
     public async Task Group_LateAttachedChild_ProgressFallsFrom100ToReal()
     {
         // AL32 回归：阶段 2 晚挂载时序（VersionDownloadPipeline 的 assets 差量——
-        // index 下完才知道清单，必然晚于阶段 1 全部完成）。阶段 1 完成使父聚合收敛 100%，
-        // 新子任务挂载后真实进度应回落到加权值 (700×100+300×0)/1000=70，
-        // 而不是被只升不降的 clamp 卡死在 100%（观感「大小已满但一直下载中」）。
+        // index 下完才知道清单，必然晚于阶段 1 全部完成）。阶段 1 完成使父聚合收敛，
+        // 新子任务挂载后真实进度应回落到加权值，而不是被只升不降的 clamp 卡死在 100%。
+        // AL33：阶段 1 报告 100 被封顶 99 → 回落目标是 (700×99+300×0)/1000=69.3。
         var manager = CreateManager();
         var reported = new TaskCompletionSource();   // 阶段 1 报告完成信号（屏障：先 100% 再挂阶段 2）
         var hold = new TaskCompletionSource();       // 按住子任务，模拟下载进行中
@@ -230,10 +231,10 @@ public class DownloadGroupTests
             await hold.Task;
         });
 
-        // 等两个子任务都挂载（groupWork 在后台线程跑）——此时父已收敛 100%，
-        // 新子任务 0% 挂载后真实聚合 = 70%；修复前 clamp 拒绝下降 → 一直 100
+        // 等两个子任务都挂载（groupWork 在后台线程跑）——此时父已收敛 99%（封顶），
+        // 新子任务 0% 挂载后真实聚合 = 69.3%；修复前 clamp 拒绝下降 → 一直 100
         for (var i = 0; i < 100 && task.Children.Count < 2; i++) await Task.Delay(10);
-        Assert.Equal(70, task.ProgressPercent, 1);
+        Assert.Equal(69.3, task.ProgressPercent, 1);
         Assert.Equal(1000, task.TotalBytes);
 
         hold.SetResult();

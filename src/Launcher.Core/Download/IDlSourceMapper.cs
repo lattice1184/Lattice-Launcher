@@ -65,9 +65,12 @@ public sealed class BmclapiDlSourceMapper : IDlSourceMapper
                       .Replace("https://launcher.mojang.com", Mirror)
                       .Replace("https://resources.download.minecraft.net", Mirror);
         }
-        if (url.Contains("libraries.minecraft.net"))
+        // AL39：maven.fabricmc.net 也走镜像——loader 本体/库从该域直连国内实测 21.5s（08-09），
+        // 与 libraries.minecraft.net 同格式（bmclapi2/maven/...）；镜像不可达时多源竞速自动回退原源
+        if (url.Contains("maven.fabricmc.net") || url.Contains("libraries.minecraft.net"))
         {
-            return url.Replace("https://libraries.minecraft.net", $"{Mirror}/maven");
+            return url.Replace("https://maven.fabricmc.net", $"{Mirror}/maven")
+                      .Replace("https://libraries.minecraft.net", $"{Mirror}/maven");
         }
         return url;
     }

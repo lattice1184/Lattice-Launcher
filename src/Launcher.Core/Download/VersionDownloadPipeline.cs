@@ -38,7 +38,19 @@ public sealed class VersionDownloadPipeline
         var librariesDir = Path.Combine(_gameDirectory, "libraries");
         var assetsDir = Path.Combine(_gameDirectory, "assets");
 
-        // ---- 阶段 1：全并行 ----
+        // ---- AL36：先取资源清单定总量——进度全程单调不跳 ----
+        // 旧版阶段 2 挂载 assets 时总量从 109.5MB 变 540MB，进度 99%→21% 跳水（真机 08-09 用户观察「进度会跳」）。
+        // 现在 index 前置（无子任务，~1-2s），差量算出后所有子任务一次建齐，聚合 Weight 一开始就是完整总量。
+        string? indexPath = null;
+        List<(string Hash, long Size)> missingAssets = [];
+        if (version.AssetIndex is { } assetIndex)
+        {
+            indexPath = Path.Combine(assetsDir, "indexes", $"{assetIndex.Id}.json");
+            await _downloads.DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size, null, ct);
+            if (File.Exists(indexPath)) missingAssets = ReadMissingObjects(indexPath, assetsDir);
+        }
+
+        // ---- 阶段 1：全并行（含 assets 差量，Weight 已含全部字节）----
         var tasks = new List<Task>();
 
         // 1. client jar
@@ -95,18 +107,7 @@ public sealed class VersionDownloadPipeline
             }
         }
 
-        // 3. assets index
-        DownloadTask? indexChild = null;
-        string? indexPath = null;
-        if (version.AssetIndex is { } assetIndex)
-        {
-            indexPath = Path.Combine(assetsDir, "indexes", $"{assetIndex.Id}.json");
-            indexChild = ctx.AddChild($"{assetIndex.Id}.json", assetIndex.Size ?? 0, (p, c) =>
-                _downloads.DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size, p, c));
-            tasks.Add(indexChild.Completion);
-        }
-
-        // 4. logging 配置
+        // 3. logging 配置
         if (version.Logging?.Client?.File is { } logFile)
         {
             var fileName = Path.GetFileName(new Uri(logFile.Url).LocalPath);
@@ -115,20 +116,15 @@ public sealed class VersionDownloadPipeline
                 _downloads.DownloadFileAsync(logFile.Url, logPath, logFile.Sha1, logFile.Size, p, c)).Completion);
         }
 
-        await Task.WhenAll(tasks);
-
-        // ---- 阶段 2：assets 差量（index 完成后；单计数子任务） ----
-        if (indexChild is not null && indexPath is not null && File.Exists(indexPath))
+        // 4. assets 差量（index 已前置，Weight 直接入聚合——进度单调，无挂载跳水）
+        if (missingAssets.Count > 0)
         {
-            var missing = ReadMissingObjects(indexPath, assetsDir);
-            if (missing.Count > 0)
-            {
-                var assetsWeight = missing.Sum(m => m.Size);
-                var assetsChild = ctx.AddChild($"资源文件 ({missing.Count} 个)", assetsWeight,
-                    (p, c) => DownloadAssetsBatchAsync(missing, assetsWeight, p, c));
-                await assetsChild.Completion;
-            }
+            var assetsWeight = missingAssets.Sum(m => m.Size);
+            tasks.Add(ctx.AddChild($"资源文件 ({missingAssets.Count} 个)", assetsWeight,
+                (p, c) => DownloadAssetsBatchAsync(missingAssets, assetsWeight, p, c)).Completion);
         }
+
+        await Task.WhenAll(tasks);
     }
 
     /// <summary>读 index 并计算缺失对象（已存在且大小匹配的跳过）。
@@ -167,7 +163,7 @@ public sealed class VersionDownloadPipeline
                 var n = Interlocked.Increment(ref done);
                 if (progress is not null)
                     progress(new DownloadProgress($"下载资源 {n}/{total}", obj.Hash,
-                        assetsWeight * n / total, assetsWeight, n * 100.0 / total));
+                        assetsWeight * n / total, assetsWeight, Math.Min(n * 100.0 / total, 99)));
             }
             finally { gate.Release(); }
         }, ct)).ToList();

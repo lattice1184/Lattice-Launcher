@@ -475,7 +475,8 @@ public partial class HomeViewModel : ViewModelBase
                     await LaunchCoreAsync(overrideVersion, overrideGameDir, extraGameArgs);
                     return;
                 }
-                var diag = LogDiagnostics.DiagnoseDetailed(string.Join(Environment.NewLine, GameLogs));
+                // AL43：退出码诊断——无命中时按退出码补「人话」原因（-1 被终止 / 兜底），诊断区不再空
+                var diag = LogDiagnostics.DiagnoseExit(code, string.Join(Environment.NewLine, GameLogs));
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     Views.CrashReportWindow.Show($"游戏崩溃退出（退出码 {code}）",
                         $"版本 {version.Name} 异常退出，退出码 {code}。" + Environment.NewLine

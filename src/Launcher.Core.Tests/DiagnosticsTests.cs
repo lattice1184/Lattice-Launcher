@@ -85,4 +85,31 @@ public class DiagnosticsTests
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }
+
+    // ---------- AL43 退出码诊断 ----------
+
+    [Fact]
+    public void RealmsError_AdviceOnly()
+    {
+        var hits = LogDiagnostics.DiagnoseDetailed(
+            "<log4j:Message><![CDATA[Couldn't connect to realms]]></log4j:Message>");
+
+        Assert.Contains(hits, h => h.Fix == FixKind.AdviceOnly && h.Explanation.Contains("Realms"));
+    }
+
+    [Fact]
+    public void DiagnoseExit_NegativeOne_AddsTerminatedHint()
+    {
+        var hits = LogDiagnostics.DiagnoseExit(-1, "Created: 1024x512x0 minecraft:textures/atlas/blocks.png-atlas");
+
+        Assert.Contains(hits, h => h.Explanation.Contains("被强制终止"));
+    }
+
+    [Fact]
+    public void DiagnoseExit_EmptyAndOtherCode_AddsFallback()
+    {
+        var hits = LogDiagnostics.DiagnoseExit(0, "正常日志，没有已知错误模式");
+
+        Assert.Contains(hits, h => h.Explanation.Contains("未检测到已知崩溃模式"));
+    }
 }

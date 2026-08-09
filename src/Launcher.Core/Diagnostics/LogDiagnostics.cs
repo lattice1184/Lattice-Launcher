@@ -85,7 +85,36 @@ public static class LogDiagnostics
         (new Regex(@"Failed to load main manifest attribute|Invalid or corrupt jarfile|ZipException: invalid", RegexOptions.IgnoreCase),
             "jar 文件损坏：下载不完整或磁盘错误。将自动重新下载补全该版本。",
             FixKind.Redownload),
+        // AL43：Realms 网络错误——非致命（单机/局域网不受影响），真机 08-09 被杀日志常见，此前零命中导致诊断区空
+        (new Regex(@"Realms service error|Couldn't connect to realms|Failed to fetch Realms feature flags|Realms authentication error|无法连接至Realm", RegexOptions.IgnoreCase),
+            "Realms 服务连接失败（网络或账号问题），不影响单机/局域网游戏，可忽略。",
+            FixKind.AdviceOnly),
     ];
+
+    /// <summary>
+    /// AL43 退出码诊断：DiagnoseDetailed 命中保留；无命中时按退出码补「人话」解释——
+    /// -1（进程被终止）给被终止说明，其余退出码给兜底。保证崩溃弹窗诊断区永远有内容。
+    /// </summary>
+    public static List<DiagnosticHit> DiagnoseExit(int exitCode, string logText)
+    {
+        var hits = DiagnoseDetailed(logText);
+        if (hits.Count > 0) return hits;
+        if (exitCode == -1)
+        {
+            return
+            [
+                new DiagnosticHit($"exitStatus=-1",
+                    "游戏进程被强制终止（退出码 -1）：常见于手动关闭窗口、杀毒软件误杀、系统强制结束。若日志无崩溃错误而进程中途消失，多半是被终止而非崩溃；反复出现请检查杀毒软件是否拦截了游戏进程。",
+                    FixKind.AdviceOnly),
+            ];
+        }
+        return
+        [
+            new DiagnosticHit($"exitStatus={exitCode}",
+                "未检测到已知崩溃模式——可能是进程被外部终止或环境问题。可尝试重新启动游戏，若反复出现请导出报告反馈。",
+                FixKind.AdviceOnly),
+        ];
+    }
 
     /// <summary>对日志文本结构化诊断：返回命中列表（同模式只报一次，按规则顺序）</summary>
     public static List<DiagnosticHit> DiagnoseDetailed(string logText)
