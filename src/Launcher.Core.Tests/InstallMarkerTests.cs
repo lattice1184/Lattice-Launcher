@@ -29,7 +29,23 @@ public class InstallMarkerTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(false, false, true)]  // 无标记：显示
+    [InlineData(true, false, false)]  // 仅预取：隐藏（预取残留）
+    [InlineData(true, true, true)]    // 双标记（已装+误打预取）：显示（兜底）
+    [InlineData(false, true, true)]   // 仅已装：显示
+    public void ShouldShowInPage_Quadrants(bool prefetched, bool marked, bool expected)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"marker-{Guid.NewGuid():N}");
+        try
+        {
+            if (prefetched) InstallMarker.MarkPrefetched(dir, "26.2");
+            if (marked) InstallMarker.Mark(dir, "26.2");
+            Assert.Equal(expected, InstallMarker.ShouldShowInPage(dir, "26.2"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
     public void Unmark_Removes()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"marker-{Guid.NewGuid():N}");

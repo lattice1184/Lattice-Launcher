@@ -7,7 +7,7 @@ using Launcher.Core.Model.Loader;
 namespace Launcher.App.Views;
 
 /// <summary>下载前选择的加载器（null LoaderKind = 纯净原版）</summary>
-public sealed record LoaderChoice(LoaderKind? Kind, string? Version)
+public sealed record LoaderChoice(LoaderKind? Kind, string? Version, bool InstallFabricApi = false)
 {
     public bool IsVanilla => Kind is null;
 }
@@ -67,6 +67,8 @@ public partial class LoaderChoiceDialog : Window
 
         var tag = (string?)btn.Tag ?? "";
         _kind = tag.Length == 0 ? null : Enum.Parse<LoaderKind>(tag);
+        // Fabric API 仅对 Fabric 有意义（Quilt 自带兼容层），默认勾选
+        FabricApiCheck.IsChecked = _kind == LoaderKind.Fabric;
         VersionBox.SelectedItem = null;
         VersionPanel.IsVisible = _kind is not null;
         if (_kind is null)
@@ -128,7 +130,7 @@ public partial class LoaderChoiceDialog : Window
                 VersionStatus.Text = "请选择加载器版本";
                 return;
             }
-            _result?.TrySetResult(new LoaderChoice(kind, ver));
+            _result?.TrySetResult(new LoaderChoice(kind, ver, FabricApiCheck.IsChecked == true));
         }
         else
         {

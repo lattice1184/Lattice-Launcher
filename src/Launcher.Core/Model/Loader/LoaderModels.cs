@@ -16,7 +16,8 @@ public sealed record LoaderInstallPlan(
     string? ProfileJsonUrl,
     string? InstallerUrl,
     string? InstallerSha1,
-    long? InstallerSize);
+    long? InstallerSize,
+    bool InstallFabricApi = false);
 
 // ---------- Fabric / Quilt meta（两者结构一致） ----------
 

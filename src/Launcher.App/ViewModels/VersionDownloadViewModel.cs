@@ -220,7 +220,8 @@ public partial class DownloadDetailVM : ObservableObject
         if (choice is { Kind: { } kind, Version: { } loaderVersion })
         {
             var service = new LoaderService(gameDirectory: GameDirectory.InstallDir());
-            var plan = await service.CreatePlanAsync(kind, version.Id, loaderVersion, ct);
+            var plan = await service.CreatePlanAsync(kind, version.Id, loaderVersion, ct)
+                with { InstallFabricApi = choice.InstallFabricApi };
             // AL10.2：调组重载（ctx）——LoaderService 内部 AddChild"加载器配置" + DownloadVersionAsync(version, ctx)
             // 全部文件子任务并列，有真实 weight/进度/大小。旧写法 (p, c) 匹配 progress 重载 → 扁平单任务
             // "一次性"且 TotalBytes=0 显示 "0 B"

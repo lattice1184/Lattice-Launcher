@@ -95,7 +95,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
                     // 主页/Mod 目标用 VersionManifestService.IsInstalled(json+jar) 过滤，勿统一这里。
                     // AL42：预取残留（.prefetched，仅供加载器继承）不显示——避免「下载 1.21.10+Fabric
                     // 后多出分开的原版条目」的混乱；下载中断的无标记残件照常可见可修
-                    if (File.Exists(Path.Combine(d, $"{id}.json")) && !InstallMarker.IsPrefetched(dir, id))
+                    if (File.Exists(Path.Combine(d, $"{id}.json")) && InstallMarker.ShouldShowInPage(dir, id))
                         _all.Add(MakeRow(id, dir));
                 }
             }
@@ -198,7 +198,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
             {
                 var id = Path.GetFileName(d);
                 // json-only 判定（同 LoadAsync 目录补漏）：残件版本必须可见可修
-                if (File.Exists(Path.Combine(d, $"{id}.json")) && !InstallMarker.IsPrefetched(dir, id))
+                if (File.Exists(Path.Combine(d, $"{id}.json")) && InstallMarker.ShouldShowInPage(dir, id))
                     _all.Add(MakeRow(id, dir));
             }
         }

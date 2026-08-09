@@ -32,8 +32,11 @@ public sealed class VersionInstaller
         if (File.Exists(jsonPath))
         {
             // AL42 补：缓存命中也要打预取标记——旧版本（无 AL42 时）写下的缓存没有 .prefetched，
-            // 不补的话删除加载器版本时清理判定失败，留下幽灵条目（真机 08-09 第 2 轮循环测试发现）
-            InstallMarker.MarkPrefetched(_gameDirectory, safeId);
+            // 不补的话删除加载器版本时清理判定失败，留下幽灵条目（真机 08-09 第 2 轮循环测试发现）。
+            // 守卫：已正式安装（.yanla-installed）的版本永不误加——真机 08-09 自动修复流程
+            // 读已装版本 json 命中缓存 → 误打 .prefetched → 版本页把它当「预取残留」隐藏（26.2 消失根因）
+            if (!InstallMarker.IsMarked(_gameDirectory, safeId))
+                InstallMarker.MarkPrefetched(_gameDirectory, safeId);
             try
             {
                 var cached = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(jsonPath, ct));
@@ -50,7 +53,9 @@ public sealed class VersionInstaller
         await File.WriteAllTextAsync(jsonPath, json, ct);
         // AL42：预取 json 打标记——仅供加载器继承用，版本页不显示该条目
         //（下载「1.21.10 + Fabric」后不再出现分开的「1.21.10 缺文件」；正式安装完成时 Mark 会移除）
-        InstallMarker.MarkPrefetched(_gameDirectory, safeId);
+        // 守卫同缓存命中分支：json 被删后重拉也不覆盖已安装语义
+        if (!InstallMarker.IsMarked(_gameDirectory, safeId))
+            InstallMarker.MarkPrefetched(_gameDirectory, safeId);
         return JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {id}");
     }
@@ -126,7 +131,8 @@ public sealed class VersionInstaller
                 // 目录或 json 缺失即链断
                 if (!Directory.Exists(parentDir) || !File.Exists(parentJson)) break;
                 // 只清预取残留：正式安装（标记）与无标记残件（可修）不碰
-                if (!InstallMarker.IsPrefetched(gameDir, parent)) break;
+                // 守卫：双标记（.yanla-installed + .prefetched 误打残留）的已装版本绝不删
+                if (InstallMarker.IsMarked(gameDir, parent) || !InstallMarker.IsPrefetched(gameDir, parent)) break;
                 // 预取残留但还被其他版本引用（多 fabric 版本共享同一原版）→ 不删
                 if (IsReferencedByOthers(gameDir, parent, seen)) break;
                 Directory.Delete(parentDir, true);
