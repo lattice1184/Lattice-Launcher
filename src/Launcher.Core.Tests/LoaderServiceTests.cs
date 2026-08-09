@@ -375,6 +375,67 @@ public class LoaderServiceTests
     }
 
     /// <summary>按路径返回预设响应；未匹配路径返回 5 字节假文件内容（下载用）</summary>
+    [Fact]
+    public async Task FabricInstall_WithFabricApi_InstallsToVersionMods()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.21.1"));
+        try
+        {
+            // 原版已安装（含 client jar 下载源）
+            File.WriteAllText(Path.Combine(gameDir, "versions", "1.21.1", "1.21.1.json"),
+                """{"id":"1.21.1","mainClass":"net.minecraft.client.main.Main","libraries":[],"downloads":{"client":{"url":"https://piston/1.21.1/client.jar","size":5}}}""");
+            var routes = new Dictionary<string, string>
+            {
+                ["/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.16.13","stable":true}}]""",
+                ["/v2/versions/loader/1.21.1/0.16.13/profile/json"] = FabricProfileJson,
+                ["/v2/project/fabric-api"] = """{"id":"P7dR8mSH","slug":"fabric-api","project_type":"mod","title":"Fabric API","description":"x","downloads":1,"follows":1,"date_created":"2024-01-01T00:00:00Z","date_modified":"2024-01-01T00:00:00Z"}""",
+                ["/v2/project/P7dR8mSH/version"] = """[{"id":"v1","project_id":"P7dR8mSH","name":"Fabric API 0.92.1","version_number":"0.92.1+1.21.1","game_versions":["1.21.1"],"loaders":["fabric"],"files":[{"id":"f1","url":"https://cdn.modrinth.com/fabric-api-1.21.1.jar","filename":"fabric-api-1.21.1.jar","size":5,"primary":true}],"date_published":"2024-01-01T00:00:00Z"}]""",
+                ["/fabric-api-1.21.1.jar"] = "12345",
+            };
+            var svc = CreateService(routes, gameDir);
+            var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None)
+                with { InstallFabricApi = true };
+            await svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None);
+
+            var id = "fabric-loader-0.16.13-1.21.1";
+            // 加载器安装完成（标记存在）
+            Assert.True(InstallMarker.IsMarked(gameDir, id), "加载器版本应已标记安装");
+            // Fabric API 装进版本 mods 目录
+            Assert.True(File.Exists(Path.Combine(gameDir, "versions", id, "mods", "fabric-api-1.21.1.jar")),
+                "fabric-api jar 应下载到版本 mods 目录");
+        }
+        finally { Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public async Task FabricInstall_FabricApiMissing_InstallStillCompletes()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.21.1"));
+        try
+        {
+            File.WriteAllText(Path.Combine(gameDir, "versions", "1.21.1", "1.21.1.json"),
+                """{"id":"1.21.1","mainClass":"net.minecraft.client.main.Main","libraries":[],"downloads":{"client":{"url":"https://piston/1.21.1/client.jar","size":5}}}""");
+            var routes = new Dictionary<string, string>
+            {
+                ["/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.16.13","stable":true}}]""",
+                ["/v2/versions/loader/1.21.1/0.16.13/profile/json"] = FabricProfileJson,
+                // 无 fabric-api 路由 → fallback "12345" 解析失败 → 静默跳过（26.2 等新版场景）
+            };
+            var svc = CreateService(routes, gameDir);
+            var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None)
+                with { InstallFabricApi = true };
+            await svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None);
+
+            var id = "fabric-loader-0.16.13-1.21.1";
+            Assert.True(InstallMarker.IsMarked(gameDir, id), "API 缺失不影响加载器安装完成");
+            Assert.False(Directory.Exists(Path.Combine(gameDir, "versions", id, "mods")),
+                "无 API 版本时 mods 目录不应出现");
+        }
+        finally { Directory.Delete(gameDir, true); }
+    }
+
     private sealed class StubHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, string> _routes;

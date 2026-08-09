@@ -24,6 +24,11 @@ public static class InstallMarker
     public static bool IsPrefetched(string gameDirectory, string id)
         => File.Exists(PrefetchPath(gameDirectory, id));
 
+    /// <summary>版本页显示判定（三扫描路径统一口径）：预取且未正式安装才隐藏。
+    /// 兜底历史/未来误打的双标记残留（.prefetched + .yanla-installed）——已装版本必须显示</summary>
+    public static bool ShouldShowInPage(string gameDirectory, string id)
+        => !IsPrefetched(gameDirectory, id) || IsMarked(gameDirectory, id);
+
     public static void Mark(string gameDirectory, string id)
     {
         try

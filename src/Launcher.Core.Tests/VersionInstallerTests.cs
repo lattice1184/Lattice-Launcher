@@ -203,6 +203,42 @@ public class VersionInstallerTests
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }
 
+    [Fact]
+    public async Task GetOrFetchVersionJson_InstalledVersion_NotMarkedPrefetched()
+    {
+        // 真机 08-09 根因回归：已正式安装（.yanla-installed）的版本被自动修复流程读 json 时误打 .prefetched
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "26.2", null, withJar: true, withMarker: true);
+            var installer = new VersionInstaller(new HttpClient(new JsonHandler()),
+                new DownloadService(gameDirectory: gameDir), gameDir);
+
+            _ = await installer.GetOrFetchVersionJsonAsync("26.2", "http://test/mc.json", CancellationToken.None);
+
+            Assert.False(InstallMarker.IsPrefetched(gameDir, "26.2"), "已安装版本不得被打预取标记");
+            Assert.True(InstallMarker.IsMarked(gameDir, "26.2"), "正式安装标记保持");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    [Fact]
+    public void DeleteLoader_KeepsDoubleMarkedParent()
+    {
+        // 兜底口径回归：旧 bug 产生的「已装+.prefetched」双标记父版本——删加载器版本时绝不误删
+        var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
+        try
+        {
+            WriteVersion(gameDir, "fabric-loader-0.19.3-1.21.10", "1.21.10");
+            WriteVersion(gameDir, "1.21.10", null, withMarker: true, prefetched: true); // 双标记
+
+            VersionInstaller.CleanupOrphanParents(gameDir, "fabric-loader-0.19.3-1.21.10");
+
+            Assert.True(Directory.Exists(Path.Combine(gameDir, "versions", "1.21.10")), "双标记已装版本不得被清理");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
     /// <summary>返回合法版本 json（GetOrFetch 解析用）</summary>
     private sealed class JsonHandler : HttpMessageHandler
     {

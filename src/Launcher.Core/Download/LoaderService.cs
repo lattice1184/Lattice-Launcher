@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -5,7 +6,9 @@ using System.Xml.Linq;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Launch;
 using Launcher.Core.Model.Loader;
+using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Model.Mojang;
+using Launcher.Core.Services;
 using Launcher.Core.Utils;
 
 namespace Launcher.Core.Download;
@@ -246,6 +249,37 @@ public sealed class LoaderService
         {
             VerifyInstalledVersion(id);
             InstallMarker.Mark(_gameDirectory, id);
+            // 附带安装 Fabric API（用户勾选时）：失败只记日志不阻断——加载器已装完，API 是增强
+            if (plan is { Kind: LoaderKind.Fabric, InstallFabricApi: true })
+                await InstallFabricApiAsync(id, plan.McVersion, ct);
+        }
+    }
+
+    /// <summary>
+    /// 附带安装 Fabric API（PCL 式）：从 Modrinth 按 slug 查项目 → 按 (mcVersion, fabric) 取版本 →
+    /// 选最新 → 下载主文件到本加载器版本目录的 mods/（ResolveInstallPath 命中已写入的 versions/{id}）。
+    /// 任何失败/无版本都静默（Debug.WriteLine）——26.2 等新版本 Modrinth 可能还没有 fabric-api 发布。
+    /// 不用 ctx.AddChild：失败子任务会把下载组置 Failed（LoaderServiceTests 已验证该语义）。
+    /// </summary>
+    private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct)
+    {
+        try
+        {
+            var eco = new EcosystemService(_http, _downloads, _gameDirectory);
+            var project = await eco.GetProjectAsync("fabric-api", ct);
+            var versions = await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", ct);
+            var best = EcosystemService.SelectBestVersion(versions);
+            if (best is null)
+            {
+                Debug.WriteLine($"[Loader] {mcVersion} 无 fabric-api 版本，跳过");
+                return;
+            }
+            await eco.InstallAsync(project.Id, best, versionId, ProjectType.Mod, ct: ct);
+            Debug.WriteLine($"[Loader] Fabric API {best.VersionNumber} 已装到 {versionId}/mods");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Loader] Fabric API 安装失败（不阻断）：{ex.Message}");
         }
     }
 
