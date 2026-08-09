@@ -21,6 +21,9 @@
                 </Border>
                 <TextBlock Grid.Column="2" Text="{Binding Error}" Foreground="{StaticResource Danger}" FontSize="11"
                            TextTrimming="CharacterEllipsis" IsVisible="{Binding HasError}"/>
+                <TextBlock Grid.Column="2" Text="{Binding Diagnosis.Explanation}" Foreground="#E8B45A" FontSize="10"
+                           TextTrimming="CharacterEllipsis" IsVisible="{Binding Diagnosis}"
+                           ToolTip.Tip="{Binding Diagnosis.Explanation}"/>
                 <Button Grid.Column="3" Content="重试" Classes="ghost" Padding="8,3" FontSize="11"
                         Command="{Binding RetryCommand}" IsVisible="{Binding IsFailed}"/>
                 <Button Grid.Column="3" Content="继续" Classes="ghost" Padding="8,3" FontSize="11"

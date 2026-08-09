@@ -1,4 +1,5 @@
 using System.Threading;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
 
 namespace Launcher.Core.Tests;
@@ -84,5 +85,102 @@ public class DownloadTaskGroupStateTests
         ctx.Drain();
 
         Assert.Equal(DownloadTaskState.Failed, task.State);
+    }
+
+    // ---------- AL44 自动重试一次 ----------
+
+    private static async Task DrainUntil(DeferredSyncContext ctx, Func<bool> done)
+    {
+        for (var i = 0; i < 200 && !done(); i++)
+        {
+            await Task.Delay(10);
+            ctx.Drain();
+        }
+    }
+
+    [Fact]
+    public async Task LeafNetworkFailure_AutoRetriesOnce_ThenSucceeds()
+    {
+        var ctx = new DeferredSyncContext();
+        var mgr = new DownloadManager(ctx);
+        var calls = 0;
+        var task = mgr.Enqueue("重试成功", (_, _) =>
+        {
+            if (Interlocked.Increment(ref calls) == 1) throw new HttpRequestException("网络超时");
+            return Task.CompletedTask;
+        });
+
+        await task.Completion;
+        ctx.Drain();
+        await DrainUntil(ctx, () => task.State == DownloadTaskState.Completed);
+
+        Assert.Equal(2, calls); // 首败 + 自动重试一次
+        Assert.Equal(DownloadTaskState.Completed, task.State);
+    }
+
+    [Fact]
+    public async Task LeafNetworkFailure_TwiceFails_ExactlyOneRetry()
+    {
+        var ctx = new DeferredSyncContext();
+        var mgr = new DownloadManager(ctx);
+        var calls = 0;
+        var task = mgr.Enqueue("重试仍败", (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            throw new HttpRequestException("网络超时");
+        });
+
+        await task.Completion;
+        ctx.Drain();
+        await DrainUntil(ctx, () => task.State == DownloadTaskState.Failed && calls >= 2);
+        ctx.Drain();
+
+        Assert.Equal(2, calls); // 恰一次自动重试，不无限重试
+        Assert.Equal(DownloadTaskState.Failed, task.State);
+        Assert.NotNull(task.Diagnosis);
+        Assert.Equal(FixKind.CheckNetwork, task.Diagnosis!.Fix); // 重试仍败 → 网络建议
+    }
+
+    [Fact]
+    public async Task LeafFailure_Canceled_NoAutoRetry()
+    {
+        var ctx = new DeferredSyncContext();
+        var mgr = new DownloadManager(ctx);
+        var calls = 0;
+        var task = mgr.Enqueue("取消", (_, c) =>
+        {
+            Interlocked.Increment(ref calls);
+            c.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        });
+        task.Cancel();
+
+        await task.Completion;
+        ctx.Drain();
+        await Task.Delay(50);
+        ctx.Drain();
+
+        Assert.Equal(1, calls); // 取消不触发自动重试
+    }
+
+    [Fact]
+    public async Task LeafUnknownException_NoAutoRetry_NoDiagnosis()
+    {
+        var ctx = new DeferredSyncContext();
+        var mgr = new DownloadManager(ctx);
+        var calls = 0;
+        var task = mgr.Enqueue("未知", (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            throw new InvalidOperationException("未知错误");
+        });
+
+        await task.Completion;
+        ctx.Drain();
+        await Task.Delay(50);
+        ctx.Drain();
+
+        Assert.Equal(1, calls);
+        Assert.Null(task.Diagnosis); // 未知异常不诊断不重试
     }
 }

@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.App.Views;
 using Launcher.Core.Account;
+using Launcher.Core.Diagnostics;
 using Launcher.Core.Multiplayer;
 
 namespace Launcher.App.ViewModels;
@@ -89,7 +90,6 @@ public partial class MultiplayerViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool HasError { get; set; }
 
-    partial void OnErrorTextChanged(string? value) => HasError = value is not null;
 
     /// <summary>房主 / 客机</summary>
     [ObservableProperty]
@@ -155,6 +155,7 @@ public partial class MultiplayerViewModel : ViewModelBase
         var module = _provisioning.TryGetAvailable();
         if (module is null) return;
 
+        _lastAction = "create";
         StartSession(isHost: true, module);
         BusyText = "正在查找局域网世界…";
         try
@@ -186,6 +187,7 @@ public partial class MultiplayerViewModel : ViewModelBase
         var module = _provisioning.TryGetAvailable();
         if (module is null) return;
 
+        _lastAction = "join";
         StartSession(isHost: false, module);
         BusyText = "正在加入房间…";
         try
@@ -318,18 +320,78 @@ public partial class MultiplayerViewModel : ViewModelBase
     private void ShowFailure(TerracottaLobbyException ex)
     {
         Reset();
-        ErrorText = ex.Failure switch
-        {
-            TerracottaLobbyFailure.InvalidRoomCode => "房间代码无效，请检查后重试。",
-            TerracottaLobbyFailure.MinecraftWorldUnavailable => "未检测到局域网世界。请在游戏中开启「局域网世界」后重试。",
-            TerracottaLobbyFailure.TerracottaUnavailable => "联机模块不可用，请重进联机页或重启启动器。",
-            TerracottaLobbyFailure.TerracottaBusy => "联机服务正被其他启动器占用，请关闭后重试。",
-            TerracottaLobbyFailure.ProtocolFailed => "联机服务异常，请关闭其他 Terracotta 实例后重试。",
-            TerracottaLobbyFailure.StartupFailed => "创建房间失败，请稍后重试。",
-            TerracottaLobbyFailure.RoomConnectionFailed => "加入房间失败，请检查房间码与网络后重试。",
-            _ => null,
-        };
+        // AL44：统一诊断——枚举 → 人话原因+建议+修复动作（替代私有 switch，覆盖真实失败子类型）
+        _lastFailure = FailureDiagnostics.ForTerracotta(ex.Failure, ex.Message);
+        ErrorText = _lastFailure.Explanation;
     }
+
+    /// <summary>最近一次失败诊断（「一键修复」依据）</summary>
+    private DiagnosticHit? _lastFailure;
+
+    /// <summary>模块版本（欢迎页展示，帮朋友双方对齐版本）</summary>
+    public string ModuleVersionText
+        => _provisioning.TryGetAvailable() is { } m ? $"联机模块 v{m.Version}" : "联机模块未安装";
+
+    /// <summary>失败可一键修复（RestartService/ReinstallModule）</summary>
+    public bool HasFixableError => _lastFailure?.IsAutoFixable == true && _lastFailure.Fix is FixKind.RestartService or FixKind.ReinstallModule;
+
+    /// <summary>一键修复执行中（按钮禁用）</summary>
+    [ObservableProperty]
+    public partial bool IsRepairing { get; set; }
+
+    partial void OnErrorTextChanged(string? value)
+    {
+        HasError = value is not null;
+        OnPropertyChanged(nameof(HasFixableError));
+    }
+
+    /// <summary>
+    /// AL44 一键修复：RestartService → 杀残留陶瓦进程/删锁文件；ReinstallModule → 重装模块。
+    /// 完成后自动重试原动作一次（镜像启动模块「修复后自动重启一次」）；二次失败显示新诊断。
+    /// </summary>
+    [RelayCommand]
+    private async Task RepairNow()
+    {
+        if (_lastFailure is not { IsAutoFixable: true }) return;
+        var fix = _lastFailure.Fix;
+        IsRepairing = true;
+        try
+        {
+            if (fix == FixKind.RestartService)
+            {
+                TerracottaRepairService.KillStaleInstances();
+            }
+            else if (fix == FixKind.ReinstallModule)
+            {
+                await _provisioning.ReinstallAsync();
+            }
+            // 清错误 → 自动重试原动作一次（Snippet 记录失败来源）
+            ErrorText = null;
+            _lastFailure = null;
+            var action = _lastAction;
+            if (action == null) return;
+            if (action == "join")
+            {
+                if (JoinCode.Length == 0) { ErrorText = "先把房主给的房间代码填进去。"; return; }
+                await JoinRoom();
+            }
+            else
+            {
+                await CreateRoom();
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorText = $"修复失败：{ex.Message}";
+        }
+        finally
+        {
+            IsRepairing = false;
+        }
+    }
+
+    /// <summary>最近一次失败的动作来源（create/join），供一键修复后自动重试</summary>
+    private string? _lastAction;
 
     private void Reset()
     {

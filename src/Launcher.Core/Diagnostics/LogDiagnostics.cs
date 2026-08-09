@@ -2,11 +2,16 @@ using System.Text.RegularExpressions;
 
 namespace Launcher.Core.Diagnostics;
 
-/// <summary>修复动作分类（AL9 自修复引擎）：AdviceOnly=仅建议；Redownload=版本文件补全重下；ReExtractNatives=重解压 natives</summary>
-public enum FixKind { AdviceOnly, Redownload, ReExtractNatives }
+/// <summary>修复动作分类（AL9 自修复引擎）：AdviceOnly=仅建议；Redownload=版本文件补全重下；ReExtractNatives=重解压 natives；
+/// RetryDownload=下载自动重试一次；RestartService=重启联机服务；ReinstallModule=重装联机模块；CheckNetwork=网络建议（建议类）</summary>
+public enum FixKind { AdviceOnly, Redownload, ReExtractNatives, RetryDownload, RestartService, ReinstallModule, CheckNetwork }
 
 /// <summary>单条诊断命中（结构化，供自修复引擎与崩溃窗诊断区使用）</summary>
-public sealed record DiagnosticHit(string Snippet, string Explanation, FixKind Fix);
+public sealed record DiagnosticHit(string Snippet, string Explanation, FixKind Fix)
+{
+    /// <summary>是否可执行修复动作（UI「一键修复」按钮显隐）；CheckNetwork/AdviceOnly 属建议类</summary>
+    public bool IsAutoFixable => Fix is FixKind.Redownload or FixKind.ReExtractNatives or FixKind.RetryDownload or FixKind.RestartService or FixKind.ReinstallModule;
+}
 
 /// <summary>
 /// 日志动态诊断：按实际日志内容正则匹配已知错误模式，逐条补中文说明与建议。

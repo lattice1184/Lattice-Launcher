@@ -102,6 +102,8 @@ public class SingleCandidateTimeoutTests
         var task = mgr.Enqueue("asm-9.10.1.jar", (_, _) => throw new TaskCanceledException());
 
         await task.Completion;
+        // AL44：网络/超时类失败自动重试一次——等重试终态（重试中 State 短暂 Downloading）
+        for (var i = 0; i < 100 && task.State != DownloadTaskState.Failed; i++) await Task.Delay(10);
 
         Assert.Equal(DownloadTaskState.Failed, task.State);
         Assert.NotNull(task.Error);

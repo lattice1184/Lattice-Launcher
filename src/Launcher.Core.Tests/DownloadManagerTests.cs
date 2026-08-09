@@ -78,6 +78,8 @@ public class DownloadManagerTests
         var task = manager.Enqueue("失败任务", (p, ct) => throw new InvalidDataException("磁盘错误"));
 
         await task.Completion;
+        // AL44：校验失败自动重试一次——等重试终态（重试中 State 短暂 Downloading）
+        for (var i = 0; i < 100 && task.State != DownloadTaskState.Failed; i++) await Task.Delay(10);
 
         Assert.Equal(DownloadTaskState.Failed, task.State);
         Assert.Equal("磁盘错误", task.Error);

@@ -46,7 +46,7 @@ public partial class CrashReportWindow : Window
             var hasFixable = false;
             foreach (var h in diagnostics)
             {
-                var fixable = h.Fix != FixKind.AdviceOnly;
+                var fixable = h.Fix is FixKind.Redownload or FixKind.ReExtractNatives;
                 hasFixable |= fixable;
                 win.DiagList.Items.Add(new DiagLine($"▸ 匹配：{h.Snippet}\n  说明：{h.Explanation}",
                     fixable ? "· 可自动修复" : "· 需手动处理",
@@ -183,7 +183,7 @@ public partial class CrashReportWindow : Window
         try
         {
             var kind = DiagList.Items.OfType<DiagLine>()
-                .FirstOrDefault(l => l.Kind != FixKind.AdviceOnly)?.Kind ?? FixKind.Redownload;
+                .FirstOrDefault(l => l.Kind is FixKind.Redownload or FixKind.ReExtractNatives)?.Kind ?? FixKind.Redownload;
             var result = await Task.Run(async () =>
             {
                 try

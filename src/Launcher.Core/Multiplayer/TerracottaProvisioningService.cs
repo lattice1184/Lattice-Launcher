@@ -89,6 +89,17 @@ public sealed class TerracottaProvisioningService
         return best;
     }
 
+    /// <summary>重装模块（AL44 一键修复）：清掉现有版本目录 → 走 EnsureAvailableAsync 重新下载安装。</summary>
+    public async Task<TerracottaModule> ReinstallAsync(
+        IProgress<TerracottaProvisionProgress>? progress = null, CancellationToken ct = default)
+    {
+        if (Directory.Exists(ModuleRoot))
+        {
+            try { Directory.Delete(ModuleRoot, recursive: true); } catch { /* 删不掉则装到空壳上 */ }
+        }
+        return await EnsureAvailableAsync(progress, ct);
+    }
+
     /// <summary>确保模块可用：已装且校验通过直接返回；否则下载安装。并发串行（SemaphoreSlim）。</summary>
     public async Task<TerracottaModule> EnsureAvailableAsync(
         IProgress<TerracottaProvisionProgress>? progress = null, CancellationToken ct = default)

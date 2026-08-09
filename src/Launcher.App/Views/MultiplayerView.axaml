@@ -8,8 +8,11 @@
         <!-- 顶部：标题 + 说明 -->
         <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
             <TextBlock Text="联机" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
-            <TextBlock Text="联机服务由 Terracotta | 陶瓦联机提供：房主在游戏内开启局域网世界，启动器自动生成房间码，朋友输码即可加入，无需开服务器。"
-                       Foreground="{StaticResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="联机服务由 Terracotta | 陶瓦联机提供：房主在游戏内开启局域网世界，启动器自动生成房间码，朋友输码即可加入，无需开服务器。"
+                           Foreground="{StaticResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding ModuleVersionText}" Classes="dim" FontSize="11" VerticalAlignment="Bottom"/>
+            </StackPanel>
         </StackPanel>
 
         <!-- 未同意协议提示条（琥珀警告：联机页约定色） -->
@@ -24,10 +27,16 @@
             </Grid>
         </Border>
 
-        <!-- 错误提示条（项目约定错误红） -->
+        <!-- 错误提示条（项目约定错误红）：原因 + 建议 + 可修复时「一键修复」按钮 -->
         <Border DockPanel.Dock="Top" Background="#3A2020" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
                 IsVisible="{Binding HasError}">
-            <TextBlock Foreground="#E05A5A" FontSize="12" TextWrapping="Wrap" Text="{Binding ErrorText}"/>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Foreground="#E05A5A" FontSize="12" TextWrapping="Wrap" Text="{Binding ErrorText}"
+                           VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="一键修复" Classes="primary" FontSize="11" Padding="12,4"
+                        IsVisible="{Binding HasFixableError}" IsEnabled="{Binding !IsRepairing}"
+                        Command="{Binding RepairNowCommand}"/>
+            </Grid>
         </Border>
 
         <ScrollViewer>

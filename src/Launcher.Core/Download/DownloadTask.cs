@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Launcher.Core.Diagnostics;
 
 namespace Launcher.Core.Download;
 
@@ -38,6 +39,16 @@ public partial class DownloadTask : ObservableObject
     private Func<DownloadProgressHandler, CancellationToken, Task>? _work;
     private Func<DownloadGroupContext, CancellationToken, Task>? _groupWork;
     private volatile bool _suspendRequested;
+
+    /// <summary>失败诊断（AL44 统一诊断：原因+建议+修复动作；UI 错误区显示）</summary>
+    [ObservableProperty]
+    public partial DiagnosticHit? Diagnosis { get; set; }
+
+    /// <summary>是否已自动重试过一次（防重试风暴；用户手动 Retry 不重置）</summary>
+    private bool _autoRetried;
+
+    /// <summary>组任务的子任务（AddChild 创建）：不自动重试——组内多子任务同时失败全重试=风暴，组语义靠子任务终态推导</summary>
+    internal bool IsGroupChild;
 
     public string Name { get; }
 
@@ -185,6 +196,7 @@ public partial class DownloadTask : ObservableObject
             // 静默"已取消"在 UI 上不可重试（RetryCommand 只认 Failed）还丢错误原因（探针 08-09 asm 即此）
             TerminalState = DownloadTaskState.Failed;
             SetState(DownloadTaskState.Failed, $"下载中断（{ex.GetType().Name}: {ex.Message}）");
+            ScheduleAutoRetry(ex, allowRetry: true);
         }
         catch (Exception ex)
         {
@@ -193,6 +205,7 @@ public partial class DownloadTask : ObservableObject
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
             // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
             SetState(DownloadTaskState.Failed, ex.Message);
+            ScheduleAutoRetry(ex, allowRetry: true);
         }
         finally
         {
@@ -265,6 +278,7 @@ public partial class DownloadTask : ObservableObject
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
             // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
             SetState(DownloadTaskState.Failed, ex.Message);
+            ScheduleAutoRetry(ex, allowRetry: false); // 组任务只诊断不自动重试（子任务各自承担）
         }
         finally
         {
@@ -286,6 +300,24 @@ public partial class DownloadTask : ObservableObject
     }
 
     /// <summary>失败重试：清错误重跑 work（断点续传已下载部分）</summary>
+    /// <summary>
+    /// AL44 失败诊断 + 自动重试一次：网络/校验类失败 Post 排队重跑（State 经 Post 异步生效，直接调会空转）；
+    /// 取消/暂停竞态守卫挡住；组任务（allowRetry=false）只显示诊断不自动重试（防重下风暴）。
+    /// </summary>
+    private void ScheduleAutoRetry(Exception ex, bool allowRetry)
+    {
+        var hit = FailureDiagnostics.ForDownload(ex, _autoRetried);
+        if (hit is not null) Post(() => Diagnosis = hit);
+        if (!allowRetry || _autoRetried || IsGroupChild) return;
+        if (hit is not { Fix: FixKind.RetryDownload or FixKind.Redownload }) return;
+        _autoRetried = true;
+        // 与 SetState 的 Post 同队列 FIFO：State=Failed 生效后本 Post 才执行 → Retry 不空转
+        Post(() =>
+        {
+            if (!_cts.IsCancellationRequested && !_suspendRequested) Retry();
+        });
+    }
+
     public void Retry()
     {
         if (State != DownloadTaskState.Failed) return;

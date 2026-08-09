@@ -20,7 +20,7 @@ public sealed class DownloadGroupContext
     /// <summary>创建并启动子任务；weight 为预估字节（0 = 不确定进度）</summary>
     public DownloadTask AddChild(string name, long weight, Func<DownloadProgressHandler, CancellationToken, Task> work)
     {
-        var child = new DownloadTask(name, work, _ui) { Weight = weight };
+        var child = new DownloadTask(name, work, _ui) { Weight = weight, IsGroupChild = true };
         Children.Add(child);
         _parent.AttachChild(child);
         return child;
