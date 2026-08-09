@@ -79,7 +79,9 @@ public class DownloadServiceTests : IAsyncLifetime
                             {
                                 var n = Math.Min(64 * 1024, segLen - offset);
                                 await ctx.Response.OutputStream.WriteAsync(data.AsMemory((int)start + offset, n));
-                                await Task.Delay(80);
+                                // 130ms×4 块 = 单片 ~520ms ≈ 2 个节流窗口（250ms）：保证片内稳定存在
+                                // 中间上报（80ms×4=320ms 只有 1.28 窗口，全局抢占偶发吞光 → flaky >4 断言）
+                                await Task.Delay(130);
                             }
                         }
                         else
