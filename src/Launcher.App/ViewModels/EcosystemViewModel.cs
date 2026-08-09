@@ -367,8 +367,12 @@ public partial class EcosystemViewModel : ViewModelBase
         var cf = await TrySearchAsync(cfTask, ex => cfErr = ex.Message);
         if (seq != _requestSeq) return;
         Cards.Clear();
-        AddCards(mr?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
-        AddCards(cf?.Projects ?? [], p => p.name, p => p.summary, p => new ProjectCardVM(p));
+        // 双源先合并成同型列表再统一重排——否则整块 Modrinth 前置，中文 query 时 CF 的标题匹配
+        // （BLZYの自定义进度）被 Modrinth 的「描述匹配」（字幕高亮）压在后面，重排失去意义
+        var all = new List<ProjectCardVM>();
+        foreach (var h in mr?.Hits ?? []) all.Add(new ProjectCardVM(h));
+        foreach (var p in cf?.Projects ?? []) all.Add(new ProjectCardVM(p));
+        AddCards(all, c => c.Title, c => c.Description, c => c);
         var total = (mr?.TotalHits ?? 0) + (cf?.TotalCount ?? 0);
         var note = mrErr is null && cfErr is null
             ? (mr is null && cf is null ? "无响应" : null)
