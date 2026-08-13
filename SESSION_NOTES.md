@@ -1541,3 +1541,23 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - 取舍记录：压缩 = 双击后 1-2s 解压空白（CLR 前，托管救不了）——补偿 = 解压完原生 splash 立即出现且永不卡；根治空白唯一出路是轻量版（不压缩 23MB，用户机装了 .NET 可直接用）
 - git：本批后 commit 工作区形成保存点（此前最后提交 6f45360 AL44，正版登录修复全在未提交区）
 - 真机（待）：双击 → ~1-2s 解压 → logo 淡入呼吸流畅（构造期间不卡）→ 主窗口交叉淡入
+- 批次 34 追加（真机「双击没反应」= 进程崩溃修复）：复现 Fatal error 0xC0000005——SkiaSharp 3.x 的 SKBitmap.Resize 新旧重载内部都走 ScalePixels→PeekPixels，对 SKBitmap.Decode 的不可变位图原生访问冲突，整个进程陪葬（主窗口都没出现）
+- **修复**：完全绕开 SKBitmap 缩放——SKImage.FromEncodedData 解码 → 每帧 SKSurface.Create(固定缓冲区 GCHandle 内存) + Canvas.DrawImage（SKSamplingOptions Linear）+ Flush → 自管预乘 RGBA byte[] → 转 BGRA 贴 UpdateLayeredWindow。零 PeekPixels
+- 验证：Debug exe 完整走到 Lifecycle Running + MainWindowTitle=Lattice Launcher（进程存活）；全量 604/604；重新发布签名
+- 坑：Debug 版进程名是 Launcher.App（发布版才是 Lattice启动器）——检查脚本 ProcessName 匹配错导致误判 crashed；P/Invoke 原生崩溃（AV）catch(Exception) 兜不住，必须根治 API 用法
+- 批次 34 追加 2（真机正版登录 KeyNotFound）：microsoft-auth.log 锁定 PostXstsAsync 的 GetProperty("Xui")——XSTS 响应顶层没有 Xui 键，真实结构 DisplayClaims.xui[0].uhs（浏览器授权成功后才走到这步，所以「大功告成」页面 + 启动器报错并存）。代码从批次 30 起就写错，首次真机触达。修复：TryGetProperty 全链解析 DisplayClaims（xui/Xui 双写兜底）；测试 stub 同步改真实结构；全量 604/604
+- 待真机：正版登录全链（输码→浏览器授权→XSTS→Minecraft 档案→账号落座）
+- 批次 34 追加 3（真机体验跟进——「响应同步慢 + 头像延时」）：正版登录全链真机通过
+- 轮询提速：PollDeviceCodeAsync 前 3 分钟 3s 快轮询（授权盲区 5s→3s，用户输码后等启动器反应的体感），超窗回 session.IntervalSec；slow_down 降频处理（微软要求时回建议间隔）；测试兼容（IntervalSec=0 的测试 session 走 min 逻辑不受影响）
+- 头像延时：根因 minotar 首次网络下载慢 + 每次 Refresh 置空闪白。修复：①RefreshPlayer/Refresh 不置空（旧头像保留到新图回调）②PlayerAvatarFallback/AvatarFallback 首字母占位（视图层 ObjectConverters.IsNull/IsNotNull 叠层切换——加载期显示首字母块，网络图到即替换）③ImageLoader 磁盘缓存已有（二次启动秒显）
+- 坑：partial 属性必须配 [ObservableProperty]（漏了特性 CS9248）；全量 604/604；发布签名 Valid
+- 待真机：登录全链延迟体感（输码→授权→完成 ≈ 3s 盲区 + 认证链）+ 头像二次启动秒显
+- 批次 34 追加 4（真机「任务栏图标点不动 + 页面 2 秒才出现」）：根因 = 批次 33/34 的登场设计——主窗口 ShowActivated=false（不激活→点任务栏无反馈）+ AppContent 整页初始透明等首帧后 150ms 淡入（页面体感 2 秒才出现）。旧版主窗口 Show 即激活、内容直接可见，所以「以前很快」
+- 修复：①去掉 ShowActivated=false（主窗口 Show 即激活；splash 是 NOACTIVATE+TOOLWINDOW 本来就不抢焦点）②AppContent 不再整页透明——内容随首帧直接可见，只有背景玻璃层 150ms 铺设与 splash 淡出交叉（FadeInContent 精简为只动 RootSurface+BorderBrush）
+- 全量 604/604；发布签名 Valid
+- 待真机：双击 → 解压 → logo 呼吸（独立线程）→ 主窗口激活+内容出现+背景铺设（点任务栏/窗口即时反馈）
+- 批次 35（8-13，终局：彻底移除启动动画——启动最短路径）：用户拍板「直接不要动画了，一个个全都卡的要死，都是瞬移一样；开的怎么快怎么来」。批 33（描边）/34（原生 splash 呼吸）两版动画真机均不被接受：帧驱动（Stopwatch 绝对时间插值）在系统忙/掉帧时直接跳变=瞬移感；splash 呼吸每 16ms 重采样+UpdateLayeredWindow 与主窗口首帧渲染（CPU 密集）抢 CPU 反拖慢启动
+- 修复：删 NativeSplash.cs 全部集成（Show/Dismiss/双 Post/15s 兜底/250ms 等待）；App.axaml.cs 恢复最简序列（构造→初始化→Show→GameDirSetup）；MainWindow 删构造透明准备 + FadeInContent——窗口直接全量显示（RootSurface/BorderBrush 用 axaml 默认终值），保留 ResolveTargetSize 定位 + 150ms 补导航定位 timer
+- 发布配置不动（压缩 84MB 体积锁保持）。启动体验 = 解压 ~1-2s → 窗口瞬间全显（用户点名的「之前」状态）
+- 全量 604/604；发布签名 Valid；commit 保存点（含崩溃修复/XSTS/轮询头像/移除动画）
+- 结论记录：真机动画帧率不达标（录屏+系统负载下）——未来若要动画，先做主窗口首帧提速（VM 构造惰性化）再说

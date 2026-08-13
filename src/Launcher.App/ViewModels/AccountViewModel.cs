@@ -39,6 +39,10 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial Bitmap? Avatar { get; set; }
 
+    /// <summary>8-13 头像未就绪时的首字母占位（弹窗面板头像不露白）</summary>
+    [ObservableProperty]
+    public partial string AvatarFallback { get; set; } = "";
+
     /// <summary>已保存账号列表（当前账号标记）</summary>
     public ObservableCollection<AccountRowVM> Accounts { get; } = [];
 
@@ -63,8 +67,9 @@ public partial class AccountViewModel : ViewModelBase
                 a.Type == "microsoft" ? "正版" : "离线",
                 a.Name == acc?.Name));
 
-        // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）
-        Avatar = null;
+        // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）。
+        // 8-13：不置空——加载期间保留旧头像，首字母块兜底，避免每次刷新闪空白
+        AvatarFallback = acc is null ? "" : acc.Name[..1].ToUpperInvariant();
         if (acc is not null)
             _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
                 bmp => Avatar = bmp);

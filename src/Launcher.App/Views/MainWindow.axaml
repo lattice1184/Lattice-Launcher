@@ -31,8 +31,8 @@
                                              FallbackColor="#FF14181F"/>
             </ExperimentalAcrylicBorder.Material>
             <Grid>
-            <!-- 8-13 批次 33：启动由独立 SplashWindow 承担，内容初始透明，首帧后 150ms 淡入（与 splash 淡出交叉） -->
-            <DockPanel x:Name="AppContent" Opacity="0">
+            <!-- 8-13 批次 34 终局：无启动动画——内容与背景随窗口直接全量显示 -->
+            <DockPanel x:Name="AppContent">
                 <!-- 左侧导航（液态玻璃，整列一种色、全高；空白处可拖拽窗口，双击最大化） -->
                 <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="160" CornerRadius="0"
                                            PointerPressed="TitleBar_PointerPressed">

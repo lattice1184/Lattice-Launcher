@@ -140,6 +140,10 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial Bitmap? PlayerAvatar { get; set; }
 
+    /// <summary>8-13 头像未就绪时的首字母占位（网络头像下载期间不露白）</summary>
+    [ObservableProperty]
+    public partial string PlayerAvatarFallback { get; set; } = "";
+
     [ObservableProperty]
     public partial string PlayerName { get; set; } = "未登录";
 
@@ -270,11 +274,12 @@ public partial class HomeViewModel : ViewModelBase
     {
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
+        PlayerAvatarFallback = acc is null ? "" : acc.Name[..1].ToUpperInvariant();
         AccountTypeText = acc?.Type == "microsoft" ? "正版" : acc?.Type == "offline" ? "离线" : "未登录";
-        PlayerAvatar = null;
+        // 8-13：不置空——网络头像加载期间保留旧头像（首字母块兜底由视图层做），避免每次刷新闪空白
         if (acc is null) return;
 
-        // 本地皮肤优先（点击头像更换）；否则 minotar 网络头像
+        // 本地皮肤优先（点击头像更换）；否则 minotar 网络头像（ImageLoader 磁盘缓存，二次启动秒显）
         var skinPath = LocalSkinPath(acc.Name);
         if (File.Exists(skinPath))
         {
