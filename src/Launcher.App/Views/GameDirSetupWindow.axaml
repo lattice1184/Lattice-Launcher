@@ -4,11 +4,11 @@
         Title="选择游戏目录"
         Width="560" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgSurface}">
+        Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="28,24" Spacing="14">
         <TextBlock Text="欢迎使用 Lattice Launcher" FontSize="22" FontWeight="Bold"/>
-        <TextBlock Text="游戏版本、模组、存档将存放在此文件夹。建议选择空间充足的磁盘，后续可在设置中更改。"
+        <TextBlock Text="你的游戏版本、模组、存档都放这个文件夹。选空间充足的磁盘。以后在设置里还能改。"
                    Classes="sub" FontSize="13" TextWrapping="Wrap"/>
 
         <TextBox x:Name="PathBox" FontSize="13"/>

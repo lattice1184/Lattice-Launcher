@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using Launcher.Core.Download;
 using Launcher.Core.Model.Loader;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 /// <summary>下载前选择的加载器（null LoaderKind = 纯净原版）</summary>
@@ -149,5 +150,7 @@ public partial class LoaderChoiceDialog : Window
     {
         _result?.TrySetResult(null); // X/Alt+F4 兜底
         base.OnClosed(e);
-    }
+    
+}
+
 }

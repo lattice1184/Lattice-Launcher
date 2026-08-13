@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Launcher.App.Animations;
@@ -43,6 +44,10 @@ public partial class MainWindow : Window
         _navButtons["server"] = NavServer;
         _navButtons["multiplayer"] = NavMultiplayer;
         _navButtons["settings"] = NavSettings;
+        // AL47 整合包拖入：全窗口接收 zip/mrpack 拖拽（DragOver 过滤，Drop 取第一个导入）
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnWindowDragOver);
+        AddHandler(DragDrop.DropEvent, OnWindowDrop);
         // VM 到达后订阅激活态变化（覆盖点击/跳转/GoRepair 等所有导航路径）
         DataContextChanged += (_, _) =>
         {
@@ -73,8 +78,21 @@ public partial class MainWindow : Window
                 main.Settings.AppearanceChanged += () => ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
                 main.Settings.PreviewChanged += () => ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
             }
-            // 启动序列：小窗(仅 logo) → logo 缩放出现 → 窗口从中心放大 + 内容涨开 + 浮层淡出（放在 ApplyAppearance 之后，密度基准已设）
-            StartSplashSequence();
+            // 8-13 批次 33：窗口以目标尺寸铺开（透明，内容由独立 SplashWindow 罩着）→ 首帧后 150ms 淡入
+            // （与 splash 淡出交叉——AL16 强切顾虑的解法）。不做窗口 resize 动画：
+            // 透明窗口逐帧 SetWindowPos 走软件合成路径（实测只有几帧），窗口不动的纯内部动画
+            // （ScaleTransform/Opacity）走 GPU 合成，帧率满。
+            var (tw, th) = ResolveTargetSize();
+            MinWidth = NormalMinWidth;
+            MinHeight = NormalMinHeight;
+            Width = tw;
+            Height = th;
+            if (Screens.Primary?.WorkingArea is { } a)
+            {
+                var scale = RenderScaling > 0 ? RenderScaling : 1.0;
+                Position = new PixelPoint(a.X + (int)((a.Width - tw * scale) / 2), a.Y + (int)((a.Height - th * scale) / 2));
+            }
+            FadeInContent();
             // 彩蛋：启动完成后随机一条小提示（可关）
             if (LauncherSettings.Current.StartupTipEnabled)
             {
@@ -94,75 +112,28 @@ public partial class MainWindow : Window
         Closing += (_, _) => SaveWindowSize();
     }
 
-    /// <summary>logo 缩放变换（ScaleTransform 无 x:Name 字段，运行时从 RenderTransform 取）</summary>
-    private ScaleTransform SplashLogoS => (ScaleTransform)SplashLogo.RenderTransform;
-
-    /// <summary>启动序列：logo 从透明中浮现放大（Decelerate 无过冲、慢起快收——落定速度≈0）→ 窗口放大段同样慢起，速度连续无割裂。</summary>
-    private void StartSplashSequence()
+    /// <summary>8-13 批次 33 内容淡入：背景与内容同步 150ms 淡入（与独立 splash 的 150ms 淡出交叉——无强切）。
+    /// 全程只写 Opacity/画刷，纯 GPU 合成。完成后切回液态玻璃合成级别 + 补一次导航指示条定位。</summary>
+    private void FadeInContent()
     {
-        SplashLogoS.ScaleX = SplashLogoS.ScaleY = 0.3;
-        SplashLogo.Opacity = 0;
-        UiAnim.Animate(450, UiAnim.Curves.Decelerate, e =>
+        RootSurface.IsVisible = true;
+        UiAnim.Animate(UiAnim.Durations.Fast, UiAnim.Curves.Decelerate, e =>
         {
-            SplashLogoS.ScaleX = 0.3 + 0.7 * e;
-            SplashLogoS.ScaleY = 0.3 + 0.7 * e;
-            SplashLogo.Opacity = e;
-        }, GrowToFull, UiAnim.Host);
-    }
-
-    /// <summary>窗口实时放大：150×150 → 存档尺寸（逐帧居中），内容从中心 0.25→1 涨开，浮层后段淡出（logo 随窗口"长成"界面）。</summary>
-    private void GrowToFull()
-    {
-        var (targetW, targetH) = ResolveTargetSize();
-        var startW = Width;
-        var startH = Height;
-        var wa = Screens.Primary?.WorkingArea;
-        var scale = RenderScaling > 0 ? RenderScaling : 1.0;
-        var densityBase = ContentSurface?.RenderTransform is ScaleTransform d ? d.ScaleX : 1.0;
-
-        // 与阶段 1 同款 decelerate：窗口放大慢起（与 logo 落定速度连续）、尾段快收
-        UiAnim.Animate(950, UiAnim.Curves.Decelerate, e =>
-        {
-            var w = startW + (targetW - startW) * e;
-            var h = startH + (targetH - startH) * e;
-            Width = w;
-            Height = h;
-            if (wa is { } a)
-                Position = new PixelPoint(a.X + (int)((a.Width - w * scale) / 2), a.Y + (int)((a.Height - h * scale) / 2));
-            // 内容从中心涨开（以密度缩放为基准）
-            if (ContentSurface?.RenderTransform is ScaleTransform st)
-            {
-                st.ScaleX = densityBase * (0.25 + 0.75 * e);
-                st.ScaleY = densityBase * (0.25 + 0.75 * e);
-            }
-            // logo 随窗口放大；交叉淡化并入同一帧时钟：浮层 e>0.45 淡出、内容 e>0.55 淡入（重叠充分，无空窗）
-            SplashLogoS.ScaleX = SplashLogoS.ScaleY = 1 + 0.6 * e;
-            SplashOverlay.Opacity = e < 0.45 ? 1 : 1 - (e - 0.45) / 0.55;
-            AppContent.Opacity = e < 0.55 ? 0 : (e - 0.55) / 0.45;
+            AppContent.Opacity = e;
+            RootSurface.Opacity = e;
+            WindowRoot.BorderBrush = LerpBrush(Colors.Transparent, Color.Parse("#4D2F3745"), e);
         }, () =>
         {
-            MinWidth = NormalMinWidth;
-            MinHeight = NormalMinHeight;
-            SplashOverlay.Opacity = 1;
-            SplashOverlay.IsVisible = false;
-            SplashLogoS.ScaleX = SplashLogoS.ScaleY = 1;
-            ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density); // 复位密度缩放
-            // 放大完成：切回液态玻璃——亚克力层与描边 220ms 渐进出现（替代瞬间切换）
-            WindowRoot.BorderBrush = Brushes.Transparent;
-            RootSurface.Opacity = 0;
-            RootSurface.IsVisible = true;
+            AppContent.Opacity = 1;
+            // 切回液态玻璃：背景与描边已铺满（Opacity=1），这里只切合成级别
+            WindowRoot.BorderBrush = LerpBrush(Colors.Transparent, Color.Parse("#4D2F3745"), 1);
             TransparencyLevelHint = new[]
             {
                 WindowTransparencyLevel.AcrylicBlur,
                 WindowTransparencyLevel.Blur,
                 WindowTransparencyLevel.None,
             };
-            UiAnim.Animate(UiAnim.Durations.Standard, UiAnim.Curves.Standard, e =>
-            {
-                RootSurface.Opacity = e;
-                WindowRoot.BorderBrush = LerpBrush(Colors.Transparent, Color.Parse("#4D2F3745"), e);
-            }, null, RootSurface);
-            // 兜底：splash 期间导航未布局被跳过，RootSurface 可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
+            // 兜底：启动期间导航未布局被跳过，RootSurface 可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
             var indicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
             indicatorTimer.Tick += (_, _) => { indicatorTimer.Stop(); ApplyNavVisuals(); };
             indicatorTimer.Start();
@@ -216,6 +187,49 @@ public partial class MainWindow : Window
         BeginMoveDrag(e);
     }
 
+    // ---------- 整合包拖入（AL47：zip/mrpack 全窗口可拖；Avalonia 12 走 DataTransfer.Items + DataFormat.File） ----------
+
+    private static bool IsPackFile(string name) =>
+        name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>从拖拽项取文件路径（TryGetRaw 返回 IStorageItem 或原始路径字符串，兼容两种平台实现）</summary>
+    private static string? TryGetFilePath(IDataTransferItem item)
+    {
+        if (!item.Formats.Contains(DataFormat.File)) return null;
+        var raw = item.TryGetRaw(DataFormat.File);
+        return raw switch
+        {
+            Avalonia.Platform.Storage.IStorageItem si => si.Path.LocalPath,
+            string s => s,
+            _ => null,
+        };
+    }
+
+    private static void OnWindowDragOver(object? sender, DragEventArgs e)
+    {
+        var hasPack = (e.DataTransfer.Items ?? []).Any(i => TryGetFilePath(i) is { } p && IsPackFile(p));
+        e.DragEffects = hasPack ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnWindowDrop(object? sender, DragEventArgs e)
+    {
+        var packs = (e.DataTransfer.Items ?? [])
+            .Select(TryGetFilePath)
+            .Where(p => p is not null && IsPackFile(p))
+            .Cast<string>()
+            .ToList();
+        if (packs.Count == 0)
+        {
+            NotificationService.Info("仅支持拖入 .zip / .mrpack 整合包文件");
+            return;
+        }
+        if (packs.Count > 1)
+            NotificationService.Info("已开始导入第一个整合包，其余已忽略");
+        ModpackImportFlow.StartAsync(packs[0]);
+    }
+
     // ---------- 窗口按钮（纯 Border，手动 hover 变色；无模板/行为，杜绝缩放位移错位） ----------
 
     private void TitleBtn_PointerEntered(object? sender, PointerEventArgs e)
@@ -223,22 +237,24 @@ public partial class MainWindow : Window
         if (sender is not Border b) return;
         if (ReferenceEquals(b, BtnClose))
         {
-            b.Background = new SolidColorBrush(Color.Parse("#C42B1C"));
-            BtnCloseGlyph.Foreground = Brushes.White;
+            UiAnim.TweenBrush(b, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#C42B1C")), UiAnim.Durations.Fast, "nav");
+            UiAnim.TweenBrush(BtnCloseGlyph, TextBlock.ForegroundProperty, Brushes.White, UiAnim.Durations.Fast, "nav");
         }
         else
         {
-            b.Background = new SolidColorBrush(Color.Parse("#2C3544"));
-            BtnMinGlyph.Foreground = Brushes.White;
+            UiAnim.TweenBrush(b, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav");
+            UiAnim.TweenBrush(BtnMinGlyph, TextBlock.ForegroundProperty, Brushes.White, UiAnim.Durations.Fast, "nav");
         }
     }
 
     private void TitleBtn_PointerExited(object? sender, PointerEventArgs e)
     {
         if (sender is not Border b) return;
-        b.Background = Brushes.Transparent;
-        if (ReferenceEquals(b, BtnClose)) BtnCloseGlyph.Foreground = new SolidColorBrush(Color.Parse("#8A93A6"));
-        else BtnMinGlyph.Foreground = new SolidColorBrush(Color.Parse("#8A93A6"));
+        UiAnim.TweenBrush(b, TemplatedControl.BackgroundProperty, Brushes.Transparent, UiAnim.Durations.Fast, "nav");
+        if (ReferenceEquals(b, BtnClose))
+            UiAnim.TweenBrush(BtnCloseGlyph, TextBlock.ForegroundProperty, new SolidColorBrush(Color.Parse("#8A93A6")), UiAnim.Durations.Fast, "nav");
+        else
+            UiAnim.TweenBrush(BtnMinGlyph, TextBlock.ForegroundProperty, new SolidColorBrush(Color.Parse("#8A93A6")), UiAnim.Durations.Fast, "nav");
     }
 
     private void TitleBtn_PointerPressed(object? sender, PointerPressedEventArgs e) => e.Handled = true; // 挡住标题条拖拽
@@ -260,7 +276,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// 自定义背景：内容区铺满图片 + 65% 黑压暗（保文字可读）。
-    /// 空路径还原默认半透明背板（#B81D222C）；图片失效（被删/损坏）回退默认，不崩。
+    /// 空路径清本地值 → 回落用户背景色（{DynamicResource BackgroundColor}）；图片失效（被删/损坏）同样回落，不崩。
     /// 内存：DecodeToWidth 限 2560 宽；换图前释放旧 Bitmap。
     /// </summary>
     public void ApplyBackgroundImage(string? path)
@@ -271,10 +287,10 @@ public partial class MainWindow : Window
             old.Dispose();
             ContentSurface.Background = null;
         }
-        var fallback = new SolidColorBrush(Color.Parse("#B81D222C"));
         if (string.IsNullOrWhiteSpace(path))
         {
-            ContentSurface.Background = fallback;
+            // 无图 → 清本地值，让 {DynamicResource BackgroundColor}（用户背景色）生效
+            ContentSurface.Background = null;
             BgDim.IsVisible = false;
             return;
         }
@@ -287,33 +303,40 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             System.Console.Error.WriteLine($"[BACKGROUND] 背景图片加载失败 {path}: {ex.Message}");
-            ContentSurface.Background = fallback;
+            ContentSurface.Background = null;
             BgDim.IsVisible = false;
         }
     }
 
-    /// <summary>按 VM 激活态刷新全部导航视觉（active：深青底 + 白字；左色条由独立元素滑动定位）</summary>
+    /// <summary>按 VM 激活态刷新全部导航视觉（active：深青底 + 白字；左色条由独立元素滑动定位）。
+    /// 激活切换保持瞬跳——过渡由 NavIndicator 滑动承担；hover/释放的平滑走 TweenNavBack。</summary>
     private void ApplyNavVisuals()
     {
         if (DataContext is not MainViewModel main) return;
         foreach (var (page, btn) in _navButtons)
         {
-            if (IsPageActive(main, page))
+            var (bg, fg) = NavTargetVisuals(btn);
+            btn.Background = bg;
+            btn.Foreground = fg;
+            if (IsPageActive(main, page)) MoveNavIndicator(btn);
+        }
+    }
+
+    /// <summary>导航按钮目标视觉（激活/非激活）——ApplyNavVisuals 瞬跳与 NavExit/NavRelease 过渡共用，
+    /// 避免两处颜色计算漂移。激活底跟随 AccentDark 派生色（主题系统）。</summary>
+    private (IBrush Bg, IBrush Fg) NavTargetVisuals(Button btn)
+    {
+        foreach (var (page, b) in _navButtons)
+        {
+            if (ReferenceEquals(b, btn) && DataContext is MainViewModel main && IsPageActive(main, page))
             {
-                // 主题系统：激活底跟随 AccentDark 派生色（ApplyAccentColor 已写入；缺 key 兜底默认）
-                btn.Background = new SolidColorBrush(
-                    App.Current.Resources.TryGetResource("AccentDark", null, out var dark) && dark is Color dc
-                        ? dc
-                        : Color.Parse("#12332F"));
-                btn.Foreground = Brushes.White;
-                MoveNavIndicator(btn);
-            }
-            else
-            {
-                btn.Background = Brushes.Transparent;
-                btn.Foreground = new SolidColorBrush(Color.Parse("#8A93A6")); // TextSecondary
+                var bg = App.Current.Resources.TryGetResource("AccentDark", null, out var dark) && dark is Color dc
+                    ? (IBrush)new SolidColorBrush(dc)
+                    : (IBrush)new SolidColorBrush(Color.Parse("#12332F"));
+                return (bg, Brushes.White);
             }
         }
+        return (Brushes.Transparent, new SolidColorBrush(Color.Parse("#8A93A6"))); // TextSecondary
     }
 
     /// <summary>激活指示条滑到目标按钮：首次直接定位，之后 180ms 平滑滑动（host=Indicator 互斥打断连点）。
@@ -336,13 +359,28 @@ public partial class MainWindow : Window
             NavIndicator.Margin = new Thickness(10, top, 0, 0);
             return;
         }
-        var fromTop = NavIndicator.Margin.Top;
-        var fromH = NavIndicator.Height;
+        // 布局写一次落定（Margin/Height），动画期用 Transform 反向补偿——每帧 0 布局失效。
+        // 打断重入：先捕获当前视觉态（Margin + 现存 Transform 的位移/缩放），再落定；
+        // e=0 时补偿量=0 → 视觉位置=原处，e=1 时恒等 → done 清变换
+        var fromTopEff = NavIndicator.Margin.Top;
+        var fromHEff = NavIndicator.Height;
+        if (NavIndicator.RenderTransform is TransformGroup g
+            && g.Children[0] is TranslateTransform tt0 && g.Children[1] is ScaleTransform st0)
+        {
+            fromTopEff += tt0.Y;
+            fromHEff *= st0.ScaleY;
+        }
+        NavIndicator.Margin = new Thickness(10, top, 0, 0);
+        NavIndicator.Height = h;
+        var tt = new TranslateTransform(0, 0);
+        var st = new ScaleTransform(1, 1);
+        NavIndicator.RenderTransform = new TransformGroup { Children = { tt, st } };
+        NavIndicator.RenderTransformOrigin = new RelativePoint(0, 0, RelativeUnit.Relative); // 顶部锚定，ScaleY 不位移
         UiAnim.Animate(180, UiAnim.Curves.Standard, e =>
         {
-            NavIndicator.Margin = new Thickness(10, fromTop + (top - fromTop) * e, 0, 0);
-            NavIndicator.Height = fromH + (h - fromH) * e;
-        }, null, NavIndicator);
+            tt.Y = (fromTopEff - top) * (1 - e);
+            st.ScaleY = (fromHEff + (h - fromHEff) * e) / h;
+        }, () => NavIndicator.RenderTransform = null, NavIndicator);
     }
 
     private static bool IsPageActive(MainViewModel main, string page) => page switch
@@ -363,19 +401,28 @@ public partial class MainWindow : Window
         {
             if (ReferenceEquals(b, btn) && IsPageActive(main, page)) return; // 激活项 hover 不改色
         }
-        btn.Background = new SolidColorBrush(Color.Parse("#2C3544")); // BgHover 悬浮变色
-        btn.Foreground = new SolidColorBrush(Color.Parse("#E8EAF0")); // TextPrimary
+        UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav"); // BgHover
+        UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, new SolidColorBrush(Color.Parse("#E8EAF0")), UiAnim.Durations.Fast, "nav"); // TextPrimary
     }
 
-    private void NavExit(object? sender, PointerEventArgs e) => ApplyNavVisuals();
+    private void NavExit(object? sender, PointerEventArgs e) => TweenNavBack(sender);
 
     private void NavPress(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Button btn)
-            btn.Background = new SolidColorBrush(Color.Parse("#1A2029")); // 按下变深，无白影（涟漪由 RippleBehavior 触发）
+            UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#1A2029")), UiAnim.Durations.Fast, "nav"); // 按下变深
     }
 
-    private void NavRelease(object? sender, PointerReleasedEventArgs e) => ApplyNavVisuals();
+    private void NavRelease(object? sender, PointerReleasedEventArgs e) => TweenNavBack(sender);
+
+    /// <summary>悬停退出/松手释放：动画回激活态目标色（不再瞬跳）</summary>
+    private void TweenNavBack(object? s)
+    {
+        if (s is not Button btn) return;
+        var (bg, fg) = NavTargetVisuals(btn);
+        UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, bg, UiAnim.Durations.Fast, "nav");
+        UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, fg, UiAnim.Durations.Fast, "nav");
+    }
 
     private void ApplyOpacityFallback()
     {

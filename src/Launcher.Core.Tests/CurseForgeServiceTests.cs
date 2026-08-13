@@ -17,22 +17,36 @@ public class CurseForgeServiceTests
     private sealed class CfStubHandler : HttpMessageHandler
     {
         public readonly List<string> Requests = [];
+        /// <summary>8-19 完整 Uri 列表（含 query——区分带/不带 gameVersion 的两次请求）</summary>
+        public readonly List<string> RequestUrls = [];
         private readonly Dictionary<string, (int Status, byte[] Body)> _routes = [];
+        private readonly Dictionary<string, (int Status, byte[] Body)> _routesFull = [];
 
         public void RouteJson(string hostPath, string json) => _routes[hostPath] = (200, Encoding.UTF8.GetBytes(json));
         public void RouteBytes(string hostPath, byte[] body) => _routes[hostPath] = (200, body);
         public void RouteStatus(string hostPath, int status) => _routes[hostPath] = (status, []);
+        /// <summary>8-19 按 PathAndQuery 路由（区分带/不带 gameVersion）；带 body（CF 错误 JSON 模拟）</summary>
+        public void RouteJsonFull(string pathAndQuery, string json) => _routesFull[pathAndQuery] = (200, Encoding.UTF8.GetBytes(json));
+        public void RouteStatusWithBody(string hostPath, int status, string json)
+            => _routes[hostPath] = (status, Encoding.UTF8.GetBytes(json));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var key = $"{request.RequestUri!.Host}{request.RequestUri.AbsolutePath}";
+            var full = request.RequestUri!.PathAndQuery;
             var hasKey = request.Headers.TryGetValues("x-api-key", out var values);
             Requests.Add($"{request.Method} {key} x-api-key={(hasKey ? values!.First() : "(none)")}");
+            RequestUrls.Add(full);
+            if (_routesFull.TryGetValue(full, out var routeFull))
+            {
+                // 非 200 也带 body——RouteStatusWithBody 场景要读 CF 错误 JSON
+                return Task.FromResult(new HttpResponseMessage((HttpStatusCode)routeFull.Status)
+                    { Content = new ByteArrayContent(routeFull.Body) });
+            }
             if (_routes.TryGetValue(key, out var route))
             {
-                return Task.FromResult(route.Status == 200
-                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(route.Body) }
-                    : new HttpResponseMessage((HttpStatusCode)route.Status));
+                return Task.FromResult(new HttpResponseMessage((HttpStatusCode)route.Status)
+                    { Content = new ByteArrayContent(route.Body) });
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
@@ -271,4 +285,214 @@ public class CurseForgeServiceTests
         Assert.Contains(Path.Combine("mods", "sodium-0.5.11.jar"), dest);
         Assert.Contains(handler.Requests, r => r.Contains("cdn.example.com/files/sodium-0.5.11.jar"));
     }
+    // ---------- 8-19 容错 + 版本参数降级 ----------
+
+    private const string CfErrorJson = "{\"statusCode\":400,\"error\":\"Bad Request\",\"message\":\"Invalid game version parameter\"}";
+
+    [Fact]
+    public async Task SearchAsync_ErrorJsonBody_ThrowsCfApiExceptionWithMessage()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJson("api.curseforge.com/v1/mods/search", CfErrorJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<CurseForgeService.CurseForgeApiException>(() =>
+            svc.SearchAsync(ProjectType.Shader, gameVersion: "26.2"));
+        Assert.Equal(400, ex.CfStatusCode);
+        Assert.Contains("Invalid game version parameter", ex.Message);
+    }
+
+    [Fact]
+    public async Task SearchAsync_InvalidGameVersion_DowngradesOnceWithoutVersion()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/search?gameId=432&classId=6552&gameVersion=26.2&sortField=1&sortOrder=desc&index=0&pageSize=20", CfErrorJson);
+        handler.RouteJson("api.curseforge.com/v1/mods/search", ProjectJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var page = await svc.SearchAsync(ProjectType.Shader, gameVersion: "26.2");
+
+        Assert.NotNull(page);
+        Assert.True(page.VersionFilterDropped);
+        Assert.Equal(1, page.Projects.Count);
+        Assert.Equal(2, handler.RequestUrls.Count);                     // 带版本 + 不带版本各一次
+        Assert.Contains("gameVersion=26.2", handler.RequestUrls[0]);
+        Assert.DoesNotContain("gameVersion", handler.RequestUrls[1]);
+    }
+
+    [Fact]
+    public async Task SearchAsync_DowngradeFailsSecondTime_ThrowsAndExactlyTwoRequests()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJson("api.curseforge.com/v1/mods/search", CfErrorJson);   // 两种 URL 都命中同一条路由（host+path 匹配）
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        await Assert.ThrowsAsync<CurseForgeService.CurseForgeApiException>(() =>
+            svc.SearchAsync(ProjectType.Shader, gameVersion: "26.2"));
+        Assert.Equal(2, handler.RequestUrls.Count);          // 防循环：最多 2 请求
+    }
+
+    [Fact]
+    public async Task SearchAsync_Html200Body_ThrowsGenericMessage()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteBytes("api.curseforge.com/v1/mods/search", "<html>CloudFront error</html>"u8.ToArray());
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            svc.SearchAsync(ProjectType.Shader, gameVersion: "26.2"));
+        Assert.Contains("响应格式异常", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetJsonAsync_Non2xx400_WithCfErrorBody_ThrowsCfApiException()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteStatusWithBody("api.curseforge.com/v1/mods/search", 400, CfErrorJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<CurseForgeService.CurseForgeApiException>(() =>
+            svc.SearchAsync(ProjectType.Shader, gameVersion: "1.21.1"));
+        Assert.Equal(400, ex.CfStatusCode);
+        Assert.Contains("Invalid game version parameter", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetFilesAsync_InvalidGameVersion_FallsBackToAllFiles()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteStatusWithBody("api.curseforge.com/v1/mods/100/files", 400, CfErrorJson);   // 带 gameVersion 的 files 请求
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50", FilesJson); // 不带版本的请求
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var files = await svc.GetFilesAsync(100, "26.2");
+
+        Assert.Single(files);
+        Assert.Equal(2, handler.RequestUrls.Count);
+        Assert.DoesNotContain("gameVersion", handler.RequestUrls[1]);
+    }
+
+    [Fact]
+    public async Task FindBestFileAsync_Dropped_SelectsFromUnfilteredPool()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteStatusWithBody("api.curseforge.com/v1/mods/100/files", 400, CfErrorJson);
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50", FilesJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var best = await svc.FindBestFileAsync(100, "26.2");
+
+        Assert.NotNull(best); // 降级后从全池选——不再按 26.2 过滤（否则误报「没有适配文件」）
+        Assert.Equal("Sodium 0.5.11", best.displayName);
+    }
+
+    [Fact]
+    public async Task SearchAsync_NoGameVersion_NoFallback()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJson("api.curseforge.com/v1/mods/search", ProjectJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var page = await svc.SearchAsync(ProjectType.Shader);
+
+        Assert.NotNull(page);
+        Assert.False(page.VersionFilterDropped);
+        Assert.Single(handler.RequestUrls); // 无版本 → 不降级重试
+    }
+
+    // ---------- 8-19 补：CF 对无效版本返回 200+空（非 400）——空结果也降级 ----------
+
+    [Fact]
+    public async Task GetFilesAsync_Empty200_InvalidVersion_FallsBackToAllFiles()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50&gameVersion=26.2", """{"data":[]}""");
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50", FilesJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var files = await svc.GetFilesAsync(100, "26.2");
+
+        Assert.Single(files); // 200+空也降级——26.2 实测 CF files 返回空而非 400
+        Assert.Equal(2, handler.RequestUrls.Count);
+        Assert.DoesNotContain("gameVersion", handler.RequestUrls[1]);
+    }
+
+    [Fact]
+    public async Task FindBestFileAsync_Empty200_InvalidVersion_SelectsFromUnfilteredPool()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50&gameVersion=26.2", """{"data":[]}""");
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50", FilesJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var best = await svc.FindBestFileAsync(100, "26.2");
+
+        Assert.NotNull(best); // 降级后从全池选——不再误报「没有适配文件」
+        Assert.Equal("Sodium 0.5.11", best.displayName);
+    }
+
+    [Fact]
+    public async Task SearchAsync_Empty200_NoQuery_DowngradesAndFlags()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/search?gameId=432&classId=6552&gameVersion=26.2&sortField=1&sortOrder=desc&index=0&pageSize=20", """{"data":[],"pagination":{"totalCount":0}}""");
+        handler.RouteJson("api.curseforge.com/v1/mods/search", ProjectJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var page = await svc.SearchAsync(ProjectType.Shader, gameVersion: "26.2");
+
+        Assert.NotNull(page);
+        Assert.True(page.VersionFilterDropped);
+        Assert.Single(page.Projects);
+        Assert.Equal(2, handler.RequestUrls.Count);
+    }
+
+    [Fact]
+    public async Task SearchAsync_Empty200_WithQuery_NoDowngrade()
+    {
+        // 带搜索词 0 结果大概率词不匹配——不降级（否则状态栏误导「版本不支持过滤」）
+        var handler = new CfStubHandler();
+        handler.RouteJson("api.curseforge.com/v1/mods/search", """{"data":[],"pagination":{"totalCount":0}}""");
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var page = await svc.SearchAsync(ProjectType.Shader, query: "fabric-loader-0.19.3-26.2 fabric", gameVersion: "26.2");
+
+        Assert.NotNull(page);
+        Assert.False(page.VersionFilterDropped);
+        Assert.Empty(page.Projects);
+        Assert.Single(handler.RequestUrls); // 不降级：恰 1 请求
+    }
+
+    // ---------- 8-19 补 2：GetFilesWithFallbackAsync（VM 详情页用 dropped 感知版本） ----------
+
+    [Fact]
+    public async Task GetFilesWithFallbackAsync_26_2_ReturnsAllAndDroppedTrue()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50&gameVersion=26.2", """{"data":[]}""");
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50", FilesJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var (files, dropped) = await svc.GetFilesWithFallbackAsync(100, "26.2", default);
+
+        Assert.True(dropped);   // 年份号空 → 降级全量
+        Assert.Single(files);
+        Assert.Equal(2, handler.RequestUrls.Count);
+        Assert.DoesNotContain("gameVersion", handler.RequestUrls[1]);
+    }
+
+    [Fact]
+    public async Task GetFilesWithFallbackAsync_TraditionalVersion_FilteredAndDroppedFalse()
+    {
+        var handler = new CfStubHandler();
+        handler.RouteJsonFull("/v1/mods/100/files?pageSize=50&gameVersion=1.21.1", FilesJson);
+        var svc = new CurseForgeService("test-key", new HttpClient(handler));
+
+        var (files, dropped) = await svc.GetFilesWithFallbackAsync(100, "1.21.1", default);
+
+        Assert.False(dropped);      // 传统版本正常过滤：不降级
+        Assert.Single(files);
+        Assert.Single(handler.RequestUrls); // 恰 1 请求
+    }
+
 }

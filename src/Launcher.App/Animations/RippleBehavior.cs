@@ -7,7 +7,6 @@ using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Controls.Shapes;
-using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 namespace Launcher.App.Animations;
@@ -71,39 +70,28 @@ public static class RippleBehavior
         var pos = e.GetPosition(host);
         var maxR = Math.Max(host.Bounds.Width, host.Bounds.Height) * 1.2;
         // Google 涟漪：扩散色 = 点击变深（BgBase #14181F——比所有按钮底色更暗；BgActive 反而比底色亮会显"白影"）
+        // 一次布局定位（Canvas 坐标固定，圆心恒在按压点）+ 每帧只动 ScaleTransform/Opacity（零布局写、零分配）
         var ellipse = new Ellipse
         {
-            Width = 0,
-            Height = 0,
+            Width = maxR * 2,                 // 终尺寸一次定死（布局只发生一次）
+            Height = maxR * 2,
             Fill = new SolidColorBrush(Color.Parse("#14181F")),
             IsHitTestVisible = false,
+            RenderTransform = new ScaleTransform(0, 0), // 预置 0，防首帧闪全尺寸；圆心=默认 50%,50%=按压点
+            Opacity = 0.9,
         };
-        Canvas.SetLeft(ellipse, pos.X);
-        Canvas.SetTop(ellipse, pos.Y);
+        Canvas.SetLeft(ellipse, pos.X - maxR);
+        Canvas.SetTop(ellipse, pos.Y - maxR);
         host.Children.Add(ellipse);
 
-        // 扩散 + 淡出（~390ms 能看清；结束移除避免累积椭圆）
-        var steps = 26;
-        var i = 0;
+        // 扩散 + 淡出（390ms 能看清；结束移除避免累积椭圆）。e2 数学与原版等价：半径 = e2·maxR
         var ease = new CubicEaseOut();
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
-        timer.Tick += (_, _) =>
+        UiAnim.Animate(390, UiAnim.Curves.Linear, e =>
         {
-            i++;
-            var t = Math.Min(1.0, i / (double)steps);
-            var e2 = ease.Ease(t);
-            var r = maxR * e2;
-            ellipse.Width = r * 2;
-            ellipse.Height = r * 2;
-            Canvas.SetLeft(ellipse, pos.X - r);
-            Canvas.SetTop(ellipse, pos.Y - r);
+            var e2 = ease.Ease(e);
+            var st = (ScaleTransform)ellipse.RenderTransform!;
+            st.ScaleX = st.ScaleY = e2;
             ellipse.Opacity = 0.9 * (1 - e2); // 起始近乎不透明，扩散中淡出
-            if (t >= 1.0)
-            {
-                timer.Stop();
-                host.Children.Remove(ellipse);
-            }
-        };
-        timer.Start();
+        }, () => host.Children.Remove(ellipse), ellipse);
     }
 }

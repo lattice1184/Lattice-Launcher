@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Text;
+using Launcher.Core.Launch;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Server;
 
@@ -28,7 +30,7 @@ public sealed class ServerProcess : IDisposable
     public event Action<int>? Exited;
 
     /// <summary>启动服务端（javaPath 自动选配由调用方解析；此处直用）</summary>
-    public void Start(string serverDir, string javaPath, int memoryMb)
+    public void Start(string serverDir, string javaPath, int memoryMb, GamePriority priority = GamePriority.Normal)
     {
         lock (_lock)
         {
@@ -64,6 +66,9 @@ public sealed class ServerProcess : IDisposable
             };
             if (!_process.Start())
                 throw new InvalidOperationException("服务端进程启动失败");
+            // 进程优先级（与游戏同设置；失败走控制台提示，不崩）
+            try { if (priority != GamePriority.Normal) _process.PriorityClass = LaunchProcess.ToPriorityClass(priority); }
+            catch { OutputReceived?.Invoke("§ 设置进程优先级失败（已忽略）"); }
             _process.BeginOutputReadLine();
             _process.BeginErrorReadLine();
         }

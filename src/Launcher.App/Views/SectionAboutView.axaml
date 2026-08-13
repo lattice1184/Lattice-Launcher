@@ -6,21 +6,60 @@
 
     <!-- 关于 / 卸载（善后：删除启动器本体 + 应用数据 + 游戏目录，不留一个东西） -->
     <Border Classes="setting-group">
-        <StackPanel Spacing="8">
+        <StackPanel Spacing="10">
             <TextBlock Text="关于" Classes="group-header"/>
-            <TextBlock Text="Lattice Launcher · 基于 Avalonia / .NET 10 · PCL.Core (Apache-2.0)" Classes="dim" FontSize="11"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Lattice Launcher" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12" VerticalAlignment="Bottom"/>
+            </StackPanel>
+            <TextBlock Text="用 Avalonia / .NET 10 做的，核心来自开源的 PCL Community（Apache-2.0 协议）" Classes="dim" FontSize="11"/>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
                 <Button Content="卸载启动器" Classes="danger" Padding="14,6" Click="OnUninstall"/>
-                <TextBlock Text="将删除启动器本体、应用数据及游戏目录（含存档），删除后无法恢复。"
-                           Classes="dim" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="删启动器本体、设置账号日志和游戏目录，含世界存档，找不回来。点完还会再确认一次"><Path/></Border>
             </StackPanel>
+            <TextBlock Text="删除后无法恢复" Classes="status-error" FontSize="11"/>
 
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="启动时随机小提示（彩蛋）" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="启动时随机小提示" Classes="setting-label" VerticalAlignment="Center"/>
                 <ToggleSwitch IsChecked="{Binding StartupTipEnabled}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="启动游戏时随机弹一条彩蛋。改了下次启动生效"
+                           VerticalAlignment="Center"><Path/></Border>
             </StackPanel>
-            <TextBlock Text="下次启动生效" Classes="dim" FontSize="11"/>
+
+            <!-- 最近更新（改动最大的几条功能与修复） -->
+            <TextBlock Text="最近更新" Classes="setting-label" Margin="0,8,0,0"/>
+            <ItemsControl ItemsSource="{Binding ChangelogItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Classes="dim" FontSize="11" TextWrapping="Wrap" Margin="0,1,0,1"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 开源声明 / 第三方依赖 -->
+            <TextBlock Text="开源声明" Classes="setting-label" Margin="0,8,0,0"/>
+            <ItemsControl ItemsSource="{Binding ProjectNotices}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" Classes="dim" FontSize="11" TextWrapping="Wrap"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Expander Header="第三方依赖清单" FontSize="12">
+                <ItemsControl ItemsSource="{Binding ThirdPartyPackages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock FontSize="11" Classes="dim" TextWrapping="Wrap">
+                                <Run Text="{Binding Name}"/><Run Text=" · "/><Run Text="{Binding Version}"/><Run Text=" · "/><Run Text="{Binding License}"/>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Expander>
         </StackPanel>
     </Border>
 </UserControl>

@@ -43,7 +43,7 @@ public class DownloadTaskGroupStateTests
     public async Task GroupChildFails_ParentStateFailed_WhenUiPostDeferred()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var task = mgr.EnqueueGroup("组", (g, _) =>
         {
             g.AddChild("坏", 1, (_, _) => throw new InvalidOperationException("下载失败"));
@@ -61,7 +61,7 @@ public class DownloadTaskGroupStateTests
     public async Task GroupAllChildrenOk_ParentCompleted()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var task = mgr.EnqueueGroup("组", (g, _) =>
         {
             g.AddChild("好", 1, (_, _) => Task.CompletedTask);
@@ -78,7 +78,7 @@ public class DownloadTaskGroupStateTests
     public async Task LeafFails_StateFailed()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var task = mgr.Enqueue("叶子", (_, _) => throw new InvalidOperationException("坏"));
 
         await task.Completion;
@@ -102,7 +102,7 @@ public class DownloadTaskGroupStateTests
     public async Task LeafNetworkFailure_AutoRetriesOnce_ThenSucceeds()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var calls = 0;
         var task = mgr.Enqueue("重试成功", (_, _) =>
         {
@@ -110,19 +110,20 @@ public class DownloadTaskGroupStateTests
             return Task.CompletedTask;
         });
 
-        await task.Completion;
-        ctx.Drain();
+        // REVIEW-B2：Completion 延迟到真正终态（自动重试成功后）——重试链由 ctx 队列驱动，先泵到终态
         await DrainUntil(ctx, () => task.State == DownloadTaskState.Completed);
+        await task.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.Equal(2, calls); // 首败 + 自动重试一次
         Assert.Equal(DownloadTaskState.Completed, task.State);
     }
 
     [Fact]
-    public async Task LeafNetworkFailure_TwiceFails_ExactlyOneRetry()
+    public async Task LeafNetworkFailure_ThreeAttempts_ThenCheckNetwork()
     {
+        // AL69.1 多轮机会：网络类失败自动重试 2 次（共 3 次尝试）——全部耗尽才给网络建议
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var calls = 0;
         var task = mgr.Enqueue("重试仍败", (_, _) =>
         {
@@ -130,22 +131,27 @@ public class DownloadTaskGroupStateTests
             throw new HttpRequestException("网络超时");
         });
 
-        await task.Completion;
+        // REVIEW-B2：Completion 延迟到真正终态——先泵队列驱动 2 次自动重试全部耗尽
+        // （第 2 次重试延迟 3s——循环要长过 2s 的 DrainUntil）
+        for (var i = 0; i < 600 && !(task.State == DownloadTaskState.Failed && calls >= 3); i++)
+        {
+            await Task.Delay(10);
+            ctx.Drain();
+        }
         ctx.Drain();
-        await DrainUntil(ctx, () => task.State == DownloadTaskState.Failed && calls >= 2);
-        ctx.Drain();
+        await task.Completion.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(2, calls); // 恰一次自动重试，不无限重试
+        Assert.Equal(3, calls); // 初始 + 2 次自动重试，不无限重试
         Assert.Equal(DownloadTaskState.Failed, task.State);
         Assert.NotNull(task.Diagnosis);
-        Assert.Equal(FixKind.CheckNetwork, task.Diagnosis!.Fix); // 重试仍败 → 网络建议
+        Assert.Equal(FixKind.CheckNetwork, task.Diagnosis!.Fix); // 重试耗尽仍败 → 网络建议
     }
 
     [Fact]
     public async Task LeafFailure_Canceled_NoAutoRetry()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var calls = 0;
         var task = mgr.Enqueue("取消", (_, c) =>
         {
@@ -153,6 +159,8 @@ public class DownloadTaskGroupStateTests
             c.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         });
+        // 等 work 实际执行（Gated 异步调度——Cancel 抢在 work 前会变成「排队取消」，calls 仍 0）
+        for (var i = 0; i < 200 && calls == 0; i++) await Task.Delay(10);
         task.Cancel();
 
         await task.Completion;
@@ -167,7 +175,7 @@ public class DownloadTaskGroupStateTests
     public async Task LeafUnknownException_NoAutoRetry_NoDiagnosis()
     {
         var ctx = new DeferredSyncContext();
-        var mgr = new DownloadManager(ctx);
+        var mgr = new DownloadManager(ctx, 0);
         var calls = 0;
         var task = mgr.Enqueue("未知", (_, _) =>
         {

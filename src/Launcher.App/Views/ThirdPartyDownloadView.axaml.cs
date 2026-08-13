@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class ThirdPartyDownloadView : UserControl
@@ -21,5 +22,7 @@ public partial class ThirdPartyDownloadView : UserControl
         });
         if (folders.Count > 0 && folders[0].Path.IsAbsoluteUri)
             vm.ApplyDir(folders[0].Path.LocalPath);
-    }
+    
+}
+
 }

@@ -234,7 +234,7 @@ public partial class ServerViewModel : ViewModelBase
                         var ok = await DialogService.Warn(owner, $"服务端启动失败（exitCode={code}）",
                             string.Join(Environment.NewLine + Environment.NewLine, diag.Select(d => d.Explanation))
                             + (fixable
-                                ? Environment.NewLine + Environment.NewLine + "检测到服务端文件问题，可自动重新下载服务端并重启。"
+                                ? Environment.NewLine + Environment.NewLine + "检测到服务端文件问题。你可以让它自动重下服务端再重启。"
                                 : "")
                             + Environment.NewLine + Environment.NewLine + "完整日志可在控制台复制或导出。",
                             "服务端异常退出", fixable ? "自动修复并重新启动" : "知道了", fixable ? "取消" : "");
@@ -566,7 +566,7 @@ public partial class ServerViewModel : ViewModelBase
 
     /// <summary>前提不满足警告：未选版本（红字加粗原因 + 说明）</summary>
     private static async Task WarnNoVersion() =>
-        await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
+        await DialogService.Warn(DialogService.MainWindow(), "你还没选版本",
             "选顶部要开服的已装版本再继续。", "无法继续", "知道了", "");
 
     /// <summary>下载服务端并自动启动（弹窗"立即下载并启动"确认后走这里；下载完成前提已满足直接 StartServer）</summary>
@@ -664,16 +664,29 @@ public partial class ServerViewModel : ViewModelBase
                 return;
             }
         }
-        var java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
-            ? custom
-            : PickServerJava(VersionGameDir(version), version.Name);
-        var mem = LauncherSettings.Current.ServerMemoryMb > 0
-            ? LauncherSettings.Current.ServerMemoryMb
-            : 2048;
+        // REVIEW-D 高1：Java 选配曾在本 try 外——PickServerJava 找不到匹配版本时 throw 直接外抛：
+        // 普通启动路径静默失败（无提示无状态），一键开服路径 _oneClickActive 永不复位卡死流程（高2 同源）。
+        string java;
+        int mem;
+        try
+        {
+            java = LauncherSettings.Current.JavaPath is { } custom && File.Exists(custom)
+                ? custom
+                : PickServerJava(VersionGameDir(version), version.Name);
+            mem = LauncherSettings.Current.ServerMemoryMb > 0
+                ? LauncherSettings.Current.ServerMemoryMb
+                : 2048;
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"启动失败: {ex.Message}", error: true);
+            NotificationService.Error(ex.Message);
+            return;
+        }
         try
         {
             Logs.Clear();
-            _process.Start(dir, java, mem);
+            _process.Start(dir, java, mem, LauncherSettings.Current.GamePriority); // 与游戏同进程优先级设置
             IsRunning = true;
             Status = "服务端运行中，可在控制台输入命令。";
             AppendLog($"§ 已启动：{java}");

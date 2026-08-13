@@ -31,14 +31,17 @@ public sealed class LoaderService
     private readonly HttpClient _http;
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
+    private readonly string? _loaderProfileCacheDir;
     // AL29 测试缝：真实环境跑 java 安装器进程；测试注入 stub（控制退出码与写文件行为）
     private readonly Func<string, string[], Action<string>?, CancellationToken, Task<int>> _installerProcess;
 
     public LoaderService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
-        Func<string, string[], Action<string>?, CancellationToken, Task<int>>? installerProcess = null)
+        Func<string, string[], Action<string>?, CancellationToken, Task<int>>? installerProcess = null,
+        string? loaderProfileCacheDir = null) // REVIEW-前摇：profile json 缓存目录（测试注入临时目录隔离全局 AppData）
     {
+        _loaderProfileCacheDir = loaderProfileCacheDir;
         // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        _http = http ?? new HttpClient(HttpClientPool.SharedHandler) { Timeout = TimeSpan.FromSeconds(20) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         // 探针实测 08-09：不传 downloads 时自建服务必须带 gameDirectory，否则内部下载写到
         // GameDirectory.Detect()（默认安装位）而本服务 gameDirectory 指向别处 → Verify 查错目录报"缺文件"
@@ -229,6 +232,9 @@ public sealed class LoaderService
 
     private string? _lastInstalledVersionId;
 
+    /// <summary>上次安装的加载器版本 id（Forge/NeoForge 安装器生成；Fabric/Quilt meta 写入）——整合包导入改名用</summary>
+    public string? LastInstalledVersionId => _lastInstalledVersionId;
+
     private async Task InstallCoreAsync(LoaderInstallPlan plan, DownloadProgressHandler? progress,
         DownloadGroupContext? ctx, CancellationToken ct)
     {
@@ -247,11 +253,27 @@ public sealed class LoaderService
         // （否则版本页把失败的安装计为「本启动器已装」，实测 22:41 真机即此错误）
         if (_lastInstalledVersionId is { } id)
         {
-            VerifyInstalledVersion(id);
+            await VerifyInstalledVersionAsync(id);
             InstallMarker.Mark(_gameDirectory, id);
             // 附带安装 Fabric API（用户勾选时）：失败只记日志不阻断——加载器已装完，API 是增强
             if (plan is { Kind: LoaderKind.Fabric, InstallFabricApi: true })
-                await InstallFabricApiAsync(id, plan.McVersion, ct);
+            {
+                if (ctx is not null)
+                {
+                    // REVIEW-卡完成：fabric-api 挂组内子任务（有进度/速度/Stage）——旧代码组路径下
+                    // progress 参数无效 → 主任务「148.5/148.5 满进度 + 2.8MB/s 在下载」却无任何表达
+                    // （真机 8-11 用户误以为引擎坏了）；子任务 weight=0 不定条 + 下载速度可见
+                    await ctx.AddChild("Fabric API", 0,
+                        (p, c) => InstallFabricApiAsync(id, plan.McVersion, c,
+                            new ProgressReporter("正在下载 Fabric API…", p))).Completion;
+                }
+                else
+                {
+                    // AL46.1：非组路径的进度表达——主文件 100% 后不静默（Modrinth 查询/下载 30s 兜底）
+                    progress?.Invoke(new DownloadProgress("正在附带安装 Fabric API…", null, 0, 0, 0));
+                    await InstallFabricApiAsync(id, plan.McVersion, ct);
+                }
+            }
         }
     }
 
@@ -261,20 +283,31 @@ public sealed class LoaderService
     /// 任何失败/无版本都静默（Debug.WriteLine）——26.2 等新版本 Modrinth 可能还没有 fabric-api 发布。
     /// 不用 ctx.AddChild：失败子任务会把下载组置 Failed（LoaderServiceTests 已验证该语义）。
     /// </summary>
-    private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct)
+    private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct,
+        ProgressReporter? rep = null)
     {
         try
         {
+            // AL46.1：Modrinth 境外慢——30s 超时兜底（实测卡 2 分钟不可接受）；超时走 catch 静默
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            var c2 = timeout.Token;
             var eco = new EcosystemService(_http, _downloads, _gameDirectory);
-            var project = await eco.GetProjectAsync("fabric-api", ct);
-            var versions = await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", ct);
-            var best = EcosystemService.SelectBestVersion(versions);
+            var project = await eco.GetProjectAsync("fabric-api", c2);
+            var versions = await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", c2);
+            // 8-19：GetVersionsAsync 对年份号（26.2）会降级返回全量——fabric-api 必须精确匹配 mcVersion
+            // 构建（26.2 无对应构建则保持静默跳过——防装 1.21.6 构建进 26.2 实例崩，fabric.mod.json 版本锁定）
+            var best = EcosystemService.SelectBestVersion(
+                versions.Where(v => v.GameVersions?.Contains(mcVersion) == true));
             if (best is null)
             {
                 Debug.WriteLine($"[Loader] {mcVersion} 无 fabric-api 版本，跳过");
                 return;
             }
-            await eco.InstallAsync(project.Id, best, versionId, ProjectType.Mod, ct: ct);
+            // REVIEW-卡完成：reporter 透传——组内子任务有真实下载速度（真机 2.8MB/s 可见）+ 节流
+            await eco.InstallAsync(project.Id, best, versionId, ProjectType.Mod,
+                rep is null ? null : p => rep.Report(p.FileBytesDone, p.FileTotalBytes), c2);
+            rep?.Complete();
             Debug.WriteLine($"[Loader] Fabric API {best.VersionNumber} 已装到 {versionId}/mods");
         }
         catch (Exception ex)
@@ -296,9 +329,11 @@ public sealed class LoaderService
             await ctx.AddChild($"加载器配置 {plan.Kind}", 0, async (p, c) =>
             {
                 // AL40：文案明确——「正在安装加载器」让用户知道卡在加载器（meta 源国内慢），
-                // 而非笼统的「排队等待」/「下载中」让人误以为 UI 卡死
-                p(new DownloadProgress("正在安装加载器…", null, 0, 0, 0));
-                var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, c);
+                // 而非笼统的「排队等待」/「下载中」让人误以为 UI 卡死。
+                // REVIEW-治本：ProgressReporter 统一上报（阶段文字即时可见——meta 拉取 2-26s
+                // 期间用户看到明确文字而非「下载中」死寂）
+                var rep = new ProgressReporter("正在拉取加载器信息…", p);
+                var json = await FetchProfileJsonAsync(plan, c); // REVIEW-前摇：profile json 磁盘缓存（内容由 mc+loader 版本确定，永不变）
                 version = JsonSerializer.Deserialize<VersionJson>(json)
                     ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
                 var id = VersionInstaller.SafeId(version.Id);
@@ -306,7 +341,8 @@ public sealed class LoaderService
                 var versionDir = Path.Combine(_gameDirectory, "versions", id);
                 Directory.CreateDirectory(versionDir);
                 await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, c);
-                p(new DownloadProgress("加载器配置完成", null, 0, 0, 100));
+                rep.ReportStage("加载器配置完成");
+                rep.Complete();
             }).Completion;
 
             await _downloads.DownloadVersionAsync(version!, ctx, null, ct);
@@ -315,7 +351,7 @@ public sealed class LoaderService
 
         progress?.Invoke(new DownloadProgress("查询加载器版本", null, 0, 0, 0));
 
-        var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, ct);
+        var json = await FetchProfileJsonAsync(plan, ct); // REVIEW-前摇：profile json 磁盘缓存
         var legacyVersion = JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException("加载器版本 JSON 解析失败");
         var id = VersionInstaller.SafeId(legacyVersion.Id);
@@ -390,9 +426,32 @@ public sealed class LoaderService
             """{"clientToken":"","launcherVersion":1,"profiles":{},"settings":{},"selectedProfile":null}""");
     }
 
+    /// <summary>REVIEW-前摇：加载器 profile json 磁盘缓存——内容由 (kind, mc, loaderVersion) 三元组完全确定，
+    /// 永不变更，网络拉取（meta 源国内 2-26s）纯属浪费。命中秒开，未命中拉取后落盘。</summary>
+    private async Task<string> FetchProfileJsonAsync(LoaderInstallPlan plan, CancellationToken ct)
+    {
+        var cacheDir = _loaderProfileCacheDir ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Launcher", "cache", "loader-profiles");
+        var cachePath = Path.Combine(cacheDir, $"{plan.Kind}-{plan.McVersion}-{plan.LoaderVersion}.json");
+        if (File.Exists(cachePath))
+        {
+            try { return await File.ReadAllTextAsync(cachePath, ct); }
+            catch { /* 损坏则重拉 */ }
+        }
+        var json = await _http.GetStringAsync(plan.ProfileJsonUrl!, ct);
+        try
+        {
+            Directory.CreateDirectory(cacheDir);
+            await File.WriteAllTextAsync(cachePath, json, ct);
+        }
+        catch { /* 缓存失败不影响安装 */ }
+        return json;
+    }
+
     /// <summary>AL29 H3/H6 补位：安装完成 != 文件完整——安装器内部下载（Forge/NeoForge）与
     /// 下载阶段静默跳过（Fabric/Quilt）都沿版本 json 全量校验，缺失如实报错（与 VersionInstaller 同口径）。</summary>
-    private void VerifyInstalledVersion(string versionId)
+    private async Task VerifyInstalledVersionAsync(string versionId)
     {
         var jsonPath = Path.Combine(_gameDirectory, "versions", versionId, $"{versionId}.json");
         if (!File.Exists(jsonPath))
@@ -400,14 +459,17 @@ public sealed class LoaderService
         VersionJson version;
         try { version = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(jsonPath))!; }
         catch { throw new InvalidOperationException($"版本 {versionId} 安装完成但版本 json 解析失败"); }
-        var missing = AutoRepairService.VerifyVersion(version, _gameDirectory);
-        if (missing.Count > 0)
+        var report = await AutoRepairService.VerifyVersionAsync(version, _gameDirectory);
+        if (!report.IsComplete)
             throw new InvalidOperationException(
-                $"安装完成但文件不完整：缺 {missing.Count} 个文件（首例：{missing[0]}）。可重新下载补全");
+                $"安装完成但文件不完整：缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）。可重新下载补全");
     }
 
     /// <summary>安装器写出的版本目录名不确定 → 取最近修改的版本目录（带 {id}.json）。
-    /// AL29 Test 4 实证：目录 mtime 在 NTFS 有缓存延迟（刚写入会排错序）→ 改按目录内 {id}.json 的文件 mtime 排序。</summary>
+    /// AL29 Test 4 实证：目录 mtime 在 NTFS 有缓存延迟（刚写入会排错序）→ 改按目录内 {id}.json 的文件 mtime 排序。
+    /// REVIEW-flake：mtime 精确并列时（密集写入同刻落盘，真机/测试均出现过）稳定排序按枚举顺序取
+    /// 「1.21.10」父版本 → 校验/标记打在原版目录 → forge 版本页不显示已装。并列时优先带 inheritsFrom
+    /// 的 json——安装器（Forge/NeoForge）产出物必有该字段，原版 json 没有——确定性选对目标。</summary>
     private string? FindNewestVersionDir()
     {
         var versionsDir = Path.Combine(_gameDirectory, "versions");
@@ -415,8 +477,20 @@ public sealed class LoaderService
         return Directory.EnumerateDirectories(versionsDir)
             .Where(d => File.Exists(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
             .OrderByDescending(d => File.GetLastWriteTime(Path.Combine(d, $"{Path.GetFileName(d)}.json")))
+            .ThenByDescending(d => JsonInheritsFrom(Path.Combine(d, $"{Path.GetFileName(d)}.json")) is not null)
             .Select(Path.GetFileName)
             .FirstOrDefault();
+    }
+
+    /// <summary>版本 json 的 inheritsFrom 字段（null = 原版/独立版本——非安装器产出物）</summary>
+    private static string? JsonInheritsFrom(string jsonPath)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(jsonPath));
+            return doc.RootElement.TryGetProperty("inheritsFrom", out var v) ? v.GetString() : null;
+        }
+        catch { return null; } // 解析失败视为无继承（校验环节会如实报错）
     }
 
     /// <summary>加载器版本 JSON 通过 inheritsFrom 继承原版，父版本必须已安装</summary>

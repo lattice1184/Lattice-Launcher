@@ -3,6 +3,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class SectionGameDirView : UserControl
@@ -23,7 +24,9 @@ public partial class SectionGameDirView : UserControl
         });
         if (folders.Count > 0 && folders[0].Path.IsAbsoluteUri)
             Vm.ApplyGameDirectory(folders[0].Path.LocalPath);
-    }
+    
+}
 
     private void OnResetGameDir(object? sender, RoutedEventArgs e) => Vm?.ResetGameDirectory();
+
 }

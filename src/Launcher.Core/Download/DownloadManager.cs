@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Download;
 
@@ -13,6 +14,7 @@ public sealed class DownloadManager
 
     private readonly SynchronizationContext? _ui;
     private int _activeCount;
+    private readonly SemaphoreSlim _gate;
 
     public ObservableCollection<DownloadTask> Tasks { get; } = [];
 
@@ -25,7 +27,17 @@ public sealed class DownloadManager
     public DownloadManager() : this(SynchronizationContext.Current) { }
 
     /// <summary>显式同步上下文（测试传 null = Post 同步直跑，不依赖当前线程上下文）</summary>
-    public DownloadManager(SynchronizationContext? syncContext) => _ui = syncContext;
+    public DownloadManager(SynchronizationContext? syncContext)
+        : this(syncContext, LauncherSettings.Current.MaxConcurrentDownloads) { }
+
+    /// <summary>测试注入并发上限（0 = 不限）</summary>
+    public DownloadManager(SynchronizationContext? syncContext, int maxConcurrentDownloads)
+    {
+        _ui = syncContext;
+        // AL65 全局并发门：设置里「最大并发下载数」>0 时同时跑的任务数受限，
+        // 超出的排队（Queued 状态显示「排队等待…」）——多任务不再无限并行抢带宽
+        _gate = new SemaphoreSlim(maxConcurrentDownloads > 0 ? maxConcurrentDownloads : int.MaxValue);
+    }
 
     /// <summary>
     /// 入队单个文件任务。sourceUrl/targetPath 供下载历史「重新下载 / 打开位置」使用（第三方下载传入，其余为 null）。
@@ -33,7 +45,7 @@ public sealed class DownloadManager
     public DownloadTask Enqueue(string name, Func<DownloadProgressHandler, CancellationToken, Task> work,
         string? sourceUrl = null, string? targetPath = null)
     {
-        var task = new DownloadTask(name, work, _ui)
+        var task = new DownloadTask(name, Gated(work), _ui)
         {
             SourceUrl = sourceUrl,
             TargetPath = targetPath,
@@ -45,10 +57,19 @@ public sealed class DownloadManager
     /// <summary>组任务：子任务不进 Tasks、不计 ActiveCount（组算 1）</summary>
     public DownloadTask EnqueueGroup(string name, Func<DownloadGroupContext, CancellationToken, Task> groupWork)
     {
-        var task = new DownloadTask(name, groupWork, _ui);
+        var task = new DownloadTask(name, Gated(groupWork), _ui);
         AddAndTrack(task);
         return task;
     }
+
+    /// <summary>全局并发门包装（AL65）：排队等待 → 启动 → 完成释放；取消时 WaitAsync 抛 OCE</summary>
+    private Func<TArg, CancellationToken, Task> Gated<TArg>(Func<TArg, CancellationToken, Task> inner)
+        => async (arg, ct) =>
+        {
+            await _gate.WaitAsync(ct);
+            try { await inner(arg, ct); }
+            finally { _gate.Release(); }
+        };
 
     private void AddAndTrack(DownloadTask task)
     {

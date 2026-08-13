@@ -12,7 +12,7 @@
         <!-- 任务行内容（组任务的 Expander Header 与叶子任务共用） -->
         <DataTemplate x:Key="TaskRow" x:DataType="core:DownloadTask">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
-                <TextBlock Text="{Binding Name}" Foreground="{StaticResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
                 <Border Grid.Column="1" CornerRadius="{StaticResource RadiusSmall}" Padding="7,2"
                         Background="{Binding State, Converter={x:Static app:StateBadgeConverter.Background}}"
                         VerticalAlignment="Center">
@@ -39,7 +39,7 @@
         <DataTemplate x:Key="QueuePanel" x:DataType="vm:DownloadViewModel">
             <DockPanel>
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
-                    <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
                     <Button Grid.Column="1" Content="继续" Classes="ghost" Padding="10,4"
                             Command="{Binding ResumeAllCommand}" IsVisible="{Binding HasPaused}"/>
                     <Button Grid.Column="2" Content="暂停全部" Classes="ghost" Padding="10,4"
@@ -47,6 +47,23 @@
                     <Button Grid.Column="3" Content="清除已完成" Classes="ghost" Padding="10,4"
                             Command="{Binding ClearFinishedCommand}"/>
                 </Grid>
+
+                <!-- 网络诊断（AL65）：各源通断 + 响应耗时——卡住时一眼看到问题源 -->
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="网络：" Classes="dim" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ItemsControl ItemsSource="{Binding NetworkStatus}" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DownloadViewModel+NetworkSourceVM">
+                                <TextBlock Text="{Binding Display}" Classes="dim" FontSize="11" Margin="0,0,10,0"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="测速" Classes="ghost" FontSize="10" Padding="8,2"
+                            Command="{Binding CheckNetworkCommand}" VerticalAlignment="Center"/>
+                </WrapPanel>
 
                 <ScrollViewer>
                     <StackPanel>
@@ -61,17 +78,17 @@
                                         <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,2">
                                             <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11"/>
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
-                                                       Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                                       Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
                                             <Button Grid.Column="2" Content="重下" Classes="ghost" FontSize="10" Padding="6,1"
                                                     IsVisible="{Binding SourceUrl, Converter={x:Static ObjectConverters.IsNotNull}}"
                                                     Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).RedownloadCommand}"
                                                     CommandParameter="{Binding}"
-                                                    ToolTip.Tip="用原链接重新下载到同一目录"/>
+                                                    ToolTip.Tip="用原链接重新下载，还放到同一个文件夹"/>
                                             <Button Grid.Column="3" Content="位置" Classes="ghost" FontSize="10" Padding="6,1"
                                                     IsVisible="{Binding TargetPath, Converter={x:Static ObjectConverters.IsNotNull}}"
                                                     Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).OpenHistoryLocationCommand}"
                                                     CommandParameter="{Binding}"
-                                                    ToolTip.Tip="在资源管理器中定位该文件"/>
+                                                    ToolTip.Tip="在资源管理器里帮你定位到这个文件"/>
                                             <TextBlock Grid.Column="4" Text="{Binding State}" FontSize="11"
                                                        Foreground="{Binding State, Converter={x:Static app:HistoryStateBrushConverter.Instance}}"/>
                                             <TextBlock Grid.Column="5" Text="{Binding Error}" FontSize="11"
@@ -96,9 +113,9 @@
                                                     <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
                                                                TextTrimming="CharacterEllipsis"/>
                                                     <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
-                                                        <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                                        <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                                        <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                     </Grid>
                                                 </Grid>
                                             </Expander.Header>
@@ -107,12 +124,12 @@
                                                     <DataTemplate x:DataType="core:DownloadTask">
                                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
                                                             <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
-                                                                       Foreground="{StaticResource TextSecondary}"/>
+                                                                       Foreground="{DynamicResource TextSecondary}"/>
                                                             <ProgressBar Grid.Column="1" Value="{Binding ProgressPercent}" Maximum="100"
                                                                          Width="64" Height="4" VerticalAlignment="Center"
                                                                          IsIndeterminate="{Binding !HasProgress}"/>
                                                             <TextBlock Grid.Column="2" Text="{Binding ChildProgressText}" FontSize="11"
-                                                                       Foreground="{StaticResource TextDim}" Width="34" TextAlignment="Right"/>
+                                                                       Foreground="{DynamicResource TextDim}" Width="34" TextAlignment="Right"/>
                                                         </Grid>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
@@ -127,9 +144,9 @@
                                             <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="5"
                                                          IsIndeterminate="{Binding !HasProgress}"/>
                                             <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
-                                                <TextBlock Text="{Binding SpeedText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
-                                                <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{StaticResource TextDim}" FontSize="11"/>
+                                                <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                             </Grid>
                                         </StackPanel>
                                     </Grid>

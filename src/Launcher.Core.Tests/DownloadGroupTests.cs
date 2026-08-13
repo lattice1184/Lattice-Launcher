@@ -13,7 +13,7 @@ public class DownloadGroupTests
     private static DownloadManager CreateManager()
     {
         SynchronizationContext.SetSynchronizationContext(null);
-        return new DownloadManager();
+        return new DownloadManager(null, 0);
     }
 
     [Fact]
@@ -60,6 +60,9 @@ public class DownloadGroupTests
             ctx.AddChild("slow.jar", 100, (p, c) => Task.Delay(Timeout.InfiniteTimeSpan, c));
             return gate.Task;
         });
+
+        // 等门放行、AddChild 落地后再 Cancel——否则级联目标还不存在（门排队时序竞态）
+        while (task.Children.Count == 0) await Task.Yield();
 
         task.Cancel();
         gate.SetResult();
@@ -143,7 +146,7 @@ public class DownloadGroupTests
     public async Task Group_ManyChildrenRapidAdd_NoCollectionModifiedCrash()
     {
         SynchronizationContext.SetSynchronizationContext(new AsyncPostContext());
-        var manager = new DownloadManager();
+        var manager = new DownloadManager(null, 0);
         try
         {
             // 规模收敛：8 轮 × 20 子任务（并发回归意图不变，降低线程池压力避免偶发饥饿）
@@ -231,11 +234,15 @@ public class DownloadGroupTests
             await hold.Task;
         });
 
-        // 等两个子任务都挂载（groupWork 在后台线程跑）——此时父已收敛 99%（封顶），
-        // 新子任务 0% 挂载后真实聚合 = 69.3%；修复前 clamp 拒绝下降 → 一直 100
+        // 等两个子任务都挂载（groupWork 在后台线程跑）——父已收敛 99%（封顶）。
+        // REVIEW-进度：聚合 percent 单调不减——新子任务 0% 挂载不拉低（进度条不跳），
+        // 但 BytesDone=total×percent 随新 total(1000) 推进（990 > 阶段 1 的 693）——卡死观感消除。
         for (var i = 0; i < 100 && task.Children.Count < 2; i++) await Task.Delay(10);
-        Assert.Equal(69.3, task.ProgressPercent, 1);
+        // REVIEW-节流：聚合 250ms 窗口合并 + 60ms 尾算——等尾算稳定再断言（不读节流中间态）
+        for (var i = 0; i < 100 && task.ProgressPercent < 99; i++) await Task.Delay(10);
+        Assert.Equal(99, task.ProgressPercent);
         Assert.Equal(1000, task.TotalBytes);
+        Assert.True(task.BytesDone > 700 * 99 / 100, $"字节应随新 total 推进（当前 {task.BytesDone}）");
 
         hold.SetResult();
         await task.Completion;

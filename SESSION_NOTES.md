@@ -1014,3 +1014,530 @@ Forge 整合包启动修复 + 启动命令日志增强 + 1B 显示修复
 - 探针目录:launcher/.probe/ + %TEMP%\lattice-probe(真实网络下载产物),#221 验收后再删
 - 发布：08-09 02:13 完成（自包含 79.7MB + 轻量版 44.5MB，签名 + 使用说明.txt）；自 08-08 联机第一批以来第 7 版
 - 今日开发日志：2026-08-09-开发记录.md（含版本统计表 / 联机完成时间回顾 / 明日待办）
+
+**2026-08-09 台风夜 AL45 完成:下载提速 + CF Key 本地代理 + 关于页开源声明（v15 待发布）**
+- A 下载提速:HttpClientPool 静态共享 SocketsHttpHandler(ConnectTimeout 5s/池寿命 5min/HTTP2 多路复用),6 服务注入;全流程连接复用
+- C 关于页:版本号 v0.1.0(SettingsViewModel.AppVersion←嵌入 PCL.metadata.json)+ 开源声明 5 条 + 第三方依赖清单 Expander(ThirdPartyLicenses.cs 手写静态清单)
+- B CF Key 本地代理(新项目 Lattice.KeyProxy):
+  - 架构:独立小 exe(http://localhost:8799,http.sys 回环免管理员),KEY 只在代理进程内存 + DPAPI 密文文件(%AppData%\Launcher\keyproxy\key.bin);启动器进程永远拿不到明文
+  - 端点:GET /v1/ping / POST /v1/migrate / GET /v1/* 转发(注入 x-api-key,剥离客户端伪造 header)
+  - 启动器改造:CurseForgeService 加 apiBase 参数(生产指代理);App 启动无条件拉起代理 + 首启迁移(明文 key 迁入后清空 settings);设置页 Key 输入行 → 状态行(✓ 托管/✗ 未运行)+ 检查按钮(带自愈重拉);搜索失败 TryCfSearchAsync 拉起代理重试一次
+  - 发布.ps1 加 [3/5] KeyProxy 发布步骤
+- **真机发现并解决:本机 .NET 连 CF CloudFront 必挂**——网络层对部分 13.226.69.x 丢 SYN,默认顺序试 IP 21s 超时;curl/裸 SslStream 正常。解法:代理 ConnectCallback 并行竞速全部解析 IP(4s/个),实测 0.3s 建连;同类问题还坑过 HttpWebRequest/WinHTTP(PS5.1 也超时)
+- 验收(真机 E2E):启动器拉起代理→migrate 迁移 378 字真实 key→settings 清空(只验证长度,不回显)→经代理打真实 CF 搜索 HTTP 200/0.3s 返回真实项目→设置页显示「✓ API Key 由本地代理托管」→关于页全字段渲染(UIA 文本验证)→407 测试全绿,构建 0 错误
+- 安全:测试全程用 dummy key;真实 key 只走了 DPAPI 加密落盘;测试残留 key.bin 保留(产品行为)
+- **路线图追加:Mica 样式(Windows 11 亚克力新材料)记入后续计划,本次不做**(用户 08-09 指示)
+- 软件内更新仍 deferred(无远端通道)
+- 未 commit(等用户确认);发布 v15 待用户跑 发布.ps1
+
+**2026-08-09 台风夜 AL46 动画丝滑度优化（对标 BHL，待用户真机验收）**
+- 对标确认：BHL = WPF .NET 8 原生（非 Electron），丝滑核心 = 状态色板平滑过渡 + 页面过渡 + Acrylic；我们差距 = hover 瞬跳 + 帧率（GC/布局动画）
+- P0 纯重构（视觉零变化）：UiAnim 内核加 Curves.Linear + slot 互斥粒度（hover 颜色与 scale 同 visual 共存）+ FrameStats（LATTICE_FRAMESTATS=1 开启，Release 也零开销）；SpringScale 迁 UiAnim + ConditionalWeakTable 持久 ScaleTransform（每帧零分配）；Ripple 迁 UiAnim + 变换化（一次布局定位，每帧只改 Scale/Opacity）
+- P1 行为平滑：UiAnim.TweenBrush 公共助手（150ms cubic 逐通道 Lerp，完成写回目标 brush）；HoverBrushBehavior 双向过渡（进入捕获基底色，退出动画回基底后 ClearValue 回落样式值）；导航/标题栏/设置菜单 code-behind 瞬跳全改 TweenBrush（激活态保持瞬跳+指示条滑动）；NavIndicator 一次性落定 + Transform 反向补偿（每帧 0 布局失效）
+- ExpandCollapse 保留 Height 动画（Scale 会拉伸文字；单元素可忽略）；Composition API 不做（低层实验性 + 收益趋零）
+- 验证：407 测试全绿、构建 0 错误；像素采样证明 hover 过渡中间态存在（60ms 截图介于基底与 hover 色之间）；UIA 冒烟（设置 5 分区/下载/主页切换无崩溃）
+- 帧率数字教训：UIA 驱动此应用每帧阻塞 10-124s（视觉树遍历极慢）→ 完全污染帧率测量，p99=18.9ms 说明 99% 帧正常；纯鼠标风暴因 RAF 只在动画期采样难出 2s 窗口。结构性收益（零分配+零布局动画）由代码保证，数值对比留待用户真机感受
+- 未 commit；待用户真机验收后提交
+
+**2026-08-09 AL47 整合包拖入导入（完成，待真机手测拖拽）**
+- 三格式解析（ModpackImporter）：自家 manifest.json / CurseForge zip（minecraft 对象判别）/ Modrinth mrpack（modrinth.index.json + downloads 直链）；ResolvePackId 重名消解、ExtractZipEntries 通用解压、ParseCfModLoader
+- 安装编排（ModpackInstaller 新文件）：基座四路（无 loader CopyVersion / Fabric+Quilt meta profile 重写 / Forge+NeoForge 安装器+改名），loader 声明版本优先+最新回退；mrpack 直链下载（并发门 4）+ overrides 去前缀；CF zip 解压优先（跳过 manifest/modlist、overrides/clientoverrides 剥离）+ 缺 jar 时 CF API 兜底（GetFileAsync 新增）+ 无 key 明确报错；走全局下载中心（ctx.AddChild 逐文件子任务）
+- App 层：ModpackImportFlow 统一入口（确认框→入队→Toast+版本页选中）；MainWindow 全窗口拖拽（Avalonia 12 API：DragDrop.AllowDrop + DataTransfer.Items + DataFormat.File + TryGetRaw，兼容 IStorageItem/string 两种返回）；断链修复两处（ProjectDetailViewModel + EcosystemViewModel.InstallCard 双分支：下载完弹「立即导入？」）；版本页按钮支持 .mrpack 改道统一入口
+- 配套：VersionManifestService.GetVersionJsonUrlAsync（缓存目录可注入）、LoaderService.LastInstalledVersionId、CurseForgeService.GetFileAsync
+- 测试：415 全绿（+8：Parse 三格式/判别不误判/ResolvePackId/ParseCfModLoader + mrpack 全流程/CF 解压/无 key 报错/API 兜底）
+- 真机验收：版本页按钮→FilePicker 弹出→确认框链路通（UIA 验证到 FilePicker 弹出）；mrpack 测试包（26.2+Fabric 基座）就绪；**OLE 拖放自动化失败**（explorer 新版本 UIA 不暴露文件项+窗口遮挡，试 6+ 轮）——拖拽本体留给用户手测（2 秒）
+- 未 commit；发布 v15 含 AL45/46/47 全部
+
+**2026-08-09 AL48 README 重写**：删除过时目标/里程碑/YanKa旧名，精简为 5 章节（简介/功能/构建发布/目录/许可），功能含整合包拖入导入与 KeyProxy 托管；用户疑问"台风影响宽带"——实测 10MB/s 为 Mojang 境外路由上限，非台风主因，镜像优先可提速
+
+**2026-08-10 AL49 下载提速（优化现有架构，完成待发布手测）**
+- 停顿已修部分：Fabric API 附带安装 30s 超时+进度文案（上轮发布已含）；本轮新修 HEAD 无超时停顿点（GetContentLengthAsync 每源 8s 超时，原默认 100s 等响应头）
+- 配置坑修复（停顿感最大嫌疑）：用户 settings.json MaxConcurrentDownloads=1 → 库并发=1 串行下载（几十个库文件 RTT 累积）；改为 0 回档位 High=24，ChunkCount 8→0 分片回 24；原值备份 settings.json.bak-al49
+- 提速改动：mrpack 模组并发门 4→8（Modrinth/CF CDN 按连接限速场景）；DownloadTier 默认 Low→Medium（新装/重置受益）
+- 测试：415 全绿（3 处断言随默认值更新：DownloadOptionsTests/LauncherSettingsTests；顺手修 KeyProxyTests 环境依赖缺陷——原测试真连 api.curseforge.com，网络可达时 403 透传 flaky，改注入直抛 handler）
+- 未 commit；发布待用户跑 发布.ps1；手测点：版本安装总时长、模组下载速度、Fabric API 附带安装 ≤30s
+
+**2026-08-10 AL49.1 KeyProxy 终端弹窗 + 发布脚本修复**
+- 弹窗根因：KeyProxy 是 Console 子系统（OutputType=Exe），KeyProxyHost 拉起时未隐藏窗口（ProcessStartInfo 只有 UseShellExecute=true）→ 每次开启动器弹黑窗，分发同样弹
+- 修复：Lattice.KeyProxy.csproj OutputType→WinExe（窗口子系统，无日志输出不怕丢 stdout）；KeyProxyHost 加 CreateNoWindow=true + WindowStyle.Hidden + UseShellExecute=false（false 才让 CreateNoWindow 生效）；PE 头验证 GUI subsystem
+- CF「失效」链路：用户关掉黑窗 = 杀代理进程 → CF 全失效；实测代理正常（ping ok/keyed/经代理 CF 200/1.3s）；429 限流是另一可能（提示 HTTP 429）
+- 发布脚本 bug：旧 KeyProxy 进程锁着 发布\Lattice.KeyProxy.exe（脚本只杀启动器进程）→ Remove-Item 静默失败 + Move-Item「文件已存在」报错终止；修复：步骤 0 连 KeyProxy 进程一起杀
+- 重新发布完成（3 文件签名）；AL49.1 未 commit
+
+**2026-08-10 AL50 砍 KeyProxy 本地代理，CF key 并入主进程（完成，已发布待实测）**
+- 背景：用户选定防护价值低 + 分发痛点（独立 exe 必须连带分发、框架依赖无 runtime 机器 CF 静默失效、弹终端窗）
+- 迁移：新增 LegacyKeyStore.cs（读旧 keyproxy\key.bin 的 DPAPI 原始字节格式）→ App.axaml.cs 启动块改一次性迁移（key.bin → 设置 DPAPI 密文 → 精确删文件+空目录）；用户现有 key 无缝，无需重填
+- CurseForgeService：删 IsProxyMode；IsEnabled = key 非空；apiBase 参数保留（测试用）；GetJsonAsync 5xx/404 自动重试一次（CF 边缘瞬时故障，实测偶发——用户截图 OCR 确认 404 文案）
+- 设置页：新增 key 输入框（Avalonia 12 已无 PasswordBox → TextBox PasswordChar+RevealPassword，Watermark→PlaceholderText）；ValidateApiKeyAsync 改直连；「检查」= 提交输入（有输入才覆盖）+ 验证；文案「✓ Key 有效（DPAPI 加密保存）」
+- 删除（精确列举）：KeyProxyHost.cs、src\Lattice.KeyProxy\ 整目录（含 bin/obj）、KeyProxyTests.cs、Tests.csproj ProjectReference
+- 发布.ps1：删 [3/5] KeyProxy 块 → 3 步；签名 2 文件；README 两处删改
+- 测试 410 全绿；发布产物仅 2 exe + 使用说明
+- 顺手修复：EcosystemViewModel.TryCfSearchAsync 删代理自愈改重试一次
+- 未 commit（AL45-50 一起）；CF 404 根因 = CloudFront 边缘瞬时故障（各 URL 形态实测全 200）
+
+**2026-08-10 待办（搁置）**：CF API 网关（Cloudflare Worker 转发层，免费 10 万请求/天）
+- 动机：分发场景防逆向提取 CF key；客户端只持访问 token；Worker 逻辑可复用已删的 CfForwarder（git 历史）
+- 启动器侧改动极小：CurseForgeService(apiBase:) 参数已保留，加设置项指向 Worker URL 即可
+- **搁置原因：等龙腾猫跃回复私信（问题 3：PCL 如何保护/调度 API key、是否有服务端代理）后再决定方案**
+- 现状兜底：DPAPI 密文落盘（设置层 Secrets），分发解不开，够个人使用
+
+**2026-08-10 AL51 下载统一到引擎 + 安装提速（完成，已发布）**
+- 归类：模组一键安装（Modrinth/CF）从 Enqueue 叶子任务 → EnqueueGroup 组任务；EcosystemService/CurseForgeService 的 InstallWithDependenciesAsync 加 ctx 参数，主文件+每依赖一个子任务（下载中心可见、可暂停/重试）；ProjectDetailViewModel.ExecuteInstallAsync 同样入组
+- 提速：两处依赖安装 for 循环串行 → Task.WhenAll + SemaphoreSlim(4)（CF 限流 50req/30s 安全余量）；结果收集加锁（多线程写 report）
+- mrpack 内容并发门 8 → 档位 clamp(4,16)（设置页可调）；存档扫描 CollectSaves 移出 UI 线程（原来 UI 线程 .GetResult() 卡界面）
+- 坑：DownloadProgressHandler 是 void 委托，`dp => dp` 表达式 lambda 被判为语句（CS0201）→ ctx 模式 progress 直接传 null
+- 测试隔离坑：NoJars_NoKey 测试失败——用户手测时 key.bin 已迁进真实 settings.json，测试进程读到真实 key → IsEnabled 误判；修复 ModpackInstaller 支持显式 key 注入（"" = 禁用，测试用）
+- 测试 410 全绿；发布产物 2 exe + 说明
+- 未 commit（AL45-51 一起）
+
+**2026-08-10 AL52 启动动画空白帧修复（完成，已发布）**
+- 现象：启动动画尾段「一瞬间空白页面」
+- 根因：放大动画期间 RootSurface（液态玻璃背景层）保持隐藏（ctor IsVisible=false），AppContent.Opacity 淡入的是不可见容器；完成回调才放背景（0 起步 220ms 渐入）→ logo 消失瞬间窗口全透明 = 空白帧，叠加 TransparencyLevelHint Transparent→AcrylicBlur 合成切换更明显
+- 修复：背景层随内容同步铺设（e≥0.55 起同一曲线淡入），动画结束时已铺满；完成回调删掉 0 起步渐入，只切合成级别；描边同步渐显
+- 编译 0 错误；未 commit（AL45-52 一起）
+
+**2026-08-10 AL53 启动动画真丝滑（去窗口 resize，已发布）**
+- 现象：动画「生硬卡顿，就几帧的样子」
+- 根因：UiAnim 是渲染帧驱动（RequestAnimationFrame）——帧率低 = 真实渲染慢。元凶是 GrowToFull 每帧 Width/Height 改变：透明窗口 + 亚克力下逐帧 SetWindowPos 走软件合成路径（透明窗口 resize 无硬件加速），每帧几百 ms
+- 修复：窗口不再 resize——直接以目标尺寸铺开（透明不可见，logo 悬浮），动画全在内部（内容 ScaleTransform 0.25→1 + 背景/浮层 Opacity 交叉淡化，纯 GPU 合成不触发布局）；logo 固定大小随浮层淡出（不再随窗口放大）
+- 视觉：logo 屏幕中央浮现 → 涨成完整界面；窗口框不再做桌面级放大
+- 编译 0 错误；未 commit（AL45-53 一起）
+
+**2026-08-10 AL54 启动动画最终版：GPU 缩放遮罩（已发布，动画冻结）**
+- 设计：SplashOverlay 变「假窗口」（深色 #FF14181F + 圆角 12），从 0.18（150/900 比例）整层放大到全窗——视觉上窗口从 logo 小窗长成界面，但全程一个 ScaleTransform（GPU 合成，无窗口 resize 掉帧）
+- logo 反补：相对 scale = 1/layer，实际尺寸恒定 60px 钉在中心（阶段1 实际 18→60px 浮现，阶段2 随层长成界面）
+- 阶段1 450ms logo 浮现（层固定 0.18）→ 阶段2 950ms 整层放大 + 内容 0.25→1 涨开 + 浮层/内容/背景交叉淡化（e>0.45/0.55 重叠，无空窗）
+- 完成回调不变：切 AcrylicBlur hint、导航兜底定位
+- 坑：Avalonia Transform 内 x:Name 不生成字段（已知，SplashLogoS 同模式）→ SplashOverlayScale 运行时从 RenderTransform 取
+- 验证：编译 0 错误；FrameStats 可测（LATTICE_FRAMESTATS=1）
+- **动画冻结：本版后不再迭代，重心转移**
+- 未 commit（AL45-54 一起）
+
+**2026-08-10 AL55 启动动画回退优化（已发布，动画冻结）**
+- 用户反馈：AL54 退化（深色假窗口）+"瞬间出现是主页，像 2 张图片"
+- 回退：SplashOverlay 恢复透明（logo 悬浮桌面），删假窗口/整层缩放/logo 反补
+- 主页过渡：内容淡入提前并拉长（浮层 e>0.4 淡出 500ms、内容 e>0.5 淡入 475ms），去掉内容 ScaleTransform 涨开（0.25→1 放大感 = 「图片放大」感源头）
+- 保留：窗口不 resize（纯 GPU 合成满帧，AL53 核心）
+- 最终形态：logo 透明浮现（450ms）→ 内容整页平滑淡入（475ms）与浮层淡出重叠 → 切 AcrylicBlur
+- 编译 0 错误；**动画冻结，重心转移**
+- 未 commit（AL45-55 一起）
+
+**2026-08-10 AL56 模组版本选择优化：双源手动选版 + 错误可见 + 实例实时刷新（已发布）**
+- 双源手动选版：CF 源不再拒绝手动选版（原 317-318 直接 return）——LoadVersions 按 Source 分派（CF GetFilesAsync / Modrinth GetVersionsAsync）；VersionOptionVM 来源无关化（FromModrinth/FromCf 工厂，Source 供安装分派）；OnSelectedVersionChanged 按 Source 设 _matchedVersion（Modrinth）或 _cfFile（CF），CF 安装路径自动用手动所选文件
+- 错误可见：LoadVersions catch { } 静默 → VersionHint 显示「版本列表加载失败: xxx」；空结果提示「该模组没有适配所选游戏版本的版本」；防重入 _loadingVersions
+- 实例实时刷新：UpdateContext(instance)（_instance 去 readonly）→ 清匹配/文件 → 重跑自动匹配 + 手动列表自动重载（_versionsLoaded）；EcosystemViewModel.OnSelectedInstanceChanged 联动 Detail.UpdateContext（主页版本切换经 OnMainPropertyChanged → SelectedInstance 链覆盖）
+- UI：按钮常显（有列表 = 「刷新」），空提示绑定 VersionHint
+- 坑：PCL.Core 二进制 vendored 无 CurseforgeFile.fileDate → 发布日留空（排序按 id 降序）
+- 测试 410 全绿；未 commit（AL45-56 一起）
+
+**2026-08-10 AL57 模组缺失自愈 + 双版本 bug（完成，已发布）**
+- ModRepairService（Core\Diagnostics）：ScanInstanceLogs 读 versions/{id}/logs/latest.log（尾部 200KB）+ 最新 crash-report，正则提取缺失模组（Fabric 行内 [a,b] / 分行 "- id" 列表（含 [main/ERROR]: 前缀）/ "Couldn't load mod x because it is missing y" / Forge "requires mod 'id'" 引号包裹）；误报过滤词表 + 无日志返回空
+- RepairAsync：slug 直查 GetProjectAsync → 搜索兜底（downloads 排序取首个 hit）→ FindBestVersionAsync → InstallAsync 到实例 mods（gameDirOverride）；ctx 子任务（下载中心可见）；ModRepairReport(Missing/Repaired/Failed)
+- 挂载三处：CrashReportWindow 一键修复后、HomeViewModel 启动失败自动修复后、版本页手动修复后——统一走 ModRepairFlow（确认框 → EnqueueGroup → Toast 结果）
+- 双版本根因（截图 OCR 确认 ×2）：快照版 PCL 的 .minecraft junction 指向正式版 → ScanSourceDirs 字符串去重失效（物理同目录两路径）→ 每版本扫两次；修：ScanSourceDirs 按物理路径去重（ResolveLinkTarget 解析 junction）+ RescanLocal 兜底 (Id, 目录) 去重
+- 测试 415 全绿（+5 解析用例：行内/分行/requires/引号过滤/无日志）；坑：测试 finally 曾误删 %TEMP%（GetDirectoryName 删到根——文件锁救场，已改删 gameDir 本身）；TerminalState 是 Core internal（App 层用 State）
+- 未 commit（AL45-57 一起）
+
+**2026-08-10 AL58 签名真相调查（结论：发布产物从未真正签名成功，假成功长期存在）**
+- 用户问 SAC/SmartScreen——查签名时发现：发布 exe Get-AuthenticodeSignature = NotSigned
+- 根因链（逐步实证排除）：
+  1. PS5.1 Set-AuthenticodeSignature 对发布 exe 返回 UnknownError「非 Win32 应用」**但不抛异常**——sign-output 只 count++ 不验 Status → 历史「已签 N 个文件」全是假成功
+  2. 排除法：notepad/普通 exe/自写 probe（37MB 单文件）PS5.1 都能签；发布 exe（46/83MB 单文件）失败
+  3. probe 与发布 exe 的 PE 头/区段/DD[5] 完全一致（SDK 伪证书表 RVA=SizeOfImage、Size=828/fdep 30KB/自包含）——差异只在大小和内容，PS5.1 行为不同（疑似大文件 bug）
+  4. signtool（从 NuGet Microsoft.Windows.SDK.BuildTools 包取得，nuget.azure.cn 可达）：对普通 exe/已签名单文件成功；对未签名单文件（伪表+bundle）badexeformat
+  5. 自写 CodeSigner（SignerSignEx P/Invoke）对任何文件 0xC0000005 崩溃——结构细节未解（停，不耗 token）
+- 对用户的实际影响：SmartScreen 蓝窗对未签名文件同样有「更多信息→仍要运行」（核心诉求不受影响）；SAC 无论签名与否都硬拦；文件完整性校验（Authenticode Valid）缺失
+- 修复：sign-output.ps1 现在验证 Status（Valid 才算成功，失败明确警告）——不再假成功
+- 后续方案（等网络/再战）：装 PowerShell 7（实现重写）或 signtool 先清伪表；或买 OV 证书
+- 遗留：scripts/CodeSigner/（半成品 P/Invoke 签名工具，未完成未使用）
+- 未 commit（AL45-58 一起）
+
+## 2026-08-10 批次 2：汉堡错位 + 背景色 ColorPicker + 模块开关与存储（三需求）
+
+### 需求 1：设置页 ☰ 菜单选中错位（已修）
+- 根因：SettingsView.axaml.cs SetNavVisual 激活时 BorderThickness 0→(3,0,0,0)，Button 模板内容内缩 3px → 选中项文字右移
+- 修：恒为 Thickness(3,0,0,0)，非激活透明 BorderBrush（单行改动）
+
+### 需求 2：背景色 ColorPicker + 透明可读（已完成）
+- 新增 Core `BackgroundPaletteMath.cs`（TryParse 7/9 位 hex + Derive 亮暗整套表面色；判据 A>=128 && lum>0.30）
+- LauncherSettings.BackgroundColor（#AARRGGBB 可空，默认 #B81D222C 与旧硬编码一致）
+- App.axaml.cs ApplyBackgroundColor 写 10 个资源键；App.axaml + 16 视图 Static→Dynamic 令牌替换（82 处）
+- MainWindow ContentSurface/TitleBar 改 DynamicResource；ApplyBackgroundImage 空路径清本地值（回落背景色）
+- 外观页新增 ColorPicker（Avalonia.Controls.ColorPicker 12.1.1 包，IsAlphaEnabled）
+- 亮主题值：深字白卡（TextPrimary #1A1F2B 对 BgRaised 对比度 16.3 ≥4.5）；低 alpha 按暗（透暗 acrylic）
+- 不动：TextLog/Accent 系/语义色/BgDim
+
+### 需求 3：模块开关 + 存储统计清理（已完成）
+- LauncherSettings.EnabledModules（List<string>，settings 恒开）+ StorageCapsMb（Dictionary<string,int>）
+- 新增 Core `StorageScanner.cs`（5 组：game/server/downloads/logs/backups；game 组排除 *.parts 防重复统计；DeleteGroup 先量后删只计实删）
+- 新增 App Models/ModuleDescriptor.cs（静态表 + IsEnabled + Normalize 空列表保底）；MainViewModel 重构（VM nullable + EnsureX 懒建 + Navigate 拦截 + ApplyModuleSettings 当前页被禁跳设置）
+- MainWindow 6 按钮 IsVisible 绑定；SettingsView 第 6 分区「模块与存储」（index 5）+ SectionModulesView + ModuleSettingsViewModel（进分区自动扫描）
+- StorageWindow 重构消费 StorageScanner（删除本地重复 ItemSize/FormatSize）
+- ServerViewModel:809 修 nullable（main.Home?）；ModpackImportFlow:45 guard
+
+### 其他
+- 顺手修：UrlFormLibraryTests 脆弱断言（绑死官方源 → 只断言 jar 被请求过；Stub 下源选择非确定）
+- 测试 434/434 全绿（新增 BackgroundPaletteMathTests 12 + StorageScannerTests 4）；构建 0 错误；14:29 发布（双 exe 签名 Valid）
+- 未 commit（连同 AL45-58 一起）
+
+## 2026-08-10 批次 3：去括号注释改问号 + 进程优先级 + 版本隔离默认（已完成）
+
+### 需求 1：UI 括号注释 → 问号图标 + 点击显示解释（28+ 站点）
+- 基础设施：App.axaml `TextBlock.help-hint` 样式（Segoe E897 图标 + ToolTip.ShowDelay=60s 禁 hover 弹出）+ `Services/HelpTipService.cs`（ToolTip.SetIsOpen 切换——Avalonia 12.1.1 API 已确认）+ 12 个 code-behind 加 OnHelpClick 薄壳
+- 站点覆盖：SectionDownload(7)/Launch(3+优先级行)/Modules(3)/Appearance(3)/GameDir(1)/About(2)/HomeView(1)/StorageWindow(1)/ThirdPartyDownload(2)/VersionBrowse(1)/VersionDownload(1)/LoaderChoiceDialog(1)
+- 卸载警告改紧凑红字「删除后无法恢复」（status-error 常驻）+ 问号完整清单
+- 批量策略：perl \Q\E 字面量替换（含 / 的 2 条失败改手工 Edit）+ python 按关键词删行到自闭合 + 手工结构编辑
+- 坑：所有 code-behind 用文件级 namespace（无大括号）——批量插 handler 必须插在「最后一个 }（类结束）前」，曾误插到方法内（24 错误）已修
+
+### 需求 2：进程优先级设置（已完成）
+- LauncherSettings.GamePriority 枚举（BelowNormal/Normal/AboveNormal/High/RealTime，默认 Normal）+ 2 测试
+- SettingsViewModel：5 档（低/正常/高/最高/实时（慎用））即时保存；SectionLaunchView 新行（性能档位与自动中文之间）
+- LaunchProcess.ToPriorityClass 映射 + Start 参数 + Start 后 ApplyPriority（Normal 零开销，失败 onLog「§ 设置进程优先级失败」）
+- 服务端同设置（ServerProcess + ServerViewModel 传值）
+
+### 需求 3：版本隔离
+- 无逻辑改动（默认已 true + 已有测试）；仅 label 去括号 + 问号
+
+### 其他
+- 测试 436/436 全绿；构建 0 错误；18:50 发布（双 exe）
+- 未 commit（连同 AL45-58 全部）
+
+## 2026-08-10 批次 3 修订（用户测试反馈后）
+- 问号改悬停弹出：ToolTip.SetIsOpen 点击方案在 Avalonia 12 不可靠（点击无反应）→ 删 HelpTipService + 12 handler + 全部 PointerPressed，恢复标准 hover ToolTip
+- 问号显眼化：FontSize 14 + Accent 青绿（原 12 + TextDim 太暗）
+- 问号位置：label 旁 → 行尾右侧（设置控件后）
+- 性能档位联动进程优先级（用户澄清「不是分开的」）：删独立「进程优先级」设置行 + GamePriority 设置属性；PerformanceProfiles.Priority(profile) 映射（低→BelowNormal/均衡→Normal/流畅→AboveNormal/极致→High），游戏+服务端一致；性能档位问号写明「改动对下次启动生效」（非动态实时调节）
+- 测试：439 全绿（新增 PerformanceProfilesTests 5 个，删 GamePriority 设置测试 2 个）
+- 坑：批量删 PointerPressed 行把跨行 TextBlock 闭合 /> 也删了（12 文件 XAML 破坏）——补 /> 修复；perl \Q\E 对含 / 的文本（PATH/KB/s）替换失败——手工 Edit
+- 19:21 发布
+
+## 2026-08-10 批次 4（用户真机反馈全修，20:05 发布）
+- 菜单交叉：BuildSection `4 => SectionModulesView` 改 `5`（XAML 参数 5=模块/4=关于 与 switch 对齐）
+- 问号渲染：help-hint FontFamily 去 Fluent（E897 无字形 → 手打问号）改单字体 Segoe MDL2 Assets；ToolTip.ShowDelay=500（0.5s 悬停）
+- 文案治根：28 处 ToolTip 重写口语短句（零书面腔）——批量 python 精确替换
+- 进程优先级恢复独立：LauncherSettings.GamePriority 属性 + SettingsViewModel 4 档（低/正常/高/最高，去实时）+ SectionLaunchView「内存与 Java」子组新行 + GameLaunchService/ServerViewModel 传设置值 + 删 PerformanceProfiles.Priority 联动 + 测试恢复
+- 删模块开关：ModuleDescriptor.cs 删、MainViewModel 恢复 eager 全建、MainWindow IsVisible×6 删、EnabledModules 删、ModuleSettingsViewModel→StorageSettingsViewModel（只留存储）、SectionModulesView 只留存储占用、菜单「模块与存储」→「存储」、guard 恢复
+- 模组页提速：HttpClientPool.Create()（15s 超时）用于 Ecosystem/CF/ImageLoader（原 100s 默认拖死页面）；EcosystemService 搜索磁盘缓存 5min（eco-{hash}.json）；默认来源「全部」→「Modrinth」单源；CF 外层重试删（GetJsonAsync 内已有）；预加载推迟——EcoVM 构造抑制搜索 + Activate() 幂等首次激活才搜（8 请求风暴→激活 1 次）
+- 测试 437/437 全绿；20:05 发布双 exe；真机运行验证通过
+
+## 2026-08-10 批次 5（问号矢量图标 + 第三方下载 GitHub 加速）
+- 问号图标治根：字体渲染（MDL2 E897）像拼上去的字符 → 换矢量 Path（Material help 24x24 路径）。App.axaml 加 HelpIconData 资源（StreamGeometry）+ help-hint 样式改 `Path.help-hint`（Data/Stretch/14x14/Accent/Cursor/ShowDelay 500）；18 处 XAML TextBlock→Path（两轮 python 批量：无前缀 + Grid.Column 前缀两种写法）。构建 0 错误，发布（签名 Valid）
+- 第三方下载 GitHub 下载不了（用户反馈"重试 2 轮"）：诊断——github.com 直连被墙（curl 21s 超时；20 分钟前还 200，典型时好时坏），release 直链第一步 302 就死；api.github.com/release-assets CDN 通；ghproxy.net 转发 200/1.17s 且支持 Range(206)；ghproxy.com、ghfast.top、ghproxy.cc、mirror.ghproxy.com 已挂
+- 修复：新 ThirdPartyDlSourceResolver（Launcher.Core.Download）——GitHub release 直链（/releases/download/ 或 /releases/expanded_assets/）映射多候选 [原URL + ghproxy.net + gh-proxy.com]，复用 AL32 并行竞速（原挂镜像赢）；非 GitHub/tag 页/非 https 单候选。ThirdPartyDownloadViewModel 换 resolver 构造
+- 测试：ThirdPartyDlSourceResolverTests 7 个（镜像格式/expanded_assets/单候选 Theory×4/端到端竞速——坑：竞速无 sha1 校验时未路由的镜像候选默认 200 会抢赢，把 gh-proxy.com 也路由 500 固定赢家）；全量 444/444 全绿；发布（签名 Valid）
+- 未 commit（连同 AL45-58 全部批次）
+- 批次 5 续（竞速速度虚高修复，AL57）：用户反馈第三方下 GitHub 文件「19MB 下了 10 多秒但显示几百 MB/s」。诊断：竞速（AL32）多源同时拉同一文件不同副本（.race{i}）共享同一进度回调——字节混合上报回退触发 DownloadTask.Report 计速基线重置，完成瞬间剩余字节全挤进最后 0.25s 窗口 → 速度爆表（真实吞吐 ~2MB/s）。修复：DownloadService 内新增 internal RaceProgress（每源独立 last 只报增量 + 共享累加器单调累加 cap total + 惰性取 total）；竞速 Task.Run 处 perSourceProgress 包装。Launcher.Core.csproj 加 InternalsVisibleTo(Launcher.Core.Tests)。测试：RaceProgressTests 3 个（单调 cap/单源回退忽略/完成跳变只补余量——坑：双源首报增量是真实工作量，回退测试要单源）；全量 447/447 全绿；发布（签名 Valid）
+- AL58（批 5 续，下载对比实测 + 静默修复）：curl vs 启动器对比——curl 直连 GitHub 000（21s 墙）；ghproxy.net 对 376MB 大文件 503 拒绝（限文件大小）；gh-proxy.com 单连接 2.76MB/s 但限并发（8 连接分片总吞吐反降到 0.1MB/s，1 片超时）——分片对限并发服务器是灾难。用户下载 AnythingLLMDesktop.exe（376MB）被取消（history.json 22:23 已取消）：3 源×8 片=24 连接全被限 → 无源能赢 + 多源字节累加 cap 99% 造成「下完了」错觉 + 竞速赢家后先等全部 pending 停止才 rename（慢源取消传播几十秒）→ 静默。修复：① 赢家 rename 先行 + 输家取消/清理放后台 Task.Run（先 Wait 防边写边删）；② RaceProgress 语义改「领先源进度」（多源累加→全局 Max 单调，同值不转发——LastSent 放 Shared，按源记录会让落后源重复报全局值）；测试 RaceProgressTests 适配新语义；全量 447/447 全绿；发布（签名 Valid）
+- 下载黑科技三件套（AL59/AL60，批 5 续）：① GitHub API 官方直链——新 GitHubApiDirect.cs（ghapi: 占位 URL → api.github.com releases/tags 拿 asset id → assets octet-stream 302 签名直链，30 分钟缓存；全程不碰被墙的 github.com）；ThirdPartyDlSourceResolver 追加 ghapi 候选（4 候选）；DownloadFromSourceAsync 开头换链；resolved 移入 attempt 循环（签名 1h 过期→403 每轮重换）。② 竞速淘汰制——RaceProgress 加 per-source 字节（GetBytes）；竞速每源独立 CTS；15s 评估点取消非领先源（DownloadOptions.RaceEliminateInterval 可注入；限并发镜像 24 连接收敛到 1 源）。③ ramp-up 分片自适应——ProbeAndDecideConcurrencyAsync：拉头 1MB/2s 窗口测单连接速度 → ≥800KB/s 单连接（限并发源）/<200KB/s 满片（按连接限速源）/中间 4 片；探测写 probe.part 后删，正式片按 N 重分。坑：DownloadChunkAsync 单片重试 catch 捕获取消 OCE → 重试请求悬挂（探测取消重复发请求）——加 OCE 前置 catch 原样上抛；GitHubApiDirect JSON 键全小写需 PropertyNameCaseInsensitive；fake handler 不实现重定向 + RequestMessage 需手动设置；测试传 progress null 时淘汰评估跳过（SlowSource 测试误过）。测试 459/459 全绿；发布（签名 Valid）
+- AL61（批 5 续，下载中自动换源）：用户实测 gh-proxy.com 376MB 下载「慢慢降下来锁在 900KB」——外部 curl 实测新连接也只给 12-36KB/s（按 IP 烧完配额，连接不断但趋近 0）。新增 SlowSourceDetector + SlowSourceException（HttpRequestException 子类）：下载循环每采样间隔（默认 5s）测实时速度，连续 6 次 < 100KB/s（=30s 持续龟速）→ 判源死抛异常 → 外层换路（单候选重试整轮重新 Resolve / 竞速标记失败）。单连接在读循环内 Check；分片在 DownloadChunkedAsync 起监测 Task 并行 WhenAll（cp.Bytes 总吞吐测速），触发取消分片直接抛（不回退单连接——catch 前置拦截 SlowSourceException）。DownloadOptions 加 SlowSpeedBps(100KB)/SlowProbeMs(5s)/SlowSamples(6) 可注入。坑：HttpStatusCode.SlowDown 不存在（用 TooManyRequests 或不带）；.NET10 HttpRequestException (string,Exception?,HttpStatusCode?) 重载没了（只传 message）。测试 SlowSourceTests 3 个（单连接判死/分片判死不回退/快源回归）；全量 462/462 全绿；发布（签名 Valid）
+- AL62（8-11 凌晨，下载质检员）：用户痛点「进度条停在跑满（99% 封顶）任务不结束」——根因：组任务下载完到 Completed 之间 VerifyInstalled（只查存在性）+ Mark 的 1-3 秒窗口 + 无文件统计。实现：AutoRepairService.FileIntegrityReport（TotalExpected/Present/Missing/VerifiedByHash/TotalBytes/MissingFiles + SummaryText）；VerifyFiles/VerifyVersion 返回报告 + verifyHashes 参数（有 sha1 元数据的文件并行 SHA1 验证——下载后质检用；启动前快查传 false）；VersionInstaller.InstallCoreAsync 插质检（verifyHashes: true）→ ctx.SetStage("质检：125/125 文件完整 · 540MB · N 个哈希验证通过")（DownloadTask 加 public SetStage Post 包装 + DownloadGroupContext 转发）→ 通过才 Mark；CheckIntegrity UI 显示统计；叶子完成 Stage =「已下载 X」。调用方适配 6 处（FixRedownload/VerifyInstalled/LoaderService/GameLaunchService/CheckIntegrity/测试）。坑：FileIntegrityReport 是嵌套 record 要 AutoRepairService. 前缀；$$""" raw string 内容连续 } 超限（每个 } 加空格隔开）。测试 463/463 全绿；发布（签名 Valid）
+- 同日其他（外部）：Ollama qwen3-vl:4b-instruct 3.3GB 下载（网络全线限速 70KB-4MB 波动 + 卡死重拉 2 次，凌晨 1 点完成注册）；CPU 推理纯文本 OK、识图超时（CUDA v12 库安装时被取消——GPU 加速待补）；AnythingLLM 配好 DeepSeek API（.env LLM_PROVIDER=deepseek，key 只进配置不回显）；桌面安装器残留进程已杀；Watt Toolkit 已装（Steam++ 进程在跑）——免费版 Google 搜索无加速项，谷歌搜索合规无解（google/startpage/brave 全墙，cn.bing 唯一通）
+- AL63（8-11 上午，模组中文搜索 + MC百科接入）：用户发现模组搜索不支持中文（Modrinth 索引英文标题，实测「遗落荒野」原生 0 命中）。实测：search.mcmod.cn 国内直连 200/0.4s；MCIM 镜像全挂（mcim.taiyukai.com/mirrors.taiyukai.cn/mcim.cn 全 000）。链路打通：中文 → search.mcmod.cn/s?key=（HTML 静态，正则条目 id+标题）→ www.mcmod.cn/class/{id}.html → link.mcmod.cn/target/{base64(完整URL)} 双层编码解出 Modrinth slug（实测 missing-wilds）→ api.modrinth.com/v2/project/{slug}。实现：新 McmodSearchService.cs（ParseSearchResults/DecodeModrinthSlug/SearchSlugsAsync/ContainsChinese，正则无依赖，HttpClientPool 15s 超时）；EcosystemService.SearchChineseAsync（slug→项目详情→ModrinthSearchHit，无分页上限 10，构造注入 _mcmod）；EcosystemViewModel.RunMrSearchAsync 中文分流（含 CJK → 汉化链路，英文不变）。坑：char/int pattern 比较要 (uint)c；raw string $$""" 连续 } 超限。测试 470/470 全绿（McmodSearchServiceTests 7 个：条目解析/双层 base64 解 slug/无 Modrinth 外链 null/中文判定 Theory×4）；发布（签名 Valid）
+- AL64/65（8-11 上午，卡死根治 + 引擎榨干 + CUDA）：GLM 识图确认真相——26.2+Fabric 148.2/148.5MB 满速 60.7MB/s 卡「下载中」（网络没问题，收尾卡死）。① AL64 响应头超时：SendWithHeaderTimeoutAsync（DownloadOptions.ResponseHeaderTimeoutMs 默认 30s——半开连接响应头拿不到转 HttpRequestException 换路；body 不限）；接 DownloadSingleAsync（经 SendWith416RetryAsync）/DownloadChunkAsync；测试 HeaderTimeoutTests 2 个（单候选快速判死不卡死/双候选换源赢）。② AL65 队列调度：DownloadManager 全局并发门（SemaphoreSlim(MaxConcurrentDownloads>0 时；0=不限旧行为)——Gated 包装 Enqueue/EnqueueGroup——排队显示 Queued「排队等待…」；测试 3 个（门1串行/门2并行/0不限）。③ 网络诊断：NetworkChecker.ProbeHttpAsync（HEAD 计时 -1=断）+ DownloadViewModel.NetworkStatus + CheckNetworkCommand（6 源：Mojang/BMCLAPI/Fabric/Modrinth/GitHub镜像/直连）+ DownloadView 诊断条。④ ImageLoader 磁盘缓存（%LocalAppData%\Launcher\imgcache + 并发门4 + 8s 超时）。⑤ CUDA 补装：cudav12.7z 627MB（cdn.anythingllm.com 38MB/s）→ py7zr 不支持 BCJ2 → 7zr.exe 解压 → engines/ollama/lib/ollama/cuda_v12（4 dll 2.5GB）→ GPU 生效（推理 3.3s vs CPU 分钟级；识图 49.7s 且准确读出截图内容——本地识图全通）；临时文件已清理。全量 475/475 全绿（3 处失败修复：Group_Cancel 等 Children 落地、Suspend 等 runs++、LeafFailure 等 work 执行——均为并发门 Gated 异步调度的时序竞态）；重新发布完成（发布/Lattice启动器.exe 80M + 轻量版 46M，签名 2 文件）
+
+## 2026-08-11 下午批次 6（真机复测 + AL66 读心跳 + AL67 片断点续传 + AL68 停滞透明化）
+- 真机复测 26.2+Fabric：fabric-loader 39MB 完整下载成功（13:50-13:52，2 分钟）；fabric-api 每次末尾断流（Modrinth→Cloudflare 对移动宽带的间歇 TCP 干扰——curl 实测 cdn.modrinth.com 新连接全 000/15s 超时、ping 通、存量连接存活；api 域名同步断；无代理/Watt 关闭——纯运营商干扰，间歇性 13:51 能下 37MB）
+- AL66 body 读心跳：AL61 慢速检测挂在数据循环体内、ReadAsync 挂起时永不执行（fabric-api 卡 0.2MB 3 分钟+ 根因）；ReadWithStallAsync（每次数据重置 N 秒心跳，挂起判死抛可重试错误）堵三处：单连接/分片/探测段（探测走分片函数）；DownloadOptions.ReadStallTimeoutMs=30000
+- AL67 片断点续传：中断片从已下长度续拉（Range from=have，206 才 Append/200 重写防错位）；主循环部分片先入账 cp（进度不归零）；合并时片长度校验（超长片拒绝回退单连接自愈）；顺带修 slowWatch 分片成功后 await 永挂（先 Cancel 再 await）
+- AL68 停滞透明化（用户痛点「末尾停滞像死了一样」）：叶子失败 Stage=「失败：原因」；自动重试前 Stage=「源异常，自动重试中…」（800ms 延迟可见）；组推导 Failed 叶子兜底（不再「正在完成…」掩盖失败）；组自身失败也 SetStage 原因；Retry 清 Stage
+- 测试：StallReadTests 3 + PartResumeTests 3 + StageTransparencyTests 4 = 10 新增；全量 485/485 全绿；发布（签名）
+- 坑：fake handler 分片并发共享 StreamContent 被先 dispose 的片打爆（工厂模式）；ResumeHandler 无 Range 请求 NRE（单连接回退路径）；ProbeDelay 调慢触发分片（秒回判快源单片）；SetState/SetStage 两次独立 Post 断言要等 Stage；Post 是 UI 同步回调不能内嵌 Delay（Task.Run 延迟）
+- 网络结论：Modrinth CDN（Cloudflare）对移动宽带间歇 TCP 阻断（新连接拒绝/存量中途断=末尾断流）——启动器已尽力（心跳+续传+重试），等网络恢复或换链路
+- AL69.1 多轮机会（用户纠正「不能直接改成百分百下载失败」）：自动重试 1 次 → 2 次（叶子共 3 次尝试，第 2 轮退避 3s；组任务编排层抛错也重试 2 次——叶子失败聚合不组重试防风暴）；重试 Stage 带计数「网络异常，自动重试第 N/2 次…」；全部耗尽才终态失败 + AL69 弹窗（坦言网络原因 + 打开下载页按钮——Modrinth/CurseForge 双路）。测试：NetworkFailure_RetriesTwice_BeforeGivingUp 新增；LeafNetworkFailure 语义更新（3 次尝试后 CheckNetwork）；Gate2 竞态修（CountdownEvent 同步）；486/486 全绿；重新发布（上次带失败发布已作废）
+- AL71 死锁根治（用户第三次反馈「又卡正在完成」+ GLM 截图 148.5/148.5）：真凶 = VerifyFiles 的 Task.WaitAll（SHA1 并行）——阻塞池线程等 Task.Run 排队任务 = 线程池饥饿死锁（16:28 26.2 装完卡「正在完成」12 分钟+，96 线程 67 UserRequest 阻塞；fabric-api 30s 超时上限反而正常）。VerifyFiles→VerifyFilesAsync（WhenAll 非阻塞）传播 5 调用点（RepairVersion/VerifyVersion→VerifyVersionAsync/VersionInstaller.VerifyInstalledAsync/LoaderService.VerifyInstalledVersionAsync/GameLaunchService/VersionBrowseViewModel）。另确认 26.2+Fabric 流程含附带 fabric-api（LoaderService InstallFabricApiAsync，30s 超时静默不阻断）。487/487 全绿；发布
+
+## 2026-08-11 晚间批次 7（双 subagent 代码审查 + 高优修复）
+- 用户改口启用 subagent（记忆 no-ultracode-workflow 已更新：8-11 认可能量变质变，趁网络差跑本地审查）
+- 派 2 个 general-purpose agent 并行审查：BUGS.md（引擎 16 条：高2/中8/低6）+ BUGS2.md（UI 14 条：高1/中5/低8）
+- **已修**：
+  - B1（UI 高）：崩溃窗 Task.Run 包 FixRedownloadAsync → ObservableCollection 跨线程崩溃 → 去 Task.Run 直接 await（UI 线程 await IO 不卡）
+  - B4（中）：网络诊断并发点击交错 → CancellationTokenSource 取消旧轮
+  - B5（中）：「全部」双源中文不走 MC百科分流 → RunBothSearchAsync 加 ContainsChinese 分流（McmodSearchService.ContainsChinese）
+  - BUGS#1（高）：限速<100KB/s 与 SlowSourceDetector 固定阈值冲突必判死 → SlowThresholdForLimit()（min(默认, 限速×0.8)）接单连接+分片两处
+  - BUGS#2（高）：InstallCoreAsync catch 无条件删 jar 误删有效 jar → jarExistedBefore 记录只删本次新建
+- **未修（下轮）**：B2 Completion 早于重试耗尽误报；B3 收藏 seq 守卫；B6 ImageLoader ct/毒化；BUGS#3 单连接续传 206 判定；#4/#5 组任务级联取消死代码；#6 LoaderService NRE 掩盖；其余低
+- 验证：编译 0 错误；SlowSource/StallRead/PartResume 12/12 过
+- cudav13.7z 后台下载中（国际出口慢 ~38KB/s，2.5GB 需数小时——等窗口）
+
+## 2026-08-11 晚间批次 8（全面流程审查：批次 1 = A/C/F 三旅程）
+- 用户指令（压缩后）：「全面审查全局的逻辑流程，所有模块，就当正常用户一样走完整套流程」
+- 方法：6 条用户旅程 × 审查代理两批并行；REVIEW-{A,C,F,B,D,E}.md 落盘；每代理只回路径+摘要
+- 批次 1 结果（A 版本生命周期 9 条 / C 生态 16 条 / F 跨线程 5 条 = 30 条）
+- F 反转：VersionManageViewModel Task.Run 后改集合 = 假警报（Avalonia 12 AutoInstall=true IL 实证）；真问题 = ProjectDetailViewModel.cs:371 UpdateContext Task.Run 改 AllVersions（高）、StorageWindow Task.Run 内弹窗（中）、HomeViewModel:418 正版启动 Changed 池线程改绑定（中）
+- 复核结论：B2（Completion 早于重试耗尽）仍存在 6 处调用点误报；B3/B6/B7/B11 仍存在；B5/BUGS#2 已修正确；BUGS#8 半修（旧式 natives 路径仍错）；C1-C5 无问题
+- 影响使用 TOP（用户确认优先级）：①B2 重试误报失败 ②_userStopped 永不重置→崩溃全误报已停止（A1）③整合包导出导入断链（C 高2：Own ZIP 永不落盘 + mrpack 无 downloads）④CF 分页页码当偏移（C）⑤ModRepair 失败计成功（A2）⑥卡片依赖失败弹成功（C）⑦非隔离备份自包含损坏（A5）⑧详情页实例切换装错目录（C）⑨mrpack 路径穿越（C 高1）⑩ProjectDetail 跨线程改集合（F 高）
+- 批次 2（B 引擎复核 / D 开服联机 / E 账号设置存储）待跑
+
+### 批次 8 修复（批次 1 审查后，490/490 全绿 + 发布签名 Valid）
+- 修 _userStopped（HomeViewModel LaunchCoreAsync 入口重置——停过一次后崩溃全误报「已停止」）
+- 修 CF 分页（EcosystemViewModel 373/396：页码→偏移量 CurrentPage*PageSize——第 2 页起 19/20 条重复）
+- 修 B2 Completion 语义（DownloadTask 加 _retryPending：排程重试期间不完成 TCS——首败不再误报失败弹窗/历史记失败/跳下载页；调用点 6 处受益 + ScheduleAutoRemove 时机顺带修正（REVIEW-A7）；Delay 收尾处理排程期间取消/暂停（否则 TCS 永不完成）；测试适配 5 个（泵队列等 Completion.IsCompleted——State 首败即 Failed 不能当终态判据））
+- 修 ModRepairService 补全失败计成功（子任务终态检查 TerminalState != Completed → Failed 记入 report）
+- 修 ProjectDetailViewModel 跨线程 + 实例切换竞态（UpdateContext 去 Task.Run（Avalonia AutoInstall 保证 continuation 回 UI 线程）+ captured 实例快照守卫，LoadAsync/LoadVersions await 后检查——防旧实例匹配覆盖新实例装错目录）
+- 修整合包三连：① Own ZIP 格式内容落盘（InstallContentAsync Own 分支调 ModpackImporter.Import——旧代码 (0,[]) 永不落盘静默丢 mods）② mrpack files[].path 路径穿越防护（GetFullPath + StartsWith 包含检查，与 ExtractZipEntries 同款）③ mrpack 无 downloads 时按 sha1 反查 Modrinth 补直链（ModpackImporter.ParseMrpack 保留无 downloads 但有 sha1 的文件 + InstallMrpackAsync 反查兜底，走注入 _http 8s 联动超时）
+- 新测试：Own_Zip_Content_LandsOnDisk / Mrpack_PathTraversal_IsSkipped / Mrpack_NoDownloads_Sha1Fallback_ResolvesUrl（坑：反查路由 key 要带 /v2 前缀；"AAAAA" sha1=c1fe3a7b 是既有测试的匹配值）
+- 全量 490/490 全绿（1m40s）；发布（签名 Valid ×2）；新版已启动
+
+### 批次 8 审查批次 2 汇总（B 引擎复核 8 新 + D 开服联机 15 + E 账号设置 15）
+- B 复核：13 项仍存在（#3/#4/#6/#7/#8/#9/#10/#11-16）；#5 已修；B2 基本修复但暴露 R-01 新竞态；BUGS#1 验证通过
+- B 新发现：R-01 中（手动 Retry 撞排程重试→终态后幽灵重跑——B2 副作用）；R-02 中（限速按流均分失真，小文件=限速/8）；R-03 中（分片 .parts 取消即删→暂停继续=完整重下）；R-04/05/06/07/08 低
+- D 高 4：StartServer Java 选配在 try 外（静默失败+卡死）；_oneClickActive 异常后永不复位；HttpClient 超时 3000s（离房挂 50 分钟）；复用实例会话无进程死亡检测
+- D 中 6：世界生成崩溃 stop 标志残留；取消创建/加入 terracotta.exe 孤儿；一键修复与手动创建并发互踩；修复删错路径锁（%TEMP% 清不掉）；运行中改 properties 被回写覆盖；ban/op 后 500ms 读盘列表不刷新
+- E 高 1：**微软登录从未保存 refresh_token → 正版账号永远无法启动游戏**（PollOAuthTokenAsync 丢弃响应里的 refresh_token）
+- E 中 6：版本级 Java 泄漏进全局设置覆盖；StorageWindow 后台线程弹确认框（跨线程抛错被吞，点击无反应）；清理下载缓存会永久删未导入整合包；账号/设置 JSON 非原子写损坏静默；MaxConcurrentDownloads 改动对队列门无效
+- E 低 8：外观预览丢失/CF Key 解密失败覆盖为空/每击键落盘/存储上限只显示/登录无取消/会话残留/防抖丢值/头像竞态
+
+### 批次 8 修复（批次 2 审查后，490/490 全绿 + 发布签名 Valid + 新版启动）
+- 修 E-高1 微软 refresh_token：PollOAuthTokenAsync 返回 (AccessToken, RefreshToken)——旧代码只回 access_token，会话 RefreshToken="" → 启动静默刷新必失败，正版账号永远无法启动游戏；AccountViewModel 传 refreshToken ?? ""
+- 修 D-高1/2：StartServer Java 选配（PickServerJava throw）移入 try——旧代码在 try 外：找不到 Java 直接外抛 → 普通启动静默失败 + 一键开服 _oneClickActive 永不复位卡死
+- 修 D-高3：TerracottaLobbyService Timeout=FromSeconds(3000)（=50 分钟）→ FromMilliseconds（3 秒）——离房请求可挂 50 分钟
+- 修 D-高4：监控循环连续失败计数（复用实例 _ownedProcess==null 无死亡检测——连接拒绝无限忽略，陶瓦死后 UI 永远卡「房间已就绪」）；连续 10 次失败判定死亡（网络抖动 1~2s 不误杀）
+- 修 B-R01：Retry 代际守卫（_retryGeneration——手动 Retry/Resume 递增，旧排程 Delay 到点发现代际不符即作废）——否则手动重跑耗尽失败后旧排程仍触发 Retry → 终态后幽灵重跑（B2 修复的副作用）
+- 未修中低（记录留档）：E-中 6 条（版本级 Java 泄漏/StorageWindow 后台弹窗/清理删未导入整合包/JSON 非原子写/并发数门无效）、D-中 6 条（stop 标志残留/孤儿进程/并发互踩/锁路径/回写覆盖/列表不刷新）、B R-02/03 中、BUGS#3/4/6/7/8/9/10 复核仍存在、E-低 8、D-低 5、B-低 5
+
+### 批次 9（8-11 晚，全 UI 文案改造——微软式「你」口吻 + 关于页更新日志）
+- 用户要求：所有带文字描述说明的界面改微软「你」口吻（例「你可以在此处管理你的版本」）、问号 ToolTip 去 AI 腔、关于页披露版本+改动最大的几条功能/修复
+- 风格规范：主语「你」/口语短句 ≤20 字/去书面腔（将以便是否请需须进行）/去括号解释展开/去 AI 腔/命令式改你式
+- 改动：共 76 处（我 6 处 + Views 代理 36 处 + VM/Services 代理 34 处）
+- 关于页：新增「最近更新」区（ChangelogItems 7 条：下载引擎重构/卡死根治/整合包闭环/中文搜索/正版登录修复/开服联机修复/网络诊断）+ 技术说明口语化
+- 版本页空状态：「你可以在此处管理你的版本：启动、启动配置、加载器、模组、存档、备份导出」
+- CF API：「获取 API」ToolTip 口语化 + SettingsViewModel 状态文字你式
+- Views 15 文件（Multiplayer 9 处最多）+ VM/Services 11 文件（HomeViewModel 8 处最多）；StartupTips 彩蛋已口语无需改
+- 验证：编译 0 错误；全量 490/490 全绿；发布签名 Valid；新版已启动（真机截图被游戏挡住，留用户自看）
+
+### 批次 10（8-11 深夜，下载体验根治：速度/进度/卡完成/前摇）
+- 用户真机三问题：速度显示十几 MB/s 实际几 MB/s 还跳；「正在完成」还卡；加载器前摇讨厌
+- 根因（agent 深挖 + 自查）：
+  ① 速度虚高 = 计速「累计平均」（基线到现在的全程/耗时，前快后慢虚高数倍）+ legacy assets 上报把文件序号当 FileBytesDone（文件数/秒显示成 MB/s）
+  ② 进度跳动 = 组聚合加权 percent 新子任务挂载回落（BytesDone 回退）
+  ③ 卡「正在完成」= 组 WhenAll 等全部子任务（含失败/重试排期的）跑完才报错（BUGS#4/5 复核确认的死代码）
+  ④ 前摇 = profile json 每次网络拉取（meta 源 2-26s，内容由 mc+loader 版本确定却从不缓存）
+- 修复：
+  A1 滑动窗口计速（DownloadTask.SampleSpeed/UpdateSpeedSample，近 2s 至少留 2 采样点——裁剪过度会停在旧值）；A2 legacy assets 上报改真实字节累计（1010 行）
+  B 聚合 percent 单调不减（Math.Max + 封顶 99；字节随新 total 推进消除 AL32 卡死观感——AL32 回归测试断言更新）
+  C1 组首败早退（DownloadGroupContext.FirstFailure 信号：AddChild 订阅子任务 State==Failed；RunGroupAsync WhenAny(WhenAll, FirstFailure)——组内叶子无自动重试故失败即终态；正常路径等价 WhenAll）
+  C2 Loader 双重校验 = agent 误报（Fabric 组路径不经 Installer 质检），跳过
+  D1 profile json 磁盘缓存（AppData\Launcher\cache\loader-profiles\{kind}-{mc}-{loader}.json；缓存目录可注入——测试隔离防污染）
+- 测试：DownloadSpeedTests 3 个新（窗口速度前快后慢/聚合不落/首败早退 96ms）+ 更新 AL32 回归 + CreateService 缓存隔离；全量 493/493 全绿；发布签名 Valid；新版启动
+- 坑：窗口裁剪过度（点全删光 → 停在旧值）；percent 断言错写 50（实际封顶 99）；测试 profile 缓存污染全局 AppData（可注入修复）
+### 批次 10 补（质检窗口）：VerifyInstalledAsync 前 SetStage「正在质检文件完整性…」——质检 10-20s 全盘 SHA1 期间组任务不再显示死寂「正在完成…」（AL62 只做完成后 Stage）；493/493 全绿；已发布
+### 批次 10 补 2（真凶确认 + fabric-api 子任务化）
+- 真机截图（23:28）铁证：148.5/148.5 满进度 + 2.8MB/s 在动 + 「正在下载」——磁盘实证：26.2 的 client(37.4)+131库(109.3)=146.7MB=TotalBytes；assets 走 32 索引（已大部分存在）；**2.8MB/s = fabric-api 附带下载**（InstallFabricApiAsync 在组路径下 progress 参数无效 → 主任务满进度无表达）
+- 修复：fabric-api 挂组内子任务（ctx.AddChild「Fabric API」weight=0 不定条 + progress 透传 InstallFabricApiAsync → eco.InstallAsync——下载速度/Stage 可见）；非组路径保留 AL46.1 progress 文案
+- 493/493 全绿；发布签名 Valid；新版重启
+
+### 批次 11（8-12，进度节流根治——用户洞察「数据跟不上下载速度」）
+- 用户洞察：怀疑网速过快 → 数据同步不过来；PCL 慢所以永远跟得上
+- 机制实锤：单连接路径每 64KB 块上报（60MB/s ≈ 1000 次/秒）+ 分片 250ms/文件 × 131 并行文件 = 500+ 次/秒 UI Post 积压；组聚合无节流（每次子任务变化同步重算 + 父属性逐个 Post UI）
+- 修复：
+  ① 单连接 progress 250ms 节流 + 收尾强制报一次（DownloadService.DownloadSingleAsync）
+  ② 组聚合重构为「同步快照 ComputeSnapshot + 节流发布 PublishAggregate」——窗口 250ms + 60ms 尾算；发布值 = 窗口内最大 percent（_pendingPercent 单调——节流不吞峰值：旧「当前值单调」被挂载覆盖 99→69.3 爬不回去）
+  ③ 终态守卫 ×2（ComputeSnapshot/PublishAggregate——尾算不得覆盖 Stage="已完成"/失败 Stage 显式 Post 延迟读 Error）
+  ④ AttachChild 挂载也走节流入口
+- 测试适配 3 个（等尾算稳定）；全量 493/493 全绿（一次过——此前 flaky 是残留 testhost 并发竞争）
+- 发布签名 Valid；新版重启（PID 40124）
+
+### 批次 12（8-12，ProgressReporter 统一抽象——「静默段」治本）
+- 用户确认治本方向：所有阶段（下载/质检/meta/API）强制经过统一抽象，每阶段必须携带「阶段文字 + 字节进度 + 节流」三件套
+- 新建 src/Launcher.Core/Download/ProgressReporter.cs：构造即 Emit（阶段文字立即可见——无「无表达窗口」）；Report 250ms 节流；ReportStage 窗口内立即生效（文字优先）；Complete 补报（节流吞掉的收尾状态不丢）；sink 可空全空操作
+- 接入：LoaderService meta 子任务（「正在拉取加载器信息…」→ ReportStage 加载器配置完成）；fabric-api 子任务化重签名（DownloadProgressHandler? → ProgressReporter?，内部 eco.InstallAsync 适配 p => rep.Report(...)）
+- pipeline assets 复查：字节缩放单位已正确 + 组聚合节流兜底 → 无需重复接入
+- 清理 DownloadTask 遗留未用字段（滑动窗口重构残留 CS0169）
+- **额外抓到真生产 bug（flake 现场实证）**：ForgeInstall_Success 间歇失败——DEBUG 落盘显示两个版本 json mtime 精确并列（.605752 同微秒）→ FindNewestVersionDir 稳定排序按枚举顺序选中父版本「1.21.10」→ 校验/标记打在原版目录 → forge 版本页不显示已装（生产真机同样可能中招）。修复：mtime 并列时 tie-break 优先带 inheritsFrom 的 json（Forge/NeoForge 安装器产出物必有，原版没有）→ 确定性选对目标
+- 测试：ProgressReporter 4 个单测（节流/Complete 补报/ReportStage 立即/NULL sink）+ MtimeTie 回归（强制 mtime 并列断言标记落 forge）+ 全量 498/498 全绿
+- 发布签名 Valid；新版重启
+
+### 批次 13（8-12，生态页五项改造——26.2/版本下拉/PCL 式模组列表/路径确认）
+- 用户四个问题：①实例下拉没有 26.2 ②游戏版本下拉最高 1.21.6 ③模组详情页只有自动匹配+折叠手动选择（要 PCL 式列表）④安装无路径确认、按钮不明显
+- 根因：①IsInstalled(json+jar 双文件) 漏掉 Fabric 父版本（26.2 jar 沿 inheritsFrom 落加载器子目录）——版本页 json-only 所以可见 ②GameVersionOptions 硬编码 1.18.2~1.21.6 从未加 26.x YY.M 新格式 ③详情页手动选择是懒加载折叠 Expander（两次请求：匹配+列表）
+- 修复：
+  ① 新 IsInstanceTarget（json-only + .prefetched 排除）——不动 IsInstalled（版本页 Installed 标记/主页权威口径）；InitializeAsync 删 manifest 循环（新判定下与目录循环同结果）
+  ② GameVersionOptions 静态硬编码 → 实例 ObservableCollection；CompareGameVersions 语义比较器（26.2 > 1.21.6、1.21.10 > 1.21.6）；FilterGameVersionOptions（release 且 >=1.16，语义降序）；manifest 拉取失败兜底内置常用列表；XAML x:Static → Binding
+  ③ 详情页删手动选择 Expander/ComboBox/加载按钮；打开即加载版本列表最新 10 条直显（DatePublished/fileId 降序），每行 版本名·游戏版本·加载器/日期/大小 + 独立安装按钮；推荐行 chip（IsRecommended=匹配命中，与列表同源同请求——删旧双请求）；InstallVersionCommand 行内安装复用现有管线
+  ④ DialogService.ConfirmInstallPath（"装到这里：{path}"）+ 4 调用点（列表页 Modrinth/CF、详情页 Modrinth/CF）——路径确认在依赖确认之前；顺手修复 AF2 缺口：Modrinth 列表页/CF 双侧 InstallAsync/InstallWithDependenciesAsync 补 gameDirOverride 参数（之前 CF 一直装到 Detect() 目录）
+  ⑤ 卡片安装按钮 FontSize 11→13、Padding 14,4→20,7
+- 测试：IsInstanceTarget 4 个（json-only 26.2 场景/预取排除/双标记兜底/缺目录）+ CompareGameVersions 3 个 + FilterGameVersionOptions 1 个；全量 506/506 全绿
+- 发布签名 Valid；新版重启
+
+### 批次 14（8-12，问号 ToolTip 边缘翻转 + Modrinth 正式版优先）
+- 用户两个问题：①问号提示在窗口右/下边缘溢出看不见（23 处问号全是 ToolTip 跟随鼠标弹出，无 Placement 配置）②下载 26.2 自动匹配到 26.2 最新快照
+- 根因：①ToolTip 默认 Pointer 模式跟随鼠标，无边界检测（App.axaml 只有 ShowDelay=500）②SelectBestVersion 排序只有 Featured→DatePublished，无 version_type 维度——Modrinth API 返回 release/beta/alpha 全量，beta 日期最新被选中（ModrinthVersion.VersionType 字段存在但从未用；CF SelectBestFile 和依赖解析器都有 release 优先，唯独这里漏）
+- 修复：
+  ① 新 Core 纯函数 ToolTipPlacementPicker（方向判定：候选 Bottom→Top→Right→Left 首个「该侧空间充足+垂直/水平不溢出」胜出，Avalonia 对齐语义 Bottom/Top 水平居中、Left/Right 垂直居中贴边；文本尺寸估算 全角14px/半角7px/行高20/内边距12）+ App 层 ToolTipEdgeFlip（挂 MainWindow 监听 ToolTip Opening 路由事件，Opening 前 SetPlacement 翻转）+ App.axaml.cs 挂载
+  ② SelectBestVersion 加 ReleaseRank（release=0 beta=1 alpha=2 null=3，与依赖解析器 NormalizeReleaseType 一致）排序第一，Featured/Date 随后
+- 测试：ToolTipPlacementPicker 9 个（四方向场景/角/极小窗口/中文估算/多行/空）+ SelectBestVersion 2 个（release 赢新 beta 根因回归/beta 赢 alpha）；全量 517/517 全绿
+- 坑：①Pick 初版「剩余最大」逻辑忽略默认方向偏好——Bottom 双向满足时不应翻走；②Avalonia ToolTipOpeningEventArgs 类型名错误——实为 CancelRoutedEventArgs（XML 文档确认）；③Left/Right 对齐语义是「贴控件边缘」非居中——判定重写
+- 发布签名 Valid；新版重启（真机验证：悬停设置页底部/右侧问号应翻向可视区域）
+- 批次 14 补（8-12 晚）：用户澄清「区域判定」= 问号命中区太小（14x14 鼠标难对准），非边缘翻转（该功能保留）。help-hint 样式 14→26x26（Path 无 Padding 属性——直接放大图标本身）；发布签名 Valid；新版重启
+
+### 批次 15（8-12 晚，问号命中区/误标/链接/EasyTier 第二联机）
+- 用户四点：①问号 26x26 放大反而更难（鼠标放中间时有时无——Path 命中=几何形状，问号孔不触发）②PCL 的 1.21.1 Fabric 0.19.3 被标「本启动器」（明明 PCL 装的）③打开主页等链接不显眼 ④陶瓦联机不知原因出问题→接入第二联机方案
+- ①修复：Path 回退 14px；新 Border.help-hint 样式（Transparent 背景全矩形命中 + Padding=6 → 26 命中区，孔也命中）；23 处机械替换 <Border><Path/></Border>（perl 批量）
+- ②根因：修复/自动修复路径以版本实际目录（PCL 目录）构造 VersionInstaller → InstallCoreAsync 无条件 Mark → .yanla-installed 写进 PCL → 扫描后「本启动器」。修复：GameDirectory.IsOwnInstallDir（物理路径+来源判定 Own/Custom）+ VersionInstaller 守卫（Mark/prefetch 均只自建目录；整合包导入 allowForeignMarkers 放行——3 处构造传 true）+ VersionManifestService 扫描时清理非自建目录既有误标
+- ③Button.link 样式（Accent+下划线+ContentTemplate TextBlock）+ 3 处外部链接应用
+- ④EasyTier 第二联机（用户确认选型）：
+  - D1 接口抽象：IMultiplayerLobbyService（SnapshotChanged/Stopped/Current/CreateHostAsync/JoinAsync/StopAsync）+ MultiplayerModels 通用化（Snapshot/Player/State/StopReason/Failure/Exception——Terracotta* 重命名，TerracottaModels 只留 Module/ProvisionProgress）；TerracottaLobbyService 实现接口；FailureDiagnostics 补 NetworkFailed 映射
+  - D2 EasyTierProvisioningService（锁 v2.6.4 + SHA256 27af91e2…实测 32.6MB + GitHub 直连/镜像候选链）+ EasyTierLobbyService
+  - **实测关键发现**：a) 静态 IP 模式 peer 表格显示 ipv4（DHCP 模式空）；b) TUN 虚拟网卡创建需要管理员权限（非管理员 Failed to create adapter——UAC 提权启动 Verb=runas）；c) 隧道从虚拟网卡出发连 127.0.0.1 会 10049——房主地址必须物理 IP；d) 同机多实例需独立监听/RPC 端口；e) 26.138.121.8 是用户 Radmin VPN 网卡（误判过）
+  - 房间码 = 网络名#密钥#房主物理IP:11010；虚拟 IP 静态分配 10.144.144.{2..254}（网络名+玩家名 SHA256）；加入者直连房主；服务器地址 = 房主虚拟IP:游戏端口（游戏内直接连接）；跨网段需房主端口转发（UI 文案说明）
+  - D3 MultiplayerViewModel：方案下拉（陶瓦/EasyTier）+ GamePortText + ServerAddress + CopyServerAddress + 修复分流 + 提权失败诊断文案；MultiplayerView 加方案选择/端口输入/地址卡；许可条目更新（EasyTier LGPL-3.0 源码链接）
+- 测试：EasyTier 3 个（虚拟 IP 分配）+ 既有测试适配（Terracotta*→Multiplayer*、RepairPath/Install 断言改守卫语义、ModpackInstaller 放行）；全量 520/520 全绿
+- 坑：①追加测试 heredoc 落类外（CS1519）②Path 无 Padding 属性（编译验证）③ensureAgreement 改名引发重复方法 ④ModpackImporter 预取被守卫误拦（allowForeignMarkers）⑤RepairPath 断言与新语义冲突（改为守卫回归）⑥xunit 吞 Console——flake 调试用文件落盘
+- 发布签名 Valid；新版重启（真机：问号孔命中、PCL 版本来源标签、链接下划线、联机页方案下拉）
+
+### 批次 16（8-12 晚，文案去 AI 味 + 第三方说明 + GitHub 大文件提速）
+- 用户三点：①文案再改口吻（不要AI味、像官方描述、不要废话文学）②第三方下载加说明（用户文案：使用Lattice的下载第三方文件功能下载自定义文件，支持Github镜像加速下载）③好消息+诉求：下载引擎 GitHub 小文件（19MB）快于浏览器、大文件掉几百 KB——「github文件能怎么快就怎么快」
+- ①文案扫描（agent 全 25 View）：17 处问题 6 文件——一键修复/一键开服（营销腔）、即可/须/需/点击（书面腔）、「你可以在此处管理你的版本」（废话引导）、协议弹窗「须知」公告腔、括号没展开（mrpack/ZIP/options.txt）。全部改写（短句口语化）
+- ②ThirdPartyDownloadView 加副标题「下载自定义文件。GitHub 源自动走镜像加速。」+ ToolTip 补镜像说明
+- ③GitHub 大文件提速根因：ramp-up 探测 1MB/2s 测不出 GitHub CDN 渐进式限速（前几 MB 全速后 throttle）→ 误判高速给 1 片 → 掉速；非 release 直链（objects.githubusercontent.com/codeload.github.com 签名 URL）不走镜像竞速（单源国内几十 KB/s）。修复：ProbeAndDecideConcurrencyAsync 按域加大档位（GitHub CDN 4MB/5s——限速暴露 → 分片决策正确）+ IsGitHubCdn 纯函数；ThirdPartyDlSourceResolver.IsGitHubUrl 覆盖签名 CDN 域（贴签名 URL 也走 ghproxy.net/gh-proxy.com 竞速）
+- 不做（风险/收益权衡）：ghapi 换链后签名 URL 的嵌套镜像竞速（需改竞速核心结构）；ghfast.top 镜像（项目 08-10 实测已挂废弃）
+- 测试：GitHubSpeedupTests 12 个（IsGitHubCdn 域判定 Theory/签名 URL 镜像候选/ghapi 兜底保留/非 GitHub 单候选）+ 既有 Resolver 测试抓回归（github.com tag/列表页非文件直链）；全量 532/532 全绿
+- 坑：probeBytes 变量名与既有局部变量冲突（CS0128）；IsGitHubUrl 扩展过宽（tag 页/列表页误触发镜像——08-10 语义保留）
+- 发布签名 Valid；新版重启（真机：GitHub 大文件下载速度对比 + 文案目视）
+- 批次 16 补（8-12 晚）：用户澄清方向反转——「公告腔调这种我反而喜欢，更官方更正规」「让我感觉AI味的反而是等一会儿你俩就在游戏里碰头，都在这里管这种样式」——口语化套近乎 = AI 味，官方/正式/公告腔 = 喜欢。反转批次 16 口语化处：碰头→「点击「加入房间」，即可进入房间」、都在这里管→「在此处管理你的版本：…」、协议恢复「使用须知/须遵守/不得用于违法用途/首次使用需下载…即可使用」、第三方说明用用户原文案「使用 Lattice 的下载第三方文件功能下载自定义文件，支持 Github 镜像加速下载」、端口文案官方化。发布签名 Valid；新版重启
+
+### 批次 17（8-12 晚，OBS 大文件波动修复：签名 URL 套镜像 + 动态升片）
+- 用户：OBS 走第三方下载 GitHub 路径波动严重（骤降到几百 KB），比它大的 AnythingLLM 反而快——问为什么
+- 原因（代码级）：①OBS 4 源竞速（原链/2 镜像/ghapi 签名）——ghapi 签名直链（objects.githubusercontent.com）实测国内 64KB/s（代码注释明示「兜底源」）——镜像全挂/被淘汰 → 落到签名直链 ×分片 ≈ 几百 KB（用户看到的值）②镜像转发波动 + 竞速淘汰制取消后不重引入 → 领先源切换抖动 ③AnythingLLM 的 CDN 非渐进限速（探测准确），GitHub 的渐进 throttle 探测期测不出（4MB/5s 档位还不够）
+- 修复：
+  ① 签名 URL 套镜像：候选构建处 ghapi 预换链（await GetSignedUrlAsync）→ 展开为 [signed, ghproxy/signed, gh-proxy.com/signed] 并入外层竞速——兜底源也走镜像加速；换链失败本轮剔除（下一轮重新 Resolve）
+  ② 动态升片（治本）：DownloadChunkedAsync 重构为 while 循环——监测循环内 3 采样均速 < 300KB/s 且完成 < 80% 且片数 < max 且冷却 ≥10s → 取消当前片、清 .parts（旧边界与新片数不对齐，保留会错位损坏）、2× 片数重启（ShouldUpgradeChunks 纯函数）；cp.Bytes/Reported 每轮新建（进度回退瞬间可见随后爬升）；判死换路（SlowSourceException）与升片分支区分
+- 不做：竞速淘汰后重引入（镜像波动恢复后回场——复杂且升片已缓解）；签名 URL 嵌套竞速（已用展开方案替代）
+- 测试：ChunkUpgradeTests 5 个（低速中段升/高速不升/尾部不升/满片不升/冷却期不升）；全量 537/537 全绿
+- 坑：while 循环括号平衡（CS1513——合并块 return 后缺 while 闭合）；UpgradeSpeedBps 常量漏定义（CS0103）；升片清 .parts 的错位风险（片断点续传的 have 跨越新边界会数据缺口——必须清空重下）
+- 发布签名 Valid；新版重启（真机：第三方下载 OBS GitHub 大文件看速度稳定性）
+- 批次 17 补（8-12 深夜，动态升片后期失效）：用户实测「前期确实稳定2M 但后期煎熬又回到了几十KB每秒 直接拖长几分钟」——80% 完成条件挡住后期升片（OBS 掉速发生在 80%+ 之后）。修复①条件从「完成 <80%」改为「剩余 ≥8 MiB」（MinUpgradeRemainBytes=8*1024*1024——升片重下损失随尾部缩小，剩余 8MiB 后停）②满分片仍慢 → 立即判死换路（fail-dead，不等 30s 连续采样——镜像被竞速淘汰后不会回来，重新 Resolve 让镜像重新参与）
+- 测试：ChunkUpgradeTests 6 个（新增 LateStageStillYes：90MB/100MB 升、边界剩余恰 8MiB 升）；全量 538/538 全绿（首次全量跑 OfficialDown_MirrorWins flaky 失败 1 次、重跑通过——网络竞速时序偶发，观察）
+- 坑：边界测试值 92_000_000 是 8MB（8,000,000）不是 8MiB（8,388,608）——断言 false；改 100_000_000-8*1024*1024 精确边界
+- 发布签名 Valid；新版重启（真机：第三方下载 OBS 大文件全程速度稳定性）
+
+### 批次 18（8-12 深夜，固定分片续传 + 失败体验三件套 + UA 修复）
+- 用户方向演进：最初要求「重试清空重置进度 + 删遗留」→ 最后明确「换源续进度，确保文件没有遗漏或差池」——最终方案以固定分片续传为核心
+- 集训室评估（顺带）：下载源国内分布——版本全家走 BMCLAPI（国内 ✅）、Fabric 库 bmclapi/maven ✅、Forge/NeoForge/模组/GitHub 系（含 ghproxy 镜像）全境外 ❌；实测 7 个候选镜像 5 个死（ghproxy.cc/gh.llkk.cc/ghps.cc/moeyy/gitmirror 全 000）、2 个活（gh-proxy/ghproxy.net 境外）；「自动转 gitee」不成立（gitee 无 URL 转发，仓库导入阉割 release）——集训室无解，家里镜像竞速正常
+- **固定分片续传（核心）**：分片边界从 totalSize/chunkCount 改为固定 256KB（FixedChunkSize，延续旧 ChunkThreshold 语义）——边界永不变化 → 已完成片跨 attempt/换源/并发变化全部复用；SemaphoreSlim 并发调度（初始=探测值，上限 maxChunks=8）；升片从「清 .parts 重切重启」改为「gate.Release 提高并发」（不丢进行中字节、进度不回退）；ShouldUpgradeChunks 参数改并发语义（旧「片数<max」固定片后永不触发）；探测函数 internal 化（Probe_DecidesConcurrencyBySpeed 直测）
+- **完整性加固**：合并后总长度 == totalSize 校验（无 sha1 的第三方下载的最后兜底）；片长度校验 + SHA1 终校验保留
+- **终态清理（需求 4）**：CleanupResiduals（清 .tmp/.parts/.race* 系列，destPath 本体永不动——幂等语义）+ DownloadTask 终态失败触发（ScheduleAutoRetry 不可重试/耗尽分支）——**不在 Service 层 attempt 耗尽清理**（Task 自动重试还要靠 .parts 换源续传，8-18 曾误放 Service 层导致续传测试失败，已移）
+- **自动重试提示（需求 3）**：DownloadTask 加 IsAutoRetryPending + AutoRetryScheduled(attempt,total) 事件（Post 内 Stage 后触发——选事件不选 Stage 字符串匹配：组任务聚合污染 Stage）；DownloadViewModel 订阅弹 Error 红 Toast 8s（durationMs 参数已有，未改 NotificationService）；终态失败 Toast 抑制双弹（Failed && !IsAutoRetryPending）
+- **UA 修复**：HttpClientPool UA 改浏览器格式（Mozilla/5.0 ... Chrome/126 ... YanKa-Launcher/0.1 常量）——实测 ghproxy.net 对自定义 UA 403（镜像候选实际不可用），全仓无 UA 读取逻辑低风险；CurseForge 要求 UA 含联系信息（保留后缀）
+- 测试：FixedChunkResumeTests 2（跨 attempt 复用——片1/2 全程只请求 1 次 + 片3 从 16KB 断点续传；边界 256KB 对齐）、DownloadResidualsTests 2（CleanupResiduals 纯 IO + Task 终态清理）、AutoRetrySignalTests 2（首败 Pending true + 事件 (1,2)；耗尽 false + (1,2)(2,2)）、RampUpTests 重构（探测返回并发 + 固定片端到端 13 Range + 小文件 2 片）、HttpClientPoolTests +1（UA）；适配 PartResume（256KB 片下 ResumeFrom=512KB 恰好是片 3 起点——自动恢复）；全量 546/546 连续两次全绿
+- 坑：①RampUp 直测探测函数时 partDir 未建 → DirectoryNotFoundException → 片重试吞时间 → 返回慢源档（测试建目录）②探测诊断临时行 heredoc \n 变真实换行（CS1025）③断言 start=0 计数忘了探测也是 0（3 次 vs 2）④StallFrom 挂起被片内重试+回退单连接救活 → 改慢速判死（SlowSourceException 穿透不清理）触发失败⑤Requests.Clear 会重置 stall 判断 → 一次性开关 _stalledOnce⑥Service 层终败清理与 Task 重试续传冲突（移 Task 层）⑦Exhausted 测试全量跑超时（完整重试链 3.8s + 线程池饥饿——DrainUntil 上限 400→2000 次）⑧OfficialDown_MirrorWins 依赖真实网络 ghapi 换链（8-16 预解析引入）——注入 500 handler 修掉 flaky
+- 暂停丢进度既有 bug（记录不修）：DownloadChunkedAsync 通用 catch 清 .parts 后回退单连接——暂停（OCE）也走此路径 → Resume 从零（断点续传失效）；下批处理
+- 发布签名 Valid；新版重启（真机：OBS 大文件下载换源续传不归零、掉速升片只提并发、终态无垃圾文件、重试红 Toast 8s、镜像竞速 UA 修复后 ghproxy.net 重新参与）
+- 批次 18 补（8-12 深夜，固定片 256KB→1MB）：用户实测 HTTP Toolkit 166MB 下载「不稳定偶尔 2M、整体不如之前」——根因：固定 256KB 片 × 664 个请求，每片一次 HTTP RTT（~100ms）——单并发下吞吐崩到 1.5-2.5MB/s（升片条件 <300KB/s 又拦住波动速度）；批次 17 大文件片=20MB（totalSize/并发）无此惩罚。修复：FixedChunkSize 256KB→1MB（PCL 同款，166MB→166 片，RTT 惩罚降 4 倍）；Modrinth 小文件并发上限略降可接受。测试适配：RampUp（3MB→3 片 4 Range / 500KB→1 片）、FixedChunkResume（3.5MB 4 片重新设计）、PartResume（ResumeFrom 512KB→1MB）、ChunkBoundaries 改名 1MB
+- 坑：Exhausted_PendingFalse_EventFiredTwice 全量跑 5 次失败 4 次（单跑必过）——诊断 State=Failed Pending=True Events=1：重试链卡在 Task.Run 续跑（全量并行线程池饥饿 20s+ 饿死）——测试 DrainUntil 设死上限误报超时；改无限泵到 Completion（产品环境是真实 UI 队列无此问题）
+- 发布签名 Valid；新版重启（真机：HTTP Toolkit 下载速度对比——1MB 片后单并发 RTT 惩罚降 4 倍）
+- 批次 18 补 2（8-19，片大小自适应 + 快源并发保底）：用户问「怎么最大限度与批次 17 同等甚至更快更稳定」——计划模式（Plan agent 对抗性审查确认两个关键点）
+  - **根因（审查确认）**：RTT 开销 = totalChunks/并发 × RTT——166MB：256KB 片 66.4s（实测 1.5-2.5MB/s 正是 RTT 界）→ 1MB 16.6s → 2.6MB 6.4s。**瓶颈不是请求次数，是「快源→探测判 1 连接」**——RTT 浪费对吞吐检测不可见（恒 >10MB/s），慢速检测/升片永不触发——必须在探测时刻定并发
+  - **Phase 1 片大小自适应**：ChunkSizeFor(totalSize) = clamp(totalSize/64, 1MB, 4MB) 纯函数（目标 64 片 = 8 并发 × 8 波 = 0.8s RTT 上界；上限 4MB = 零字节失败重下粒度）；入口一次定永不变化（边界固定 → 续传复用保留）；<64MB 恒 1MB（现有测试 ≤10MB → 零行为变化）；166MB → 2,719,744 字节/片（非 2 幂，抓硬编码回归）
+  - **Phase 2 快源并发保底**：探测快源分支 totalSize ≤8MB ? 1 : min(4, maxChunks)——4 并发摊薄 RTT 4 倍；每连接单请求 ≤2.6-4MB 在 GitHub「前几 MB 节流」窗口内不新增节流暴露；8MB 门槛保住现有快源测试（3MB/3.5MB 仍判 1）；连接数受限源最坏浪费一轮 attempt 走既有单连接回退兜底
+  - 否决：档位式片大小（小文件退化更多请求）、探测决定片大小（边界变 → 全量重下回归）、升片冷却改短（升片判据是吞吐，RTT 界永不触发——错误杠杆）
+  - 测试：ChunkSizeTests 7（<64MB 恒 1MB/64MB 恰 1MB/100MB→1,638,400 恰 64 片/166MB→2,719,744/256MB 恰 4MB/1GB→4MB 256 片/扫描自洽）+ AdaptiveBoundaries 集成（100MB 端到端 start 对齐 1,638,400）+ Probe_FastSource_LargeFile_FloorsConcurrency Theory 3（100MB→4/8MB→1/8MB+1→4）；全量 556/556 全绿
+  - 风险：731 行 expectLen 必须用局部 chunkSize（漏改大文件合并炸）；合并/升片/判死语义零耦合
+  - 发布签名 Valid；新版重启（真机：HTTP Toolkit 166MB 重下——预期初期即 4 并发 × 2.6MB 片，RTT 惩罚消失）
+- 批次 19（8-19，末尾限速死区修复 + 合并阶段提示）：用户实测新架构「前 95MB 全程 MB 级、掉到 1.x 马上回升 2MB——末尾莫名降到几十 KB」——根因：**末尾死区**——剩余 <8MB 时升片被 MinUpgradeRemainBytes（≥8MB）守卫挡、判死被「并发到顶」守卫挡（快源保底 4 并发未到 8）——GitHub 连接级累积限速（末尾每连接传输量大被 throttle 到几十 KB）无任何机制干预拖到尾。修复：判死条件加 `|| totalSize - bytes < MinUpgradeRemainBytes`（剩余 <8MB 低速直接判死换路——新连接重新累积前几 MB 快，收益远大于 Resolve+探测开销）；另加合并阶段 Stage 上报「正在合并文件…」（大文件合并 64 片写 166MB 要几秒，期间速度显示几十 KB 被误认限速——上报 Stage 让用户看到收尾）。全量 556/556 全绿
+- 批次 20（8-19，启动器下载日志）：用户问「怎么用 HTTP Toolkit / 能自动抓启动器日志吗」——HTTP Toolkit 抓 HTTP 层但看不到竞速业务语义（哪个源赢/为什么判死/升片几次）——给 DownloadService 加下载日志（LogWrapper → PCL\Log\Launch-*.log）：每轮候选源列表（Debug）、单候选完成/失败、竞速赢家（URL+耗时）、升片（并发 n→m + 均速）、判死换路（均速+剩余）、终败（原因+总耗时）；ShortUrl 截断长 URL（签名/镜像前缀超长）；swDl 总耗时计时。全量 556/556 全绿。HTTP Toolkit 结论：通用抓包保留（不删），启动器分析走下载日志（我直接读文件）
+
+- 批次 21（8-12，生态「匹配失败」修复 + 跟随实例开关）：用户主页选 PCL2 存档（26.2-Fabric 0.19.3）→ 下载光影包页「匹配失败: The JSON value could not be converted...」——CF API 实测未失效（DPAPI 解密 key HTTP 200），根因：TryParseGameVersion("26.2-Fabric 0.19.3")→"26.2"→CF gameVersion=26.2（CF 用 1.21.6 格式不认年份号）→ **200+错误 JSON（data=null 不抛 JsonException）** → UI「匹配失败」
+- **Step 1 容错**：GetJsonAsync Deserialize 成功后显式 TryParseCfError（错误 body 能成功反序列化成 T——data=null 的「空结果」≠ 合法 data=[]）；非 2xx 读 body 提 CF 错误消息；CurseForgeApiException(CfStatusCode) 继承 HttpRequestException
+- **Step 2 版本参数自动降级**：WithVersionFallbackAsync——400 → 不带 gameVersion 重调一次（防循环最多 2 请求）；接入 SearchAsync/GetFilesAsync/FindBestFileAsync；**FindBestFileAsync 降级后 SelectBestFile(files, dropped?null:gameVersion)**（否则 26.2 过滤空误报「没有适配文件」）；CurseForgeSearchPage.VersionFilterDropped
+- **Step 3 降级提示**：RunCfSearchAsync/RunBothSearchAsync 状态栏「该版本 CurseForge 暂不支持过滤，已显示全部版本」
+- **Step 4 跟随实例开关**：LauncherSettings.EcoFollowInstance=true（默认开老用户无感）+ SectionDownloadView 下载行为组 ToggleSwitch + SettingsViewModel Load/Save/OnChanged 即时生效 + EcosystemViewModel 三处 gate（OnMainPropertyChanged 关→不自动选实例 / InitializeAsync 关→只取 Instances[0] / RunSearchAsync 关→gameVersion=null 显示全部版本）；加载器派生不受开关影响（fabric/forge 两侧合法）；用户显式选版本永远优先
+- Modrinth 不修：26.2 facet 大概率有效（FallbackGameVersions 有 26.2），无效也软失败（200 空结果）
+- 测试：CfStubHandler 纯增量（RequestUrls 全 URI 列表 / RouteJsonFull 按 PathAndQuery 路由 / RouteStatusWithBody）+ 8 个新测试；LauncherSettingsTests +EcoFollowInstance；**全量 564/564 全绿**（556 回归 + 8 新测试零破坏）
+- 坑：①CF 错误 JSON 能成功 Deserialize（data=null）→ 原 TryParseCfError 只在 JsonException catch 里永远不触发——降级静默失效（本次主 bug）②测试 sortField=relevancy 是字符串，实际 BuildSearchUrl 是数字（SortIndex.Relevance→1）③RouteStatusWithBody 存 body 但 SendAsync 非 200 分支丢 body → TryParseCfError 读空串失败——stub 非 200 也要带 Content ④files 路由 key 漏 modId 路径段（/v1/mods/files vs /v1/mods/100/files）
+- 发布签名 Valid；新版重启（真机：PCL 26.2 实例进光影包页——无「匹配失败」+ 降级提示；开关关后全部版本）
+- 批次 21 补（8-12，光影包「才 3 个」根因排查——搜索词 + loader facet 双重过滤）：用户截图对比——PCL2（空搜索框+版本 26.2+来源全部）显示 Complementary/BSL 一堆 CF 光影包；启动器（跟随实例 fabric-loader-0.19.3-26.2 fabric）只有 3 个（Dirt RT/Krpmon Lite/old doggo 全 Modrinth）
+- **根因 1（搜索词）**：截图识图确认搜索框残留 "fabric-loader-0.19.3-26.2 fabric"（无任何代码写 Query——171 行仅声明；用户残留输入）。实测 CF searchFilter=该词 → 0 结果（data=0 total=0）；Modrinth 相关性模糊命中 3 个
+- **根因 2（loader facet，代码缺陷）**：跟随实例派生的 loader=fabric 传给 Modrinth → 光影包几乎不标 loader → 26.2+fabric 滤剩 3 个。实测：Modrinth 26.2 shader 带 fabric facet 第一个是 Dirt RT；不带 facet 显示 Complementary Reimagined 等全部
+- **修复**：RunSearchAsync 派生 loader 加 IsModType gate（光影包/材质包不派生 loader——用户显式选加载器不受影响）；顺带确认 CF 对 gameVersion=26.2 真机返回 200+合法数据（90803 字节，与不带版本完全一致）——CF 静默忽略无效版本，批 21 的 400 降级在 26.2 上不触发属正常
+- 验证手段：GLM 识图（两次聚焦指令——确认搜索框内容/状态栏「共 3 个结果」/筛选值）+ PowerShell DPAPI 解密 key 直测 CF（带/不带 26.2、带/不带 searchFilter）+ curl 直测 Modrinth（fabric facet 对比）
+- 全量 564/564 全绿；发布签名 Valid；新版重启（真机：光影包页清空搜索词 → CF 侧应显示热门光影包；Modrinth 侧不再被 fabric 滤没）
+- 批次 21 补 2（8-12，「没有能用的版本」详情页提示——files 200+空降级）：用户新截图——搜索框残留词 + 共 1353 个结果（loader 修复生效，fabric facet 不再滤光影包）但详情页提示「没有 fabric-loader-0.19.3-26.2 能用的版本，在下面列表里选一个试试」
+- **根因**：FindBestFileAsync 带 gameVersion=26.2 → CF **files API 返回 200+空列表**（实测 data=0，非 400！）→ 批 21 降级只在 400 触发 → SelectBestFile 空池 → 误报「没有适配版本」。同族问题（CF 静默忽略/过滤无效版本）：search API 对 26.2 返回全量、files API 对 26.2 返回空——行为不一致
+- **修复**：WithVersionFallbackAsync 加 isEmpty 参数——带版本调用返回空 → 不带版本重试（dropped=true）。接入：GetFilesWithFallbackAsync（空列表降级）、SearchAsync（仅**无搜索词**时 0 结果才降级——带搜索词 0 结果大概率词不匹配，降级会误导状态栏「版本不支持过滤」）。FindBestFileAsync 自动受益（降级后从全池选）
+- 测试：+4（files 200+空降级、FindBestFile 200+空降级从全池选、search 无词空降级+flag、**search 带词空不降级恰 1 请求**）；全量 568/568 全绿；发布签名 Valid
+- 真机：详情页点光影包 → 不再「没有能用的版本」，自动选到最佳文件（1.21.6 格式在 CF files 里存在）
+- 批次 22（8-12，26.2 光影「找不到」全链路修复——Explore 7 块审计 + Plan 对抗审查）：用户实测批 21 补 2 后仍报「没有 fabric-loader-0.19.3-26.2 能用的版本」+ 版本列表空（「光影包的列表呢」）。全链路逐块实测（GLM 识图 + curl 实测 Modrinth/CF API + 代码审查）
+- **实测事实**：CF search API 对 26.2 静默忽略（1353 结果正常）；CF files API 对 26.2 返回 200+空（批 21 补 2 已降级）；Modrinth **search** facet 认 26.2 但 **versions** API 不认（game_versions=["26.2"]→空、"1.21.6"→7 个）；光影包 **loaders=fabric→0**（不标 loader）；CF files 版本列表是 1.21.6 传统格式
+- **真凶 A（CF 详情二次过滤）**：LoadCfAsync 调 GetFilesAsync（公开签名丢 dropped）→ SelectBestFile(files,"26.2") 再滤 → null 误报。修复：GetFilesWithFallbackAsync **public 化**（返回 (files, dropped)）+ LoadCfAsync/InstallWithDependenciesAsync 用 dropped ? null : gameVersion
+- **真凶 B（Modrinth 详情双重过滤）**：详情页派生 gameVersion="26.2"+loader="fabric" 都滤空 → 列表真空。修复：GetVersionsAsync **年份号空降级**（IsYearFormatVersion 判别，保留 loader，防循环 2 请求）+ 详情页 loader 派生 _card.Type==Mod gate + InstallCard 同 gate（Explore 缺口 2）
+- **块 4（依赖解析全失败，Explore 发现）**：ModDependencyResolver 精确字符串匹配 "26.2"/"" 永不匹配（**含无实例 target="" 的既有 bug**）。修复：IsCompatibleFile 对年份号/空 target 放宽（loader 保留，排序精确优先→选最新）；传统 1.x 严格不变（Resolve_VersionMismatch 锁定）
+- **块 6（fabric-api 误装风险，Plan 发现）**：GetVersionsAsync 降级后 fabric-api 可能装 1.21.6 构建进 26.2 崩——LoaderService 客户端过滤 GameVersions.Contains(mcVersion)，无构建保持静默跳过
+- **核心原则**：降级/放宽只对年份号（`^\d{2}\.\d+`）——传统 1.x 空结果/不匹配是真实语义绝不降级（防 1.21.6 实例高亮 1.20.1 装崩）；不做 26.2→1.21.6 映射表
+- 测试：+10（CF files 降级 2、Eco GetVersionsAsync 降级 4 含传统不降级锁定、DependencyResolver 放宽 3 含 loader 仍生效、LoaderService 版本不匹配跳过 1）；**全量 578/578 全绿**
+- 坑：GetFilesWithFallbackAsync 签名 ct 无默认值（VM+测试两处调用漏参 CS7036——已补 default）；LoaderServiceTests StubHandler 按 AbsolutePath 路由无法区分带/不带 query（测试设计适配：路由直接返回非空列表测过滤分支）；FabricProfileJson inheritsFrom=1.21.1 不重写（26.2 场景会污染——测试用 1.21.1 + 版本不匹配构建）
+- 批次 22 补（8-12，安装路径确认对话框加修改入口）：用户问「为什么确认安装位子不给修改入口」——原设计路径由实例决定（AF2 落点：装实例 mods/shaderpacks 目录，PCL 式防装错），对话框只确认不能改。改：MessageDialogWindow 加 PathPanel（可编辑目录 TextBox + 实时落点预览 PathPreviewText + 浏览按钮 StorageProvider）；ConfirmInstallPathAsync 返回 string?（null=取消，否则用户确认的目录）；DialogService.ConfirmInstallPath 签名改 (owner, gameDir, instanceId, type)→Task<string?>；4 调用点（ProjectDetailViewModel 两处安装 + EcosystemViewModel InstallCard/InstallCfCardAsync）接入——确认框返回目录 → 后续安装 gameDirOverride/落点用新目录（局部变量不写回实例）
+- 泛型化 ShowAndWaitAsync<T>（bool/string? 两用）；OnConfirm/OnCancel/OnClosed/ESC 双 TCS 兜底
+- 全量 578/578 全绿（纯 UI 改动，Core 未动）；发布签名 Valid；真机：安装光影包 → 确认框可改目录 + 预览「将装到：」+ 浏览按钮
+- 批次 23（8-12，末尾判死弃 99.6% 清零重下——PowerToys 271MB 实测）：用户测引擎：PowerToys 271MB 下到 99.6%（最后 1MB 不到）被判死换路 + **片集清零重下**（「没继承进度直接清零」）
+- **日志还原真相**：23:32 第 1 轮竞速 → 源 3（签名 CDN release-assets.githubusercontent.com）全量分片下载 → 后段 GitHub 累积限速 64KB/s（批次 19 同款）→ **最后 1MB 触发末尾判死**（判死日志「已下0MB剩余」= 整数截断，真实剩余 <1MB）→ 片取消 WhenAll 抛 → 竞速源输 → 换路 CleanupRaceFiles 清 99.6% 片集 → 第 2 轮从零 → 又失败 → AutoRetry 第 3 轮
+- **根因**：慢速监控三层判死（AL61 663 行持续低速 / 末尾 679 行剩余<8MB / 并发到顶）**都没有剩余守卫**——剩余 < 一片（chunkSize，271MB→4MB）时判死 = 弃 99.6% 换路重下 271MB，**纯亏**（批次 19 判死收益假设「剩余不多重下快」在 <1 片时失效）
+- **修复**：三处判死统一加 `剩余 ≥ chunkSize` 守卫——剩余不足一片时不判死，等最后一片下完（至多几十秒）；单连接路径（DownloadSingleAsync）同守卫（total 未知时保持原判死行为）；顺带修判死日志文案（「已下X剩余」→「剩余X」）
+- **测试**：SlowStream 加 slowAfter 分段速度（前快后慢）+ SlowSource_TailRemainder_WaitsForLastChunk（20MB 前 19.2MB 快 + 尾 800KB 慢 → 成功——无守卫必判死）；SmallFile 测试语义变更（<1MB 等完）；SlowSource_Chunked（5MB 中段判死）保绿验证守卫不误伤
+- 坑：①SlowStream slowAfter 默认值设成 long.MaxValue → 永不 delay 恒快流（587KB/s 幽灵速度）——默认 0 ②CreateService 的 handler 流 5MB 与 SmallFile 期望 500KB 不匹配 → 读超 10 倍（64s）+ 回退单连接再 64s = 129s 校验失败——旧测试靠判死掩盖，测试流长度必须与期望一致
+- 全量 579/579 全绿；发布签名 Valid；真机：重下 PowerToys 271MB 看末尾（最后一片慢速不再清零，直接下完合并）
+- 批次 24（8-13，竞速提速——淘汰评估改速度外推 + GitHub 满并发）：用户问「270MB 只能这速度吗」——755KB/s 的根因：竞速淘汰评估只比「总量领先」——CDN 直连开局快（首字节毫秒级）15s 评估总量领先 → ghproxy 镜像（握手慢但全程 2MB/s 稳定）被提前淘汰 → 赢家是后段限速 64KB/s 的 CDN
+- **修复 1（核心）**：淘汰评估改「预计剩余时间」PickRaceLeader 纯函数——eta = (total-bytes)×窗口/增量——稳定镜像胜过后段限速 CDN（271MB 实测：CDN eta≈1064s vs 镜像 ≈110s）；已下完（合并中）源直接保留（弃它=弃已下完文件）；全无增量回退总量领先；RaceProgress 暴露 GetTotal
+- **修复 2**：探测快源档 GitHub CDN 大文件直接满并发（maxChunks=8 替代 4）——连接级累积限速按每连接传输量，满并发把 271MB 摊 8 连接（34MB/连接）尽量留前几 MB 快窗口
+- 测试：+4 PickRaceLeader（镜像胜/合并保护/全卡死回退/快源不回归）；全量 583/583 全绿；发布签名 Valid
+- 真机：重下 PowerToys 271MB——预期 ghproxy 镜像赢（2MB/s 级，~2.5 分钟）而非 CDN 755KB/s（~6 分钟）
+- 批次 25（8-13，「影响的全修了」收尾——暂停归零 + 竞速输家片集继承）：用户盘点 17 个大 BUG 清单后指示全修——剩余两项
+- **暂停归零（#1）**：DownloadChunkedAsync 通用 catch 把 OCE（用户暂停）也接住 → 清 .parts → 回退单连接 → Resume 从零（批次 18 记录不修的既有 bug）。修复：catch 链加 `catch (OperationCanceledException) { throw; }`（SlowSourceException 之后、通用 catch 之前）——暂停/取消保留片集，Resume 复用。测试：Pause_MidDownload_KeepsCompletedChunks（片 2 挂起中取消 → 0.part 完整保留 → 重下复用完成）
+- **竞速输家片集跨轮继承**：竞速片集命名 `.race{index}` → `.race{RaceKey(url)}`（SHA1 前 8 位 hex，键与 URL 绑定——候选顺序轮间变化不影响）；轮间清理删除（301 行 CleanupRaceFiles 保底清 → 保留供同 URL 复用；赢家后清输家、终态失败 CleanupResiduals 全清——正常路径无积累）。判死换路后同 URL 下轮从断点续——「中途换源不丢进度」闭环
+- 测试：+2（Pause_MidDownload、RaceKey_StablePerUrl）；全量 585/585 全绿；发布签名 Valid
+- 坑：Edit 破坏 ServerReturns200 测试 finally 块（孤行残留 CS1519——修复）；xunit Assert.Throws 精确类型匹配（TaskCanceledException 子类失败——改断言类型）
+- 真机：PowerToys 重下——中途杀任务/暂停再继续 → 进度不归零；判死换路（如镜像列表变化）→ 同 URL 片集续传
+- 批次 26（8-13，GitHub API 换链限流——候选 6→3 源）：用户实测新版下载开头就几百 KB/s——日志：候选只剩 3 个（签名 URL 全缺）——换链（GitHub API 未认证 60 次/小时按 IP）被今天的多次大文件测试耗尽（每次换链 2 次 API 调用；**失败不缓存 → 每轮重试 Resolve 再打 → 重试风暴**）
+- 修复：FailureCache 失败退避——403/429（限流）后 5 分钟不再打 API（额度自然恢复前不空打）；IsRateLimited + MarkFailure；ClearCacheForTest 清双缓存
+- 测试：+1（RateLimited_BacksOff_NoRepeatedApiCalls——第二次调用 0 请求）；FakeHandler 加 RouteStatus + Calls 计数；全量 586/586 全绿；发布签名 Valid
+- 用户方案确认：换网（IP 重置）立刻解限流；治本 = 失败退避（本批次）+ 可选 GitHub token（5000 次/小时，需用户配）
+- 批次 27（8-13，GitHub API Token 可选配置——用户视角可还原）：用户观点「token 应该自由开关选择——大部分用户是下载为主，配 token 测不出普通用户视角」
+- 实现：LauncherSettings.GitHubApiToken（DPAPI 加密落盘，Load/Save 同 CF key 双缓存模式）+ 设置页「下载行为」组 GitHub API Token 输入框（PasswordChar 不回显、留空=保留现有、填了覆盖、Save 清空输入）+ GitHubApiDirect ApplyAuth（每次现读设置即时生效；Authorization: Bearer）——**留空 = 普通用户未认证模式（60 次/小时/IP），还原真实用户视角**
+- ToolTip 文案：60→5000 次/小时对比 + github.com 申请路径（Settings → Developer settings → Personal access tokens）
+- 测试：+2（TokenConfigured 带 Bearer 头 / NoToken 不带——FakeHandler Auths 列表捕获全部请求头：redirect 模拟重建请求丢头，LastAuth 单值断言会 null）；TokenOverride 测试注入（null=动态读设置、""=显式未认证）
+- 坑：FixedChunkResume.RetryAttempt_ReusesCompletedChunks 全量跑失败 1 次单跑必过（Expected 3 Actual 2）——flaky（批次 18 记录过的全量线程池时序敏感），重跑全量 588/588 全绿
+- 发布签名 Valid；真机：设置页填 token → 换网前后对照（不填 = 用户视角 60 次限流；填了 = 5000 次）
+- 批次 29（8-13，正版登录全链路——clientId 吊销真相 + Live 授权码流重写）：用户问「正版登录是最大弊端 + 为什么别人的设备码能用」——真相链：microsoft-auth.log 四次 AADSTS700016（Mojang 老 clientId 00000000402B532E 被吊销）；微软 2026-02 改了登录配置（HMCL #327/#328 专门修）；2026 年又把**个人注册 Azure 应用入口废弃**（「在目录外创建应用程序已被弃用」——用户实测新 outlook 账号也撞墙）→ 存量 clientId 是稀缺资源（HMCL 藏 JAR manifest、Prism 构建期注入、PCL 远程下发）
+- **抓包拿协议**：HTTP Toolkit 拦截（系统代理 reg 手动设 + CA 装 CurrentUser Root）+ PCL 登录流量——PCL 用 **Live 体系 oauth20_remoteconnect**（client_id=2489da17e441279835a50896336649260，Live 老 scope wl.basic wl.emails wl.contacts.write wl.offline_access wl.signin，PPFT 防伪 + uaid cookie，token 回内嵌浏览器 fragment）
+- **Lattice 重写**：devicecode（AAD 死）→ **Live oauth20_authorize 码流**：BuildLiveAuthorizeUrl（response_type=code + redirect localhost:随机端口）→ AccountViewModel 用 **TcpListener 端口 0**（HttpListener 有 URL ACL 坑，非管理员绑定被拒）→ 收 code → ExchangeCodeAsync（oauth20_token.srf）→ AuthenticateMinecraftAsync 复用（RpsTicket 修 d= 前缀——旧代码裸 token 从未真机验证）
+- 顺带完成：token DPAPI 加密落盘（批次 28）+ 启动命令日志脱敏（RedactTokens：--auth_access_token/--auth_session/--accessToken 打码——launch-*.log 曾整行记录真实 token）
+- 测试：+2（BuildLiveAuthorizeUrl 参数 / ExchangeCodeAsync 解析）+3（RedactTokens 三形态）+2（账号 DPAPI/迁移）；全量 595/595 全绿；发布签名 Valid；系统代理已还原（ProxyEnable=0）
+- 坑：System.Web.HttpUtility 在 .NET 10 不可用（手写 query 解析）；TryGetProperty 单参重载不存在（CS1501）；certutil 装证书弹确认框卡后台任务；taskkill 的 /F 被 Git Bash 路径转换（MSYS_NO_PATHCONV=1）；PowerShell 装证书同样弹框（用户点「是」）
+- 真机（待）：Lattice 正版登录（浏览器授权 → 本地回调 → 认证链）——风险点：Live 应用 2489da17 的 redirect_uri 白名单是否接受 localhost 随机端口（被拒则改 desktop 模式 redirect 空 + 用户复制 code）
+- 批次 30（8-13，正版登录终局——remoteconnect 粘贴模式 + clientId 三层防护）：authorize 码流被微软拒（2489da17 只开 remoteconnect 端点——unauthorized_client 实锤）；remoteconnect 发起协议实测探明（GET 带 client_id/scope/response_type=token/redirect_uri=空 → HTML 内嵌 uaid 会话 ID）；轮询端点探不明（返回 HTML 非 JSON——PCL 程序侧流量不走系统代理抓不到）
+- **最终方案「粘贴地址栏」**（老 Live SDK desktop 模式变体）：LoginMicrosoft = 发起 remoteconnect（StartRemoteConnectAsync 解析 uaid）→ 开浏览器（?uaid=xxx 登录页）→ 用户登录完复制地址栏 → 粘贴到账号弹窗（PasteTokenInput + CompleteMsLoginCommand）→ ParseRemoteConnectResult 解析 fragment（access/refresh token）→ 认证链。零协议盲区、不依赖 PCL
+- **clientId 三层防护**（用户要求最高等级，PCL 同款）：①远程下发（ClientIdRemote：URL 占位待 Cloudflare Worker + 本地 DPAPI 加密缓存 + 拉不到用缓存）②设置手动值 DPAPI 加密落盘（MicrosoftClientId 走 Secrets，防 grep）③内置兜底（2489da17）；登录/刷新前 ResolveAsync 三级链（设置 > 远程缓存 > 兜底）；MicrosoftAuth.SetResolvedClientId 进程内生效值
+- 测试：+2（ParseRemoteConnectResult fragment 解析 / 无 token 抛错）；全量 597/597 全绿；发布签名 Valid
+- 坑：internal const 跨程序集不可见（CS0117——ResolveAsync 去 fallback 参数，App 调用不传兜底）；Live authorize 端点与 remoteconnect 端点权限独立（微软按端点开应用）
+- 真机（待）：点正版登录 → 浏览器登录 → 复制地址栏 → 粘贴 → 完成。若 fragment 无 refresh_token 或认证链 XSTS 拒绝（clientId 未过 Mojang 白名单——lighty-auth 警告过），下一招：PCL 注册表 token 解密导入（CacheMsV2Access/Refresh 在 HKCU\Software\PCL，PCL 自加密格式待逆向）
+- 批次 31（8-13，正版登录终局二——Live 设备码流：配对码 + 轮询自动化）：真机实测远程connect uaid 流程时浏览器弹「输入代码以允许访问」页——该 clientId 的 remoteconnect 会话被微软配置成 OTC 模式，需要「应用/设备上显示的代码」，而发起响应 HTML 里没有 otc（JS 动态生成，fUseUpdatedStringsOnDeviceCodeFlow:true）→ 粘贴地址栏流程死路；用户要求「给代码 + 重开网页选项」
+- **真凶确认**：otc 就是 Live 设备码流的 user_code——微软服务器生成的一次性 8 位配对码（不是程序自定义，无规律）。协议源码（PrismarineJS/prismarine-auth LiveTokenManager）：POST **oauth20_connect.srf**（scope=service::user.auth.xboxlive.com::MBI_SSL + response_type=device_code）→ JSON {user_code, device_code, verification_uri=https://www.microsoft.com/link, interval:5, expires_in:900}；轮询 POST oauth20_token.srf?client_id= 带 grant_type=urn:ietf:params:oauth:grant-type:device_code——**HTTP 400 + authorization_pending = 继续等**（实测无 cookie 也通）
+- **clientId 实测矩阵**（curl 直打）：PCL 的 2489da17… = oauth20_connect.srf 上 invalid_client（只开 remoteconnect 端点）；**00000000402b5328（Minecraft Java 官方 title id）= 200 可用**（wl.* scope 是 invalid_scope——设备码只能 MBI_SSL）
+- **Lattice 重写**：删 remoteconnect/authorize/粘贴三套旧路径 → StartDeviceCodeAsync（发起+解析）→ UI 大字显示配对码 + 复制代码按钮（剪贴板）+ 自动开 microsoft.com/link → PollDeviceCodeAsync 后台轮询（onTick 状态回调 + CancellationTokenSource 取消）→ MBI_SSL token 认证链（**RpsTicket 改 t= 前缀**——d= 是 AAD 的，prismarine-auth 源码确认）→ 登录成功自动收起。**用户痛点全解决**：配对码在 UI 显示、浏览器关了有「重新打开登录网页」按钮、随时可「取消登录」（不再卡死）；粘贴地址栏环节整个消灭
+- RefreshAsync 改用 MBI_SSL scope + 设备码 clientId（refresh token 轮换逻辑不变）；FallbackClientId = 00000000402b5328（ClientIdRemote 三层防护自动跟随）
+- 测试：-3 旧（ParseRemoteConnectResult×2/BuildLiveAuthorizeUrl/ExchangeCodeAsync）+6 新（StartDeviceCode 解析+invalid_client 抛错 / Poll pending→token+access_denied+超时+取消 / AuthenticateMinecraft t= 前缀+RPS body 断言——SequenceHandler 按序回放+捕获 URI/body）；全量 600/600 全绿；发布签名 Valid
+- 真机（待）：点正版登录 → 弹窗显示配对码 → microsoft.com/link 输码登录 → 自动完成。风险点：XSTS 对 00000000402b5328 换来的 user token 是否放行（该 id 是 Live 老 title id，被吊销的是 AAD 侧，Live 侧 2026 实测 200）；若 XSTS 拒绝 → PCL 注册表 token 解密导入（HKCU\Software\PCL CacheMsV2*）
+- 批次 32（8-13，正版真机跟进——「成了但游戏还是离线 + 启动变慢」双修）：真机登录成功（设备码全链通，XSTS 对 00000000402b5328 放行），但游戏内仍离线 + 启动明显变慢
+- **离线真凶**：JavaArgumentsBuilder.BuildTokens 的 user_type 硬编码 "legacy"——1.16+ 游戏读 ${user_type} 决定认证模式，正版账号也按 legacy（离线）跑。修复：Build/GameLaunchService.LaunchAsync 加 userType 参数透传（默认 legacy 兼容旧调用），HomeViewModel 正版传 msa、离线传 legacy
+- **顺带修 UUID 横线**：Minecraft profile id 是 32 位无横线 hex，游戏 --uuid 要 8-4-4-4-12——AccountService.FormatUuid + LoginMicrosoft/RefreshMicrosoftAsync 落盘前统一格式化（离线 UUID 本来就带横线）
+- **启动变慢真凶**：每次启动无条件 RefreshMicrosoftAsync 全链（Live refresh → RPS → XSTS → login_with_xbox → profile 共 5 个串行网络往返）。修复：MicrosoftSession 加 ExpiresAtUtc（login_with_xbox 响应 expires_in 86400 解析，Clamp 60s~7d）；AccountInfo/StoredAccount 持久化该字段（旧 json 无字段 → null → 过期）；HomeViewModel 启动前判断——token 未过期直接用缓存（0 网络，跟离线一样快），过期才刷新
+- 测试：+4（FormatUuid 三形态 / LoginMicrosoft UUID 横线 / ExpiresAt 持久化重载 / userType=msa game args 断言）+ AuthenticateMinecraft 加 expires_in 解析断言；全量 604/604 全绿；发布签名 Valid
+- 真机（待）：正版账号启动 → F3 看登录状态（正版应为在线模式）+ 进在线模式服务器验证 + 二次启动速度对比（应无刷新链延迟）
+- 批次 33（8-13，启动提速 + 描边勾勒启动动画——用户实测「双击 2 秒才出图标，再 1 秒才见仿 PCL 动画，很生硬」）：
+- **2 秒空白真凶**：08-09（6e60c83）为体积引入 `EnableCompressionInSingleFile=true`——压缩单文件必须先解压整个 84MB 载荷才启动 CLR，无窗口句柄→任务栏图标不出。修复：发布.ps1 去掉压缩（自包含版回 ~186MB，用户明确要快；轻量版本就不压缩）
+- **动画滞后真凶**：主窗口整树 XAML + 6 个 VM 构造的同步 IO（accounts.json 读 3 次+DPAPI、历史、目录扫描、反射建服务）全堵在 Show() 前——主窗口内浮层动画（60×60 静态 logo 450ms 淡入+950ms 交叉淡化）等首帧才可见
+- **新动画（用户选定「独立启动窗 + 描边勾勒」）**：新建 SplashWindow（无边框透明、Topmost、ShowInTaskbar=false、ShowActivated=false 不抢焦点）——logo 轮廓一笔画过：**Core/UI/OutlineTracer.cs**（marching squares 16 表边界追踪 → 端点×2 量化连接成环 → Douglas-Peucker 1.5px 简化 → Chaikin×2 平滑 → 按面积降序外环在前，纯算法 4 测试）→ **App/Animations/LogoOutline.cs**（SkiaSharp 解码 logo.png alpha 阈值 96 → Trace → PathGeometry EvenOdd 内孔镂空，静态缓存）→ SplashWindow 三段动画：外环 420ms 描边（StrokeDashArray=[全长] + StrokeDashOffset 推进）→ 内孔 220ms → 填充+BlurEffect 光晕 300ms（发光落定）→ 呼吸循环（1±0.02 sin，1600ms）等主窗口首帧。提取失败兜底原图淡入
+- **无缝切换**：App.axaml.cs——splash.Show() 后 `await Dispatcher.InvokeAsync(Loaded)` 让首帧+动画先跑再构造主窗口；主窗口 ShowActivated=false；首帧检测 = Opened + 双 Background Post → splash.Dismiss()（150ms 淡出 Close）+ 主窗口 Activate；15s 兜底强制关（Dismiss 幂等）；GameDirSetup 弹窗前 await splash 关闭
+- MainWindow：删 SplashOverlay/StartSplashSequence/GrowToFull；AppContent 初始 Opacity=0，FadeInContent 150ms 淡入（与 splash 淡出交叉——AL16 强切顾虑解法），完成后切回 AcrylicBlur + 150ms 补导航定位 timer（原逻辑保留）
+- 坑：Dispatcher.InvokeAsync 无只传 priority 的重载（补空 Action）；Avalonia 12 PathFigures 无 1 参构造（AddRange）；DoubleCollection 没了（AvaloniaList<double>）；StrokeLineJoin 无法解析（删）；ExtendClientAreaChromeHints 系列属性无法解析（删）；FixedChunkResume 又 flaky 一次（批次 27 已知，重跑全绿）
+- 测试：OutlineTracer +4（实心方块单环/圆环外内两环+面积降序/空 mask/噪声过滤）；全量 608/608 全绿；发布签名 Valid
+- 真机（待）：双击 → splash 可见（目标 ≤1s，压缩关后）+ 描边动画观感验收（描边速度 420/220ms、光晕 0.55 可调）→ 主窗口交叉淡化无缝
+- 批次 34（8-13，瘦身回炉——体积锁 100MB + 原生 splash 治卡）：用户对批次 33 后悔（186MB 太大 + 描边动画「根源还是卡」——主窗口构造 1-2s 同步重活冻结 UI 线程，Avalonia splash 动画帧被卡停）→ 回炉：恢复压缩（84MB ≤100MB 恒定）+ 动画极简重造
+- **删批次 33 三件套**：SplashWindow.axaml(.cs) / LogoOutline.cs / OutlineTracer.cs+测试（死代码全清）
+- **NativeSplash.cs（新建，单文件 ~250 行）**：Win32 分层无边框窗（WS_EX_LAYERED|TOOLWINDOW|TOPMOST|NOACTIVATE，不抢焦点不进任务栏）+ **独立线程帧循环**（PeekMessage 排空 + Sleep 16ms + UpdateLayeredWindow）——动画与 Avalonia UI 线程完全并行，构造重活期间照常流畅（治卡治本）。动画：logo 淡入 300ms → 呼吸 ±2%（1600ms 周期，每帧 SKBitmap.Resize 重采样）→ Dismiss 150ms 淡出销毁。Skia 解码 → SKColor 转预乘 BGRA（AC_SRC_ALPHA）→ CreateDIBSection。DPI（GetDpiForSystem）+ 主屏居中。失败全程静默
+- App 集成：NativeSplash.Show() 在 MainWindow 构造前 → ShowActivated=false → Opened+双 Background Post → Dismiss+Activate → 15s 兜底；GameDirSetup 前 Task.Delay(250) 等淡出（防 Topmost 遮挡）。MainWindow 的 FadeInContent 150ms 淡入保留（交叉淡化无缝）
+- 坑：WNDCLASSEXW.lpfnWndProc 是 IntPtr 字段（方法组不能直赋——Marshal.GetFunctionPointerForDelegate + static delegate）；SkiaSharp 3.x SKBitmap.Pixels 是 ReadOnlySpan<SKColor>（2.x 的 byte[]/GetPixels 没了——SKColor.Red/Green/Blue/Alpha）
+- 测试：全量 604/604 全绿（删 OutlineTracer 4 测试）；发布签名 Valid；体积：自包含 ~84MB（压缩恢复）+ 轻量 ~23MB
+- 取舍记录：压缩 = 双击后 1-2s 解压空白（CLR 前，托管救不了）——补偿 = 解压完原生 splash 立即出现且永不卡；根治空白唯一出路是轻量版（不压缩 23MB，用户机装了 .NET 可直接用）
+- git：本批后 commit 工作区形成保存点（此前最后提交 6f45360 AL44，正版登录修复全在未提交区）
+- 真机（待）：双击 → ~1-2s 解压 → logo 淡入呼吸流畅（构造期间不卡）→ 主窗口交叉淡入

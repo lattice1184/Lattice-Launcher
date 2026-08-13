@@ -21,7 +21,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
     private readonly EcosystemService _eco;
     private readonly CurseForgeService _cf;
     private readonly ProjectCardVM _card;
-    private readonly VersionInstanceVM? _instance;
+    private VersionInstanceVM? _instance; // AL56：实例可变（详情页打开后切换实例 → UpdateContext 刷新）
     private readonly Action _closeCallback;
     private ModrinthVersion? _matchedVersion;
     private CurseforgeFile? _cfFile;
@@ -125,10 +125,13 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch { }
     }
 
-    public ObservableCollection<VersionOptionVM> AllVersions { get; } = [];
+    /// <summary>版本列表（PCL 式：打开即加载直显最新 10 条，每行独立安装；命中自动匹配的行带推荐标记）</summary>
+    public ObservableCollection<VersionOptionVM> Versions { get; } = [];
 
-    [ObservableProperty]
-    public partial VersionOptionVM? SelectedVersion { get; set; }
+    public bool HasVersions => Versions.Count > 0;
+
+    /// <summary>直显版本行上限（PCL 风格：最新 10 个，不翻页）</summary>
+    private const int MaxVersionRows = 10;
 
     // 安装状态
     [ObservableProperty]
@@ -196,19 +199,26 @@ public partial class ProjectDetailViewModel : ViewModelBase
         }
         try
         {
+            var captured = _instance; // REVIEW-C：实例切换守卫——await 后检查，旧实例结果不再覆盖
             string? gameVersion = null;
             string? loader = null;
-            if (_instance is not null)
+            if (captured is not null)
             {
-                if (EcosystemService.TryParseGameVersion(_instance.Name, out var gv)) gameVersion = gv;
-                loader = EcosystemService.GuessLoader(_instance.Name);
+                if (EcosystemService.TryParseGameVersion(captured.Name, out var gv)) gameVersion = gv;
+                // 8-19：光影包/材质包无加载器概念——派生 loader 会把 Modrinth 版本列表滤没（同搜索页 IsModType gate）；
+                // 用户显式选加载器不受影响
+                loader = _card.Type == ProjectType.Mod ? EcosystemService.GuessLoader(captured.Name) : null;
             }
-            var version = await _eco.FindBestVersionAsync(_card.Id, gameVersion, loader);
+            // PCL 式：一次请求拿全量版本——匹配（SelectBestVersion）与直显列表（最新 10 条）共用
+            var all = await _eco.GetVersionsAsync(_card.Id, gameVersion, loader);
+            if (!ReferenceEquals(_instance, captured)) return; // 实例已切换 → 放弃旧实例结果
+            var version = EcosystemService.SelectBestVersion(all);
+            FillVersionRows(all, version?.Id);
             _matchedVersion = version;
             VersionHint = version is null
                 ? (_instance is null
-                    ? "未选择目标实例，请先在生态页顶部选择实例。"
-                    : $"没有 {_instance.Name} 能用的版本，换个实例或手动选版本")
+                    ? "你还没选目标实例。去生态页顶部选一个。"
+                    : $"没有 {_instance.Name} 能用的版本，在下面列表里选一个试试")
                 : $"匹配版本: {version.Name} ({version.VersionNumber})";
             CanInstall = version is not null;
             if (version is not null) Changelog = version.Changelog ?? "";
@@ -248,12 +258,16 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (_instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv))
                 gameVersion = gv;
 
-            var file = await _cf.FindBestFileAsync(modId, gameVersion);
+            // PCL 式：一次请求拿全量文件——匹配（SelectBestFile）与直显列表（最新 10 条）共用。
+            // 8-19：GetFilesWithFallbackAsync 带 dropped——26.2 年份号 CF 返回空已降级全量，不能再按 26.2 过滤
+            var (files, dropped) = await _cf.GetFilesWithFallbackAsync(modId, gameVersion, default);
+            var file = CurseForgeService.SelectBestFile(files, dropped ? null : gameVersion);
+            FillVersionRowsCf(files, file?.id.ToString());
             _cfFile = file;
             VersionHint = file is null
                 ? (_instance is null
-                    ? "未选择目标实例，请先在生态页顶部选择实例。"
-                    : $"未匹配到 {_instance.Name} 的版本")
+                    ? "你还没选目标实例。去生态页顶部选一个。"
+                    : $"未匹配到 {_instance.Name} 的版本，在下面列表里选一个试试")
                 : $"匹配文件: {file.fileName}";
             CanInstall = file is not null;
             if (file is not null)
@@ -308,40 +322,71 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch { /* 解析失败不阻塞安装 */ }
     }
 
-    /// <summary>懒加载全部版本供手动选择</summary>
-    [RelayCommand]
-    private async Task LoadVersions()
+    /// <summary>版本行填充（Modrinth：最新 10 条直显；命中自动匹配的版本带推荐标记——与匹配同源同请求）</summary>
+    private void FillVersionRows(IEnumerable<ModrinthVersion> all, string? versionId)
     {
-        if (_card.Source == "curseforge")
-        {
-            NotificationService.Info("CurseForge 自动选择最佳文件，暂不支持手动选版");
-            return;
-        }
-        if (AllVersions.Count > 0) return;
-        try
-        {
-            string? gameVersion = null;
-            string? loader = null;
-            if (_instance is not null)
-            {
-                if (EcosystemService.TryParseGameVersion(_instance.Name, out var gv)) gameVersion = gv;
-                loader = EcosystemService.GuessLoader(_instance.Name);
-            }
-            var versions = await _eco.GetVersionsAsync(_card.Id, gameVersion, loader);
-            foreach (var v in versions.OrderByDescending(v => v.DatePublished))
-                AllVersions.Add(new VersionOptionVM(v));
-        }
-        catch { }
+        Versions.Clear();
+        foreach (var v in all.Where(v => v.Files is { Count: > 0 })
+                             .OrderByDescending(v => v.DatePublished).Take(MaxVersionRows))
+            Versions.Add(VersionOptionVM.FromModrinth(v) with { IsRecommended = v.Id == versionId });
+        OnPropertyChanged(nameof(HasVersions));
     }
 
-    partial void OnSelectedVersionChanged(VersionOptionVM? value)
+    /// <summary>版本行填充（CurseForge：无发布时间字段，按 fileId 降序近似"最新"——沿用现有语义）</summary>
+    private void FillVersionRowsCf(IEnumerable<CurseforgeFile> files, string? fileId)
     {
-        if (value is null) return;
-        _matchedVersion = value.Source;
-        Changelog = value.Source.Changelog ?? "";
-        VersionHint = $"已选择: {value.Source.Name} ({value.Source.VersionNumber})";
-        CanInstall = true;
-        RefreshFiles(value.Source);
+        Versions.Clear();
+        foreach (var f in files.OrderByDescending(f => f.id).Take(MaxVersionRows))
+            Versions.Add(VersionOptionVM.FromCf(f) with { IsRecommended = f.id.ToString() == fileId });
+        OnPropertyChanged(nameof(HasVersions));
+    }
+
+    /// <summary>行内安装指定版本（PCL 式：点击即装；推荐高亮不阻断其他行；复用底部安装管线）</summary>
+    [RelayCommand]
+    private Task InstallVersion(VersionOptionVM option)
+    {
+        if (IsInstalling) return Task.CompletedTask; // 防连点双装
+        if (option.Source is ModrinthVersion mv)
+        {
+            _matchedVersion = mv;
+            _cfFile = null;
+            Changelog = mv.Changelog ?? "";
+            VersionHint = $"已选择: {mv.Name} ({mv.VersionNumber})";
+            RefreshFiles(mv);
+        }
+        else if (option.Source is CurseforgeFile cf)
+        {
+            _cfFile = cf;
+            _matchedVersion = null;
+            VersionHint = $"已选择: {cf.fileName}";
+            RefreshFilesCf(cf);
+        }
+        else return Task.CompletedTask;
+        return Install(default); // 依赖/冲突/路径确认/下载中心全走现有管线
+    }
+
+    /// <summary>实例/上下文切换（AL56）：重解析版本参数 → 自动匹配重跑 + 手动列表自动重载。
+    /// REVIEW-F：去 Task.Run——UI 线程启动 async，Avalonia AutoInstall 保证 continuation 回 UI 线程
+    /// （原 Task.Run 使 LoadVersions 的 AllVersions.Clear/Add 在池线程执行 → 跨线程异常）；
+    /// REVIEW-C：实例再切换时放弃本次结果（seq 捕获），防旧实例响应晚到覆盖新实例
+    /// （_matchedVersion 与 _instance 错配 → 安装装错目录）。</summary>
+    public void UpdateContext(VersionInstanceVM? instance)
+    {
+        _instance = instance;
+        _matchedVersion = null;
+        _cfFile = null;
+        Files.Clear();
+        Versions.Clear(); // 切实例先清旧行，防旧实例数据闪烁
+        OnPropertyChanged(nameof(HasFiles));
+        OnPropertyChanged(nameof(HasVersions));
+        _ = LoadAndReloadVersionsAsync();
+    }
+
+    private async Task LoadAndReloadVersionsAsync()
+    {
+        var captured = _instance;
+        await LoadAsync(); // LoadAsync 内含版本列表加载（PCL 式直显）——切实例自动刷新匹配+列表+高亮
+        if (!ReferenceEquals(_instance, captured)) return; // 实例已切换 → 放弃本次结果
     }
 
     /// <summary>文件列表：主文件 + 附带文件（名称/大小）</summary>
@@ -352,6 +397,15 @@ public partial class ProjectDetailViewModel : ViewModelBase
         foreach (var f in version.Files)
             Files.Add(new VersionFileVM(f.FileName, f.Size));
         FilesHeaderText = Files.Count > 0 ? $"文件（{Files.Count}）" : "";
+        OnPropertyChanged(nameof(HasFiles));
+    }
+
+    /// <summary>CF 文件列表（单文件：名称/大小）</summary>
+    private void RefreshFilesCf(CurseforgeFile file)
+    {
+        Files.Clear();
+        Files.Add(new VersionFileVM(file.fileName, file.fileLength));
+        FilesHeaderText = "文件（1）";
         OnPropertyChanged(nameof(HasFiles));
     }
 
@@ -375,7 +429,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         try
         {
             if (_instance is null && _card.Type != ProjectType.Modpack)
-                throw new InvalidOperationException("请先在生态页顶部选择目标实例");
+                throw new InvalidOperationException("你还没选目标实例。去生态页顶部选一个。");
 
             var version = _matchedVersion
                 ?? throw new InvalidOperationException("没有匹配的可用版本");
@@ -390,6 +444,14 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 ? inst.GameDir
                 : Launcher.Core.Utils.GameDirectory.InstallDir();
 
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
+            if (DialogService.MainWindow() is { } owner2)
+            {
+                var chosen = await DialogService.ConfirmInstallPath(owner2, gameDirFor, instanceName, _card.Type);
+                if (chosen is null) return;
+                gameDirFor = chosen;
+            }
+
             // 依赖可选跳过：全部安装 / 仅主文件（依赖数来自安装前的解析提示）
             var includeDeps = true;
             if (DependencyHint.Length > 0 && DialogService.MainWindow() is { } owner)
@@ -403,14 +465,22 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 return;
 
             // 经全局下载中心执行（后台线程 + 队列 UI + 内联进度双显示，一处真相）
-            await ExecuteInstallAsync(async (dp, t) =>
+            await ExecuteInstallAsync(async (gctx, dp, t) =>
             {
                 if (includeDeps)
                     return await _eco.InstallWithDependenciesAsync(_card.Id, version, instanceName, _card.Type,
-                        gameVersion, loader, dp, t, gameDirOverride: gameDirFor);
-                var path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t, gameDirFor);
+                        gameVersion, loader, dp, t, gameDirOverride: gameDirFor, ctx: gctx);
+                string? path = null;
+                if (gctx is null)
+                    path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t, gameDirFor);
+                else
+                {
+                    var child = gctx.AddChild($"主文件 {version.Name}", 0,
+                        (p, c) => _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, p, c, gameDirFor));
+                    await child.Completion.WaitAsync(t);
+                }
                 var r = new DependencyInstallReport();
-                r.Installed.Add(new InstalledDependency(_card.Id, version.Id, path));
+                r.Installed.Add(new InstalledDependency(_card.Id, version.Id, path ?? ""));
                 return r;
             }, instanceName, ct);
         }
@@ -470,15 +540,15 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch { return ""; }
     }
 
-    /// <summary>经全局下载中心执行安装：队列 + 内联进度同步 + 状态收尾（Modrinth/CurseForge 共用）</summary>
+    /// <summary>经全局下载中心执行安装：组任务（下载中心可见依赖子任务）+ 内联进度同步 + 状态收尾（Modrinth/CurseForge 共用）</summary>
     private async Task ExecuteInstallAsync(
-        Func<DownloadProgressHandler, CancellationToken, Task<DependencyInstallReport?>> work,
+        Func<DownloadGroupContext?, DownloadProgressHandler?, CancellationToken, Task<DependencyInstallReport?>> work,
         string instanceName, CancellationToken ct)
     {
         DependencyInstallReport? report = null;
-        var task = DownloadManager.Instance.Enqueue($"安装 {_card.Title}", async (p, t) =>
+        var task = DownloadManager.Instance.EnqueueGroup($"安装 {_card.Title}", async (gctx, t) =>
         {
-            report = await work(dp => p(dp with { Stage = dp.CurrentFile is { } f ? $"下载 {f}" : "下载文件" }), t);
+            report = await work(gctx, null, t); // ctx 模式下进度走子任务，外层 progress 不需要
         });
         // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（详情层叠还在，跳转②由下载中心统一处理）
         MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_card.Type)}");
@@ -517,7 +587,21 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (InstalledPath.Length > 0 && _card.Type != ProjectType.Modpack)
                 NotificationService.Success($"已安装到：{InstalledPath}");
             if (_card.Type == ProjectType.Modpack)
-                NotificationService.Info("整合包已保存至 downloads/modpacks，请在【版本】页使用「导入整合包」创建实例。");
+            {
+                // AL47 断链修复：下载完成即询问导入创建可启动实例（不再手动去版本页）
+                if (InstalledPath.Length > 0
+                    && DialogService.MainWindow() is { } owner
+                    && await DialogService.Confirm(owner,
+                        "整合包下载好了。现在导入，创建能启动的版本实例？",
+                        "导入整合包", "立即导入", "稍后"))
+                {
+                    ModpackImportFlow.StartAsync(InstalledPath);
+                }
+                else
+                {
+                    NotificationService.Info("整合包已保存到 downloads/modpacks。去【版本】页点「导入整合包」就能创建实例。");
+                }
+            }
         }
         else if (task.State == DownloadTaskState.Completed)
         {
@@ -545,11 +629,23 @@ public partial class ProjectDetailViewModel : ViewModelBase
         try
         {
             if (_instance is null && _card.Type != ProjectType.Modpack)
-                throw new InvalidOperationException("请先在生态页顶部选择目标实例");
+                throw new InvalidOperationException("你还没选目标实例。去生态页顶部选一个。");
             var file = _cfFile ?? throw new InvalidOperationException("没有匹配的可用文件");
             var gameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv)
                 ? gv : null;
             var instanceName = _instance?.Name ?? "modpack";
+            // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2
+            var gameDirFor = _instance is { GameDir.Length: > 0 } inst
+                ? inst.GameDir
+                : Launcher.Core.Utils.GameDirectory.InstallDir();
+
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
+            if (DialogService.MainWindow() is { } ownerPath)
+            {
+                var chosen = await DialogService.ConfirmInstallPath(ownerPath, gameDirFor, instanceName, _card.Type);
+                if (chosen is null) return;
+                gameDirFor = chosen;
+            }
 
             var includeDeps = true;
             if (DependencyHint.Length > 0 && DialogService.MainWindow() is { } owner)
@@ -558,14 +654,22 @@ public partial class ProjectDetailViewModel : ViewModelBase
                     DependencyHint, $"安装 {_card.Title}", "全部安装", "仅主文件");
             }
 
-            await ExecuteInstallAsync(async (dp, t) =>
+            await ExecuteInstallAsync(async (gctx, dp, t) =>
             {
                 if (includeDeps)
                     return await _cf.InstallWithDependenciesAsync(_cfModId, file, instanceName, _card.Type,
-                        gameVersion, dp, t);
-                var path = await _cf.InstallAsync(_cfModId, file, instanceName, _card.Type, dp, t);
+                        gameVersion, dp, t, gameDirOverride: gameDirFor, ctx: gctx);
+                string? path = null;
+                if (gctx is null)
+                    path = await _cf.InstallAsync(_cfModId, file, instanceName, _card.Type, dp, t, gameDirFor);
+                else
+                {
+                    var child = gctx.AddChild($"主文件 {file.fileName}", file.fileLength,
+                        (p, c) => _cf.InstallAsync(_cfModId, file, instanceName, _card.Type, p, c, gameDirFor));
+                    await child.Completion.WaitAsync(t);
+                }
                 var r = new DependencyInstallReport();
-                r.Installed.Add(new InstalledDependency(_card.Id, file.id.ToString(), path));
+                r.Installed.Add(new InstalledDependency(_card.Id, file.id.ToString(), path ?? ""));
                 return r;
             }, instanceName, ct);
         }
@@ -575,22 +679,31 @@ public partial class ProjectDetailViewModel : ViewModelBase
     }
 }
 
-/// <summary>版本选项（手动选择用）；推荐（Featured）标记 + 发布时间</summary>
-public sealed record VersionOptionVM(ModrinthVersion Source)
+/// <summary>版本选项（PCL 式版本行，8-12 起直显）；推荐 = 自动匹配命中（FillVersionRows 时置位）；Source 供安装分派</summary>
+public sealed record VersionOptionVM(string Id, string Display, bool IsRecommended, DateTime Published,
+    long SizeBytes, object? Source)
 {
-    public string Display
+    public string PublishedText => Published.Year > 2000 ? Published.ToString("yyyy-MM-dd") : "";
+
+    public string SizeText => SizeBytes >= 1024 * 1024
+        ? $"{SizeBytes / 1024.0 / 1024:0.#} MB"
+        : SizeBytes >= 1024 ? $"{SizeBytes / 1024:0} KB" : $"{SizeBytes} B";
+
+    public static VersionOptionVM FromModrinth(ModrinthVersion v)
     {
-        get
-        {
-            var games = Source.GameVersions is { Count: > 0 } ? string.Join("/", Source.GameVersions.Take(2)) : "?";
-            var loaders = Source.Loaders is { Count: > 0 } ? string.Join("/", Source.Loaders.Take(2)) : "any";
-            return $"{Source.VersionNumber} · {games} · {loaders}";
-        }
+        var games = v.GameVersions is { Count: > 0 } ? string.Join("/", v.GameVersions.Take(2)) : "?";
+        var loaders = v.Loaders is { Count: > 0 } ? string.Join("/", v.Loaders.Take(2)) : "any";
+        return new VersionOptionVM(v.Id, $"{v.VersionNumber} · {games} · {loaders}", false,
+            v.DatePublished, EcosystemService.PickPrimaryFile(v.Files)?.Size ?? 0, v);
     }
 
-    public bool IsRecommended => Source.Featured == true;
-
-    public string PublishedText => Source.DatePublished.Year > 2000 ? Source.DatePublished.ToString("yyyy-MM-dd") : "";
+    public static VersionOptionVM FromCf(CurseforgeFile f)
+    {
+        var games = f.gameVersions is { Count: > 0 } ? string.Join("/", f.gameVersions.Take(2)) : "?";
+        var name = string.IsNullOrEmpty(f.displayName) ? f.fileName : f.displayName;
+        return new VersionOptionVM(f.id.ToString(), $"{name} · {games}", false,
+            DateTime.MinValue, f.fileLength, f); // PCL.Core 未映射 fileDate，发布日留空
+    }
 }
 
 /// <summary>版本文件行（文件名/大小）</summary>

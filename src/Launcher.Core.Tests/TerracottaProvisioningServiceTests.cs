@@ -115,10 +115,10 @@ public class TerracottaProvisioningServiceTests : IDisposable
         handler.Route("github.com/burningtnt/Terracotta/releases/download/v0.4.2/terracotta-0.4.2-windows-x86_64-pkg.tar.gz", 500, []);
         var svc = new TerracottaProvisioningService(handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.EnsureAvailableAsync());
 
-        Assert.Equal(TerracottaLobbyFailure.TerracottaUnavailable, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.BackendUnavailable, ex.Failure);
         Assert.Contains("Gitee", ex.Message);
         Assert.Contains("GitHub", ex.Message);
         Assert.Null(svc.TryGetAvailable());
@@ -134,10 +134,10 @@ public class TerracottaProvisioningServiceTests : IDisposable
         handler.Route("github.com/burningtnt/Terracotta/releases/download/v0.4.2/terracotta-0.4.2-windows-x86_64-pkg.tar.gz", 200, fake);
         var svc = new TerracottaProvisioningService(handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.EnsureAvailableAsync());
 
-        Assert.Equal(TerracottaLobbyFailure.TerracottaUnavailable, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.BackendUnavailable, ex.Failure);
         Assert.Contains("SHA256", ex.Message);
         Assert.Contains(handler.Requests, r => r.Contains("github.com")); // 确实换了 GitHub 兜底
         Assert.Null(svc.TryGetAvailable());
@@ -151,10 +151,10 @@ public class TerracottaProvisioningServiceTests : IDisposable
             "not-a-gzip"u8.ToArray());
         var svc = new TerracottaProvisioningService(handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.EnsureAvailableAsync());
 
-        Assert.Equal(TerracottaLobbyFailure.TerracottaUnavailable, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.BackendUnavailable, ex.Failure);
         Assert.Null(svc.TryGetAvailable());
     }
 

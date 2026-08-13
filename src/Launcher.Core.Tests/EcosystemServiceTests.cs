@@ -1,3 +1,4 @@
+using System.Net;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
 
@@ -126,10 +127,11 @@ public class EcosystemServiceTests
 
     // ---------- SelectBestVersion ----------
 
-    private static ModrinthVersion MakeVersion(string id, DateTime published, bool featured = false, bool hasFile = true)
+    private static ModrinthVersion MakeVersion(string id, DateTime published, bool featured = false, bool hasFile = true,
+        string? type = null)
         => new(id, "p", $"v{id}", id, null, null,
             hasFile ? [new ModrinthVersionFile(id, "u", $"{id}.jar", 1, false, null)] : null,
-            null, null, 0, null, featured, published);
+            null, null, 0, type, featured, published);
 
     [Fact]
     public void SelectBestVersion_FeaturedFirst()
@@ -169,6 +171,30 @@ public class EcosystemServiceTests
     [Fact]
     public void SelectBestVersion_EmptyReturnsNull()
         => Assert.Null(EcosystemService.SelectBestVersion([]));
+
+    [Fact]
+    public void SelectBestVersion_ReleasePreferred_OverNewerBeta()
+    {
+        // 8-13 根因回归：26.2 的 beta 预发布日期最新（快照总在后）——正式版必须赢
+        var versions = new[]
+        {
+            MakeVersion("release-old", DateTime.UtcNow.AddDays(-30), type: "release"),
+            MakeVersion("beta-new", DateTime.UtcNow, type: "beta"),
+        };
+        Assert.Equal("release-old", EcosystemService.SelectBestVersion(versions)!.Id);
+    }
+
+    [Fact]
+    public void SelectBestVersion_BetaOverAlpha()
+    {
+        // 无正式版时：beta 优先于 alpha（快照间也有稳定度排序）
+        var versions = new[]
+        {
+            MakeVersion("alpha-new", DateTime.UtcNow, type: "alpha"),
+            MakeVersion("beta-old", DateTime.UtcNow.AddDays(-10), type: "beta"),
+        };
+        Assert.Equal("beta-old", EcosystemService.SelectBestVersion(versions)!.Id);
+    }
 
     // ---------- PickPrimaryFile ----------
 
@@ -251,5 +277,128 @@ public class EcosystemServiceTests
         var reordered = EcosystemService.ReorderMatches(items, "自定义", x => x.Title, x => x.Desc);
 
         Assert.Equal(["甲", "乙", "丙"], reordered.Select(x => x.Title));
+    }
+
+    // ---------- 游戏版本语义比较（8-12：26.2 这类 YY.M 新格式混排） ----------
+
+    [Fact]
+    public void CompareGameVersions_YyM_NewerThanPatch()
+    {
+        // 2026 新格式：26.2 > 1.21.6（字符串序 26.2 < 1.21.6 会判反——语义序必须对）
+        Assert.True(EcosystemService.CompareGameVersions("26.2", "1.21.6") > 0);
+        Assert.True(EcosystemService.CompareGameVersions("1.21.6", "26.2") < 0);
+    }
+
+    [Fact]
+    public void CompareGameVersions_PatchNumeric()
+    {
+        // 补丁号数字比较：1.21.10 > 1.21.6（字符串序 "1.21.10" < "1.21.6"）
+        Assert.True(EcosystemService.CompareGameVersions("1.21.10", "1.21.6") > 0);
+        Assert.True(EcosystemService.CompareGameVersions("1.21.6", "1.21.10") < 0);
+    }
+
+    [Fact]
+    public void CompareGameVersions_Equal()
+    {
+        Assert.Equal(0, EcosystemService.CompareGameVersions("1.21.1", "1.21.1"));
+    }
+
+    [Fact]
+    public void FilterGameVersionOptions_ReleaseOnly_SemanticDesc()
+    {
+        // 26.2(release)/1.21.10(release)/1.21.6(release) 进；1.15.2(release 低于下限)与
+        // 25w46a(snapshot) 不进；结果语义降序 26.2 排最上
+        var entries = new[]
+        {
+            new VersionManifestService.GameVersionEntry("25w46a", "snapshot", false, default, null, ""),
+            new VersionManifestService.GameVersionEntry("1.15.2", "release", false, default, null, ""),
+            new VersionManifestService.GameVersionEntry("1.21.6", "release", false, default, null, ""),
+            new VersionManifestService.GameVersionEntry("26.2", "release", false, default, null, ""),
+            new VersionManifestService.GameVersionEntry("1.21.10", "release", false, default, null, ""),
+        };
+        var result = VersionManifestService.FilterGameVersionOptions(entries);
+        Assert.Equal(["26.2", "1.21.10", "1.21.6"], result);
+    }
+
+    // ---------- 8-19 补 2：GetVersionsAsync 年份号空结果降级（26.2 Modrinth versions API 不认） ----------
+
+    /// <summary>按 PathAndQuery 路由 JSON（仿 CfStubHandler；404 会触发 GetJsonAsync 重试，测试全部路由避免计数干扰）</summary>
+    private sealed class RouteHandler : HttpMessageHandler
+    {
+        public readonly List<string> Urls = [];
+        private readonly Dictionary<string, string> _routes = [];
+
+        public void Route(string pathAndQuery, string json) => _routes[pathAndQuery] = json;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Urls.Add(request.RequestUri!.PathAndQuery);
+            return Task.FromResult(_routes.TryGetValue(request.RequestUri!.PathAndQuery, out var json)
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) }
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+    }
+
+    private const string VersionsJson = """
+        [{"id":"v1","project_id":"abc","name":"v1.0","version_number":"v1.0","game_versions":["1.21.1"],
+        "loaders":["fabric"],"files":[{"id":"f1","url":"https://cdn.example.com/f.jar","filename":"f.jar","size":5,"primary":true}],
+        "date_published":"2024-01-01T00:00:00Z"}]
+        """;
+
+    [Fact]
+    public async Task GetVersionsAsync_YearFormatEmpty_FallsBack_TwoRequests_LoaderPreserved()
+    {
+        var handler = new RouteHandler();
+        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D&loaders=%5B%22fabric%22%5D", "[]");
+        handler.Route("/v2/project/abc/version?loaders=%5B%22fabric%22%5D", VersionsJson);
+        var svc = new EcosystemService(new HttpClient(handler));
+
+        var list = await svc.GetVersionsAsync("abc", "26.2", "fabric");
+
+        Assert.NotEmpty(list);
+        Assert.Equal(2, handler.Urls.Count);                     // 年份号空 → 去版本重查恰 1 次
+        Assert.Contains("game_versions", handler.Urls[0]);
+        Assert.DoesNotContain("game_versions", handler.Urls[1]);
+        Assert.Contains("loaders", handler.Urls[1]);             // loader 保留
+    }
+
+    [Fact]
+    public async Task GetVersionsAsync_TraditionalEmpty_NoFallback()
+    {
+        var handler = new RouteHandler();
+        handler.Route("/v2/project/abc/version?game_versions=%5B%221.21.1%22%5D", "[]");
+        var svc = new EcosystemService(new HttpClient(handler));
+
+        var list = await svc.GetVersionsAsync("abc", "1.21.1");
+
+        Assert.Empty(list);             // 传统版本空 = 真实语义（mod 不支持 1.21.1）——不降级
+        Assert.Single(handler.Urls);
+    }
+
+    [Fact]
+    public async Task GetVersionsAsync_YearFormatNonEmpty_NoFallback()
+    {
+        var handler = new RouteHandler();
+        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", VersionsJson);
+        var svc = new EcosystemService(new HttpClient(handler));
+
+        var list = await svc.GetVersionsAsync("abc", "26.2");
+
+        Assert.NotEmpty(list);
+        Assert.Single(handler.Urls);    // 有结果不降级
+    }
+
+    [Fact]
+    public async Task GetVersionsAsync_YearFormatFallbackAlsoEmpty_ReturnsEmptyTwoRequests()
+    {
+        var handler = new RouteHandler();
+        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", "[]");
+        handler.Route("/v2/project/abc/version", "[]");
+        var svc = new EcosystemService(new HttpClient(handler));
+
+        var list = await svc.GetVersionsAsync("abc", "26.2");
+
+        Assert.Empty(list);             // 降级也空 → 返回空，防循环恰 2 请求
+        Assert.Equal(2, handler.Urls.Count);
     }
 }

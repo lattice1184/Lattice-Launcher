@@ -13,8 +13,15 @@ public partial class ThirdPartyDownloadViewModel : ViewModelBase
     /// <summary>文件名识别用 HEAD 请求（15 秒超时，识别失败回退 URL 段）</summary>
     private static readonly HttpClient NameHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 
-    /// <summary>通用下载器（第三方 URL 不经镜像映射，按原 URL 下载）</summary>
-    private static readonly DownloadService Downloader = new();
+    /// <summary>
+    /// 通用下载器（GitHub release 直链经 ThirdPartyDlSourceResolver 映射多候选加速：
+    /// 原 URL + 国内镜像并行竞速，github.com 直连被墙时镜像先到先得；非 GitHub 链接单候选直连）
+    /// </summary>
+    private static readonly DownloadService Downloader = new(
+        http: null,
+        resolver: new ThirdPartyDlSourceResolver(),
+        options: null,
+        gameDirectory: null);
 
     /// <summary>防抖识别：取消上一轮未完成的识别</summary>
     private CancellationTokenSource? _recognizeCts;
@@ -81,7 +88,7 @@ public partial class ThirdPartyDownloadViewModel : ViewModelBase
             IsRecognizing = false;
             if (string.IsNullOrEmpty(name))
             {
-                StatusText = "识别不到文件名，请手动填写";
+                StatusText = "识别不到文件名，你自己填一个";
                 return;
             }
             FileNameText = name;
@@ -96,7 +103,7 @@ public partial class ThirdPartyDownloadViewModel : ViewModelBase
             if (!ct.IsCancellationRequested)
             {
                 IsRecognizing = false;
-                StatusText = "识别不到文件名，请手动填写";
+                StatusText = "识别不到文件名，你自己填一个";
             }
         }
     }
@@ -125,19 +132,19 @@ public partial class ThirdPartyDownloadViewModel : ViewModelBase
         var url = UrlText.Trim();
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
-            NotificationService.Error("链接无效：请粘贴 http/https 直链");
+            NotificationService.Error("这个链接无效。要贴 http/https 开头的直链。");
             return;
         }
         var dir = TargetDirText.Trim();
         if (dir.Length == 0 || !Directory.Exists(dir))
         {
-            NotificationService.Error("先选择下载目录");
+            NotificationService.Error("你还没选下载目录，先选一个。");
             return;
         }
         var name = FileNameText.Trim();
         if (name.Length == 0)
         {
-            NotificationService.Error("文件名未识别，请在文件名框手动填写");
+            NotificationService.Error("文件名没识别出来。你在文件名框里填一个。");
             return;
         }
         name = UriFileNameResolver.Sanitize(name) ?? name;

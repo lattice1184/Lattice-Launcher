@@ -14,6 +14,9 @@ public enum DownloadTier { Low = 8, Medium = 16, High = 24 }
 /// <summary>下载源策略：官方优先（原回退行为）/ 镜像优先 / 仅镜像</summary>
 public enum DownloadSourcePreference { OfficialFirst = 0, MirrorFirst = 1, MirrorOnly = 2 }
 
+/// <summary>游戏/服务端 JVM 进程的 Windows 优先级（映射 ProcessPriorityClass）</summary>
+public enum GamePriority { BelowNormal = 0, Normal = 1, AboveNormal = 2, High = 3, RealTime = 4 }
+
 public sealed class LauncherSettings
 {
     private static readonly string DefaultPath = Path.Combine(
@@ -42,8 +45,14 @@ public sealed class LauncherSettings
     /// <summary>启动时自动写入中文语言（options.txt lang:zh_cn）</summary>
     public bool AutoChineseEnabled { get; set; } = true;
 
+    /// <summary>生态下载（MOD/光影包等）是否跟随实例自动带出加载器+版本去查询（8-19：PCL 版本号 CF 不认 → 交用户选择）</summary>
+    public bool EcoFollowInstance { get; set; } = true;
+
     /// <summary>JVM 性能档位（轻量/均衡/流畅/极致 → GC 参数预设）</summary>
     public PerformanceProfile JvmProfile { get; set; } = PerformanceProfile.Medium;
+
+    /// <summary>游戏/服务端进程优先级（独立设置，不随性能档位；默认正常）</summary>
+    public GamePriority GamePriority { get; set; } = GamePriority.Normal;
 
     /// <summary>启动完成后随机弹一条小提示（彩蛋，可关）</summary>
     public bool StartupTipEnabled { get; set; } = true;
@@ -59,8 +68,8 @@ public sealed class LauncherSettings
     /// <summary>下载限速（KB/s；0 = 不限速）</summary>
     public int DownloadSpeedLimitKbps { get; set; }
 
-    /// <summary>下载并发档位（分片数：低 8 / 中 16 / 高 24）</summary>
-    public DownloadTier DownloadTier { get; set; } = DownloadTier.Low;
+    /// <summary>下载并发档位（分片数：低 8 / 中 16 / 高 24）；默认中档——PCL2 参考上限 63，16 仍保守</summary>
+    public DownloadTier DownloadTier { get; set; } = DownloadTier.Medium;
 
     /// <summary>分片连接数覆盖（0 = 用档位默认）</summary>
     public int ChunkCount { get; set; }
@@ -70,6 +79,14 @@ public sealed class LauncherSettings
 
     /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
     public string CurseForgeApiKey { get; set; } = "";
+
+    /// <summary>8-13 GitHub API Token（空 = 未认证 60 次/小时/IP——普通用户默认模式；
+    /// 填了 = 换链 5000 次/小时，防限流）。DPAPI 加密落盘，同 CF key。</summary>
+    public string GitHubApiToken { get; set; } = "";
+
+    /// <summary>8-13 微软登录 client_id（空 = 走远程下发/内置兜底；手动填的值优先）。
+    /// DPAPI 加密落盘——「藏」的第一层（防 grep 挖二进制级防护）。</summary>
+    public string MicrosoftClientId { get; set; } = "";
 
     /// <summary>CurseForge 文件 CDN 镜像前缀（空 = 官方 edge.forgecdn.net 直连；可填镜像/代理根地址）</summary>
     public string CurseForgeCdnPrefix { get; set; } = "";
@@ -85,6 +102,9 @@ public sealed class LauncherSettings
     /// <summary>强调色（#RRGGBB；空 = 默认青绿）</summary>
     public string AccentColor { get; set; } = "#2DD4BF";
 
+    /// <summary>背景色（#RRGGBB 或 #AARRGGBB，alpha 参与透明；空 = 默认 #B81D222C）</summary>
+    public string? BackgroundColor { get; set; }
+
     /// <summary>自定义背景图片（绝对路径；null/空 = 无背景，用亚克力纯色）</summary>
     public string? BackgroundImagePath { get; set; }
 
@@ -96,6 +116,11 @@ public sealed class LauncherSettings
 
     /// <summary>窗口高度（0 = 未设置，用默认 560）</summary>
     public double WindowHeight { get; set; }
+
+    // ---------- 存储 ----------
+
+    /// <summary>各存储分组上限（MB；0 = 不限）</summary>
+    public Dictionary<string, int> StorageCapsMb { get; set; } = new() { ["logs"] = 200, ["downloads"] = 2048 };
 
     public static LauncherSettings Current { get; } = Load();
 
@@ -111,6 +136,8 @@ public sealed class LauncherSettings
                 {
                     // 落盘为 DPAPI 密文；旧版明文自动迁移（读取原样返回）
                     s.CurseForgeApiKey = Secrets.Read(s.CurseForgeApiKey) ?? "";
+                    s.GitHubApiToken = Secrets.Read(s.GitHubApiToken) ?? "";
+                    s.MicrosoftClientId = Secrets.Read(s.MicrosoftClientId) ?? "";
                     return s;
                 }
             }
@@ -125,7 +152,11 @@ public sealed class LauncherSettings
         try
         {
             var plain = CurseForgeApiKey;
+            var plainGit = GitHubApiToken;
+            var plainMs = MicrosoftClientId;
             CurseForgeApiKey = Secrets.Protect(plain); // 落盘加密（DPAPI）
+            GitHubApiToken = Secrets.Protect(plainGit);
+            MicrosoftClientId = Secrets.Protect(plainMs);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -134,6 +165,8 @@ public sealed class LauncherSettings
             finally
             {
                 CurseForgeApiKey = plain; // 内存保持明文，其他调用方不受影响
+                GitHubApiToken = plainGit;
+                MicrosoftClientId = plainMs;
             }
         }
         catch { /* 保存失败不阻塞 */ }

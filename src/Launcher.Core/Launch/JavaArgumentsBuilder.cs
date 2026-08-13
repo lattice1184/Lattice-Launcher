@@ -34,8 +34,9 @@ public sealed class JavaArgumentsBuilder
     /// <param name="gameDir">游戏目录（.minecraft）</param>
     /// <param name="javaPath">Java 可执行文件完整路径</param>
     /// <param name="accountName">用户名（离线）</param>
-    /// <param name="accountUuid">UUID（离线为 OfflinePlayer 哈希）</param>
-    /// <param name="accessToken">访问令牌（离线固定值）</param>
+    /// <param name="accountUuid">UUID（离线为 OfflinePlayer 哈希；正版为带横线 profile UUID）</param>
+    /// <param name="accessToken">访问令牌（离线固定值；正版为 Minecraft token）</param>
+    /// <param name="userType">账号类型（"legacy" = 离线 / "msa" = 正版微软账号——1.16+ 游戏读它决定认证模式）</param>
     /// <param name="memoryMb">内存上限 MB</param>
     /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等，用户覆盖优先）</param>
     /// <param name="versionIsolation">版本隔离（game_directory 指向 versions/{id}，saves/mods 不串门）；null = 读设置</param>
@@ -44,7 +45,7 @@ public sealed class JavaArgumentsBuilder
         VersionJson version, string gameDir, string javaPath,
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs = null, bool? versionIsolation = null,
-        string[]? extraGameArgs = null)
+        string[]? extraGameArgs = null, string userType = "legacy")
     {
         // 0. inheritsFrom 链解析（Forge/NeoForge/Fabric 生成的 version.json 继承原版）
         var v = version;
@@ -110,7 +111,7 @@ public sealed class JavaArgumentsBuilder
 
         // 3. 共享 token（game/jvm 参数替换）
         var isolated = versionIsolation ?? LauncherSettings.Current.VersionIsolation;
-        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken, isolated);
+        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken, isolated, userType);
 
         // 4. 基础 JVM 参数
         var jvmArgs = new List<string>
@@ -185,7 +186,7 @@ public sealed class JavaArgumentsBuilder
 
     private static Dictionary<string, string> BuildTokens(
         VersionJson version, string gameDir, string assetsDir, string nativesDir,
-        string accountName, string accountUuid, string accessToken, bool isolated)
+        string accountName, string accountUuid, string accessToken, bool isolated, string userType)
     {
         // 版本隔离：game_directory 指向 versions/{id}（saves/mods/options 各自独立）；
         // assets_root/game_assets 保持绝对指向共享 assets 目录
@@ -205,7 +206,8 @@ public sealed class JavaArgumentsBuilder
             ["assets_root"] = assetsDir.Replace('\\', '/'),
             ["assets_index_name"] = assetsIndexId,
             ["user_properties"] = "{}",
-            ["user_type"] = "legacy",
+            // 8-13：按账号类型传——正版 msa（游戏走在线认证），离线 legacy；此前硬编码 legacy 正版账号也按离线跑
+            ["user_type"] = userType,
             ["version_type"] = version.Type ?? "release",
             ["resolution_width"] = "854",
             ["resolution_height"] = "480",

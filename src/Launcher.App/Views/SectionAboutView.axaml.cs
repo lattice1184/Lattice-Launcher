@@ -4,6 +4,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class SectionAboutView : UserControl
@@ -70,5 +71,7 @@ public partial class SectionAboutView : UserControl
         {
             Launcher.App.Services.NotificationService.Error($"卸载失败: {ex.Message}");
         }
-    }
+    
+}
+
 }

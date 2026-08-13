@@ -13,7 +13,7 @@ public class FailureDiagnosticsTests
     public void TerracottaMap_CoversAllEnumValues()
     {
         // 防未来追加枚举值漏映射（缺映射会 KeyNotFound 崩溃）
-        var missing = Enum.GetValues<TerracottaLobbyFailure>()
+        var missing = Enum.GetValues<MultiplayerLobbyFailure>()
             .Where(v => !FailureDiagnostics.TerracottaKeys.Contains(v))
             .Select(v => v.ToString())
             .ToList();
@@ -21,35 +21,35 @@ public class FailureDiagnosticsTests
     }
 
     [Fact]
-    public void ForTerracotta_AllEntries_HaveReasonAndFix()
+    public void ForMultiplayer_AllEntries_HaveReasonAndFix()
     {
         foreach (var key in FailureDiagnostics.TerracottaKeys)
         {
-            var hit = FailureDiagnostics.ForTerracotta(key);
+            var hit = FailureDiagnostics.ForMultiplayer(key);
             Assert.False(string.IsNullOrWhiteSpace(hit.Explanation), $"{key} 文案为空");
             // Cancelled 无建议（用户主动取消）；其余必须带建议段
-            if (key != TerracottaLobbyFailure.Cancelled)
+            if (key != MultiplayerLobbyFailure.Cancelled)
                 Assert.True(hit.Explanation.Contains("建议："), $"{key} 缺建议段");
         }
     }
 
     [Fact]
-    public void ForTerracotta_DetailEmbedded()
+    public void ForMultiplayer_DetailEmbedded()
     {
-        var hit = FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.RoomConnectionFailed, "连不上房主");
+        var hit = FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.RoomConnectionFailed, "连不上房主");
         Assert.Contains("连不上房主", hit.Explanation);
         Assert.Contains("建议：", hit.Explanation);
     }
 
     [Fact]
-    public void ForTerracotta_ErrorTextFixes()
+    public void ForMultiplayer_ErrorTextFixes()
     {
         // 关键修复动作分类（真机 08-09 场景）
-        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.TerracottaBusy).Fix);
-        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.ProtocolFailed).Fix);
-        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.StartupFailed).Fix);
-        Assert.Equal(FixKind.ReinstallModule, FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.TerracottaUnavailable).Fix);
-        Assert.Equal(FixKind.AdviceOnly, FailureDiagnostics.ForTerracotta(TerracottaLobbyFailure.RoomConnectionFailed).Fix);
+        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.BackendBusy).Fix);
+        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.ProtocolFailed).Fix);
+        Assert.Equal(FixKind.RestartService, FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.StartupFailed).Fix);
+        Assert.Equal(FixKind.ReinstallModule, FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.BackendUnavailable).Fix);
+        Assert.Equal(FixKind.AdviceOnly, FailureDiagnostics.ForMultiplayer(MultiplayerLobbyFailure.RoomConnectionFailed).Fix);
     }
 
     // ---------- 下载 ----------

@@ -46,8 +46,18 @@ public sealed class VersionDownloadPipeline
         if (version.AssetIndex is { } assetIndex)
         {
             indexPath = Path.Combine(assetsDir, "indexes", $"{assetIndex.Id}.json");
-            await _downloads.DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size, null, ct);
-            if (File.Exists(indexPath)) missingAssets = ReadMissingObjects(indexPath, assetsDir);
+            // AL70：index 已存在且 SHA1 匹配 → 直接复用。旧实现无条件重下——真机 08-11 16:17
+            // 重装 26.2 时 32.json（586KB）重下遇网络静默，组任务无叶子阶段显示「正在完成…」卡 15s+
+            if (File.Exists(indexPath) && await DownloadService.Sha1MatchesAsync(indexPath, assetIndex.Sha1, ct))
+            {
+                missingAssets = ReadMissingObjects(indexPath, assetsDir);
+            }
+            else
+            {
+                ctx.SetStage("获取资源清单…"); // AL70：无子任务阶段组 Stage 兜底显示（组自己设的 Stage）
+                await _downloads.DownloadFileAsync(assetIndex.Url, indexPath, assetIndex.Sha1, assetIndex.Size, null, ct);
+                if (File.Exists(indexPath)) missingAssets = ReadMissingObjects(indexPath, assetsDir);
+            }
         }
 
         // ---- 阶段 1：全并行（含 assets 差量，Weight 已含全部字节）----

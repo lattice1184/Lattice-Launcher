@@ -1,7 +1,7 @@
 ﻿# ============================================================
 #  Lattice Launcher 一键发布
 #  产物（发布\）：
-#    Lattice启动器.exe        —— 单文件自包含（约 84MB），双击即用，无需安装 .NET
+#    Lattice启动器.exe        —— 单文件自包含（约 84MB，压缩：体积锁 100MB 内——8-13 批次 34；启动动画独立线程覆盖解压等待），双击即用，无需安装 .NET
 #    Lattice启动器-轻量版.exe —— 框架依赖（约 23MB），需装 .NET 10 Desktop Runtime
 #  用法：右键 → 使用 PowerShell 运行（或 powershell -ExecutionPolicy Bypass -File 发布.ps1）
 # ============================================================
@@ -12,7 +12,7 @@ $out  = Join-Path $root "发布"
 Write-Host ""
 Write-Host "=== Lattice Launcher 发布 ===" -ForegroundColor Cyan
 
-# 0) 自动关闭运行中的启动器（两个版本的进程名都匹配；用户不在时自动处理，无需手动关）
+# 0) 自动关闭运行中的启动器（两个版本进程名都匹配；用户不在时自动处理，无需手动关）
 $running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "Lattice启动器*" }
 if ($running) {
     Write-Host "检测到启动器正在运行，自动关闭..." -ForegroundColor Yellow
@@ -57,10 +57,10 @@ function Publish-One([string]$finalName, [switch]$SelfContained) {
     return $final
 }
 
-Write-Host "[1/4] dotnet publish 自包含版（单文件压缩，约 2-4 分钟）..."
+Write-Host "[1/5] dotnet publish 自包含版（单文件压缩，约 2-4 分钟）..."
 $finalSelf = Publish-One "Lattice启动器.exe" -SelfContained
 
-Write-Host "[2/4] dotnet publish 轻量版（框架依赖，约 1-2 分钟）..."
+Write-Host "[2/5] dotnet publish 轻量版（框架依赖，约 1-2 分钟）..."
 $finalLite = Publish-One "Lattice启动器-轻量版.exe"
 
 # 3) 签名（复用 LauncherDev 自签名证书；无证书时自动创建）
@@ -84,9 +84,14 @@ Lattice Launcher（晶格启动器）
 
 构建时间：$(Get-Date -Format "yyyy-MM-dd HH:mm")
 位置：$out
+
+[如果被 Windows 阻止]
+1. SmartScreen（"Windows 已保护你的电脑"）→ 点「更多信息」→「仍要运行」（自签名发布者，属正常）
+2. 智能应用控制（SAC，仅 Win11 新装机器）会无提示阻止——需在 设置→隐私和安全性→Windows 安全中心→应用和浏览器控制→智能应用控制 中关闭（关闭后不可轻易重开，属系统设计）
 "@ | Out-File (Join-Path $out "使用说明.txt") -Encoding UTF8
 
 Write-Host "[4/4] 完成！" -ForegroundColor Green
+# 注：无 KeyProxy——AL50 已砍本地代理，CF key 并入主进程（DPAPI 加密存设置）
 Write-Host "  -> $finalSelf"
 Write-Host "  -> $finalLite"
 Write-Host "  -> $(Join-Path $out '使用说明.txt')"

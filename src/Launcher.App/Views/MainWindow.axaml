@@ -31,14 +31,15 @@
                                              FallbackColor="#FF14181F"/>
             </ExperimentalAcrylicBorder.Material>
             <Grid>
-            <DockPanel x:Name="AppContent">
+            <!-- 8-13 批次 33：启动由独立 SplashWindow 承担，内容初始透明，首帧后 150ms 淡入（与 splash 淡出交叉） -->
+            <DockPanel x:Name="AppContent" Opacity="0">
                 <!-- 左侧导航（液态玻璃，整列一种色、全高；空白处可拖拽窗口，双击最大化） -->
                 <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="160" CornerRadius="0"
                                            PointerPressed="TitleBar_PointerPressed">
                     <ExperimentalAcrylicBorder.Material>
                         <ExperimentalAcrylicMaterial BackgroundSource="Digger"
                                                      TintColor="#14181F"
-                                                     TintOpacity="0.55"/>
+                                                     TintOpacity="0.92"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性 -->
                     </ExperimentalAcrylicBorder.Material>
                     <Grid>
                         <!-- 激活指示条：独立滑动元素（位置由 ApplyNavVisuals 动画控制），替代按钮左侧描边 -->
@@ -142,7 +143,7 @@
 
                 <!-- 右侧内容区（页面切换动画；密度缩放；背板 72% 半透明——玻璃透出）。
                      顶部标题条与内容同色：左导航一色、右内容一色，顶部不再有第三条颜色 -->
-                <Border x:Name="ContentSurface" Background="#B81D222C">
+                <Border x:Name="ContentSurface" Background="{DynamicResource BackgroundColor}">
                     <Border.RenderTransform>
                         <ScaleTransform ScaleX="1" ScaleY="1"/>
                     </Border.RenderTransform>
@@ -151,7 +152,7 @@
                              页面根无背景 → 图片透出；Border.card/glass-card 实色保持不透明 -->
                         <Border x:Name="BgDim" Background="#A6000000" IsVisible="False" IsHitTestVisible="False"/>
                         <DockPanel>
-                        <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="36" Background="#B81D222C"
+                        <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="36" Background="{DynamicResource BackgroundColor}"
                                 PointerPressed="TitleBar_PointerPressed">
                             <!-- 窗口按钮：纯 Border+字形、手动 hover 变色，绝无缩放/位移/模板行为（错位根治）。
                                  只做最小化+关闭（去掉最大化）；双击标题条空白处可最大化/还原 -->
@@ -210,15 +211,5 @@
             </Grid>
         </ExperimentalAcrylicBorder>
     </Border>
-
-    <!-- 启动浮层（透明层覆盖全窗）：logo 悬浮桌面；放大完成后隐藏并切回亚克力层 -->
-    <Grid x:Name="SplashOverlay" Background="Transparent" ZIndex="1000" ClipToBounds="True">
-        <Image x:Name="SplashLogo" Source="/Assets/logo.png" Width="60" Height="60"
-               RenderTransformOrigin="50%,50%" HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Image.RenderTransform>
-                <ScaleTransform ScaleX="0.3" ScaleY="0.3"/>
-            </Image.RenderTransform>
-        </Image>
-    </Grid>
     </Grid>
 </Window>

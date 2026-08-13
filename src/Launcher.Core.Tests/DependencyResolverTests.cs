@@ -167,4 +167,82 @@ public class DependencyResolverTests
 
         Assert.Equal(2, result.ToInstall.Count); // a 和 b 各一次，无死循环
     }
+
+    // ---------- 8-19 补 2：年份号（26.2）/空 target 依赖解析放宽（精确匹配只在传统 1.x 生效） ----------
+
+    [Fact]
+    public void Resolve_YearFormatTarget_SelectsNewestWithoutExactMatch()
+    {
+        var resolver = new ModDependencyResolver();
+        var result = resolver.Resolve(new ModDependencyRequest
+        {
+            TargetMinecraftVersion = "26.2",
+            TargetLoaders = ["fabric"],
+            RequiredDependencies =
+            [
+                new ModDependencyReference { ProjectId = "main", Source = "modrinth" },
+            ],
+            // 文件只标传统版本（1.20.1/1.21.1）——26.2 永不精确匹配 → 放宽按 loader+最新选
+            ProjectResolver = (_, id) => new ModDependencyProject
+            {
+                ProjectId = id, Source = "modrinth",
+                Files = [MakeFile("old", "1.0", gameVersions: ["1.20.1"], loaders: ["fabric"]),
+                         MakeFile("new", "2.0", gameVersions: ["1.21.1"], loaders: ["fabric"])],
+            },
+        });
+
+        Assert.Single(result.ToInstall);
+        Assert.Equal("new", result.ToInstall[0].File.Id);
+        Assert.Empty(result.Unresolved);
+    }
+
+    [Fact]
+    public void Resolve_YearFormatTarget_LoaderStillRespected()
+    {
+        var resolver = new ModDependencyResolver();
+        var result = resolver.Resolve(new ModDependencyRequest
+        {
+            TargetMinecraftVersion = "26.2",
+            TargetLoaders = ["forge"],   // 26.2 放宽版本但 loader 过滤仍生效
+            RequiredDependencies =
+            [
+                new ModDependencyReference { ProjectId = "main", Source = "modrinth" },
+            ],
+            ProjectResolver = (_, id) => new ModDependencyProject
+            {
+                ProjectId = id, Source = "modrinth",
+                Files = [MakeFile("v1", "1.0", gameVersions: ["1.21.1"], loaders: ["fabric"])],
+            },
+        });
+
+        Assert.Empty(result.ToInstall);
+        Assert.Single(result.Unresolved);
+        Assert.Contains("No compatible file", result.Unresolved[0].Reason);
+    }
+
+    [Fact]
+    public void Resolve_EmptyTargetVersion_SelectsNewest()
+    {
+        // 无实例（整合包）场景 target=""——既有 bug：空串也永不匹配 → 依赖全失败；放宽后按 loader+最新选
+        var resolver = new ModDependencyResolver();
+        var result = resolver.Resolve(new ModDependencyRequest
+        {
+            TargetMinecraftVersion = "",
+            TargetLoaders = ["fabric"],
+            RequiredDependencies =
+            [
+                new ModDependencyReference { ProjectId = "main", Source = "modrinth" },
+            ],
+            ProjectResolver = (_, id) => new ModDependencyProject
+            {
+                ProjectId = id, Source = "modrinth",
+                Files = [MakeFile("old", "1.0", gameVersions: ["1.20.1"], loaders: ["fabric"]),
+                         MakeFile("new", "2.0", gameVersions: ["1.21.1"], loaders: ["fabric"])],
+            },
+        });
+
+        Assert.Single(result.ToInstall);
+        Assert.Equal("new", result.ToInstall[0].File.Id);
+        Assert.Empty(result.Unresolved);
+    }
 }

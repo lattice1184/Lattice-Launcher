@@ -11,7 +11,7 @@ namespace Launcher.Core.Multiplayer;
 /// 陶瓦联机会话：拉起 terracotta.exe（--hmcl2 握手）→ HTTP API 控制状态机（房主扫描 / 客机加入 / 监控 / 收尾）。
 /// 移植自 BlockHelm-Launcher（GPL-3.0）的 MultiplayerLobbyService，进程 seam 可注入以便单测。
 /// </summary>
-public sealed class TerracottaLobbyService : IDisposable
+public sealed class TerracottaLobbyService : IMultiplayerLobbyService
 {
     private const int RequestTimeoutMs = 3000;
     private const int HandoffTimeoutMs = 12_000;
@@ -33,10 +33,10 @@ public sealed class TerracottaLobbyService : IDisposable
     private ControllerState _lastState = new();
     private bool _disposed;
 
-    public event Action<TerracottaSnapshot>? SnapshotChanged;
-    public event Action<TerracottaStopReason>? Stopped;
+    public event Action<MultiplayerSnapshot>? SnapshotChanged;
+    public event Action<MultiplayerStopReason>? Stopped;
 
-    public TerracottaSnapshot? Current { get; private set; }
+    public MultiplayerSnapshot? Current { get; private set; }
 
     public TerracottaLobbyService(
         TerracottaModule module,
@@ -47,14 +47,14 @@ public sealed class TerracottaLobbyService : IDisposable
         _processFactory = processFactory ?? (psi => new ProcessHandle(Process.Start(psi)));
         _http = new HttpClient(handler ?? new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false })
         {
-            Timeout = TimeSpan.FromSeconds(RequestTimeoutMs),
+            Timeout = TimeSpan.FromMilliseconds(RequestTimeoutMs), // REVIEW-D 高3：旧代码 FromSeconds(3000)=50 分钟——离房请求可挂 50 分钟
         };
     }
 
     // ---------- 房主 / 客机入口 ----------
 
     /// <summary>房主：扫描本机局域网世界并建立房间。返回房间快照（含房间码）。</summary>
-    public async Task<TerracottaSnapshot> CreateHostAsync(string playerName, CancellationToken ct)
+    public async Task<MultiplayerSnapshot> CreateHostAsync(string playerName, CancellationToken ct)
     {
         MultiplayerLog.Log($"CreateHostAsync 开始 player={playerName}");
         try
@@ -68,13 +68,13 @@ public sealed class TerracottaLobbyService : IDisposable
         {
             MultiplayerLog.Log($"CreateHostAsync 失败: {ex}");
             await CleanupFailedCreationAsync();
-            if (ex is TerracottaLobbyException) throw;
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, $"创建房间失败：{ex.Message}", ex);
+            if (ex is MultiplayerLobbyException) throw;
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.StartupFailed, $"创建房间失败：{ex.Message}", ex);
         }
     }
 
     /// <summary>客机：按房间码加入。返回房间快照（room 以服务端回填为准）。</summary>
-    public async Task<TerracottaSnapshot> JoinAsync(string roomCode, string playerName, CancellationToken ct)
+    public async Task<MultiplayerSnapshot> JoinAsync(string roomCode, string playerName, CancellationToken ct)
     {
         try
         {
@@ -87,8 +87,8 @@ public sealed class TerracottaLobbyService : IDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await CleanupFailedCreationAsync();
-            if (ex is TerracottaLobbyException) throw;
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.RoomConnectionFailed, $"加入房间失败：{ex.Message}", ex);
+            if (ex is MultiplayerLobbyException) throw;
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.RoomConnectionFailed, $"加入房间失败：{ex.Message}", ex);
         }
     }
 
@@ -99,7 +99,7 @@ public sealed class TerracottaLobbyService : IDisposable
     {
         MultiplayerLog.Log("StopAsync: 用户离开");
         lock (_gate) _mode = SessionMode.Stopping;
-        Publish(MakeSnapshot(TerracottaSessionState.Stopping));
+        Publish(MakeSnapshot(MultiplayerSessionState.Stopping));
         await StopRuntimeAsync(ct);
         lock (_gate) { _mode = SessionMode.None; Current = null; }
     }
@@ -143,7 +143,7 @@ public sealed class TerracottaLobbyService : IDisposable
         catch (Exception ex)
         {
             MultiplayerLog.Log($"联机模块启动失败: {ex.Message}");
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.TerracottaUnavailable, $"联机模块启动失败：{ex.Message}", ex);
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.BackendUnavailable, $"联机模块启动失败：{ex.Message}", ex);
         }
         MultiplayerLog.Log($"陶瓦进程已启动: handoff={Path.GetFileName(handoffPath)}");
 
@@ -165,8 +165,8 @@ public sealed class TerracottaLobbyService : IDisposable
             // 拥有进程才要求版本精确一致；复用实例只校验平台字段
             if (!await MetaIsValidAsync(port, requireExactVersion: owns, ct))
             {
-                throw new TerracottaLobbyException(
-                    TerracottaLobbyFailure.TerracottaBusy,
+                throw new MultiplayerLobbyException(
+                    MultiplayerLobbyFailure.BackendBusy,
                     "联机模块版本不匹配，或正被其他启动器使用");
             }
             _controllerPort = port;
@@ -214,8 +214,8 @@ public sealed class TerracottaLobbyService : IDisposable
         {
             ct.ThrowIfCancellationRequested();
             if (process.HasExited)
-                throw new TerracottaLobbyException(
-                    TerracottaLobbyFailure.TerracottaBusy,
+                throw new MultiplayerLobbyException(
+                    MultiplayerLobbyFailure.BackendBusy,
                     "联机模块启动后立即退出（可能正被其他启动器使用）");
             try
             {
@@ -226,14 +226,14 @@ public sealed class TerracottaLobbyService : IDisposable
                     if (doc.RootElement.TryGetProperty("port", out var portEl)
                         && portEl.TryGetInt32(out var port) && port is > 0 and <= 65535)
                         return port;
-                    throw new TerracottaLobbyException(
-                        TerracottaLobbyFailure.ProtocolFailed, "联机模块握手数据异常");
+                    throw new MultiplayerLobbyException(
+                        MultiplayerLobbyFailure.ProtocolFailed, "联机模块握手数据异常");
                 }
             }
             catch (IOException) { /* 进程写入中，稍后重读 */ }
             await Task.Delay(50, ct);
         }
-        throw new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "联机模块握手超时（12 秒）");
+        throw new MultiplayerLobbyException(MultiplayerLobbyFailure.StartupFailed, "联机模块握手超时（12 秒）");
     }
 
     /// <summary>进程是否在宽限期内退出：退出 → true；存活 → false</summary>
@@ -250,10 +250,10 @@ public sealed class TerracottaLobbyService : IDisposable
     {
         using var resp = await GetAsync(path, ct);
         if (resp.StatusCode == HttpStatusCode.BadRequest)
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.InvalidRoomCode, "房间码无效（400）");
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.InvalidRoomCode, "房间码无效（400）");
         if (!resp.IsSuccessStatusCode)
-            throw new TerracottaLobbyException(
-                TerracottaLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
+            throw new MultiplayerLobbyException(
+                MultiplayerLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
         return await ParseStateAsync(resp, ct);
     }
 
@@ -263,10 +263,10 @@ public sealed class TerracottaLobbyService : IDisposable
     {
         using var resp = await GetAsync(path, ct);
         if (resp.StatusCode == HttpStatusCode.BadRequest)
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.InvalidRoomCode, "房间码无效（400）");
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.InvalidRoomCode, "房间码无效（400）");
         if (!resp.IsSuccessStatusCode)
-            throw new TerracottaLobbyException(
-                TerracottaLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
+            throw new MultiplayerLobbyException(
+                MultiplayerLobbyFailure.ProtocolFailed, $"联机模块接口返回 {(int)resp.StatusCode}");
     }
 
     private async Task<HttpResponseMessage> GetAsync(string path, CancellationToken ct)
@@ -279,7 +279,7 @@ public sealed class TerracottaLobbyService : IDisposable
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块响应超时");
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.ProtocolFailed, "联机模块响应超时");
         }
     }
 
@@ -311,7 +311,7 @@ public sealed class TerracottaLobbyService : IDisposable
     }
 
     /// <summary>轮询状态机：500ms 一次，等就绪 / 异常 / 超时（host 20s / guest 20s）</summary>
-    private async Task<TerracottaSnapshot> PollUntilReadyAsync(bool isHost, CancellationToken ct)
+    private async Task<MultiplayerSnapshot> PollUntilReadyAsync(bool isHost, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(StartupTimeoutMs);
         while (true)
@@ -322,7 +322,7 @@ public sealed class TerracottaLobbyService : IDisposable
             {
                 state = await CallStateAsync("/state", ct);
             }
-            catch (TerracottaLobbyException)
+            catch (MultiplayerLobbyException)
             {
                 throw;
             }
@@ -331,8 +331,8 @@ public sealed class TerracottaLobbyService : IDisposable
                 ct.ThrowIfCancellationRequested(); // 用户取消直接上抛，别当网络抖动
                 // 网络抖动：继续轮询直到超时
                 if (DateTime.UtcNow >= deadline)
-                    throw new TerracottaLobbyException(
-                        isHost ? TerracottaLobbyFailure.StartupFailed : TerracottaLobbyFailure.RoomConnectionFailed,
+                    throw new MultiplayerLobbyException(
+                        isHost ? MultiplayerLobbyFailure.StartupFailed : MultiplayerLobbyFailure.RoomConnectionFailed,
                         "联机模块无响应");
                 await Task.Delay(PollIntervalMs, ct);
                 continue;
@@ -345,9 +345,9 @@ public sealed class TerracottaLobbyService : IDisposable
             if (ready)
             {
                 if (string.IsNullOrWhiteSpace(state.Room))
-                    throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块未返回房间码");
+                    throw new MultiplayerLobbyException(MultiplayerLobbyFailure.ProtocolFailed, "联机模块未返回房间码");
                 MultiplayerLog.Log($"就绪: {state.State}, room={state.Room}, profiles={state.Profiles.Count}");
-                var snapshot = MakeSnapshot(TerracottaSessionState.Active, state);
+                var snapshot = MakeSnapshot(MultiplayerSessionState.Active, state);
                 Publish(snapshot);
                 StartMonitor();
                 return snapshot;
@@ -356,7 +356,7 @@ public sealed class TerracottaLobbyService : IDisposable
             // 客机：connecting/starting 阶段服务端已回填规范房间码 → 提前展示
             if (!isHost && state.Room is not null)
             {
-                Publish(new TerracottaSnapshot(state.Room, TerracottaSessionState.Joining,
+                Publish(new MultiplayerSnapshot(state.Room, MultiplayerSessionState.Joining,
                     MapPlayers(state)));
             }
 
@@ -367,19 +367,19 @@ public sealed class TerracottaLobbyService : IDisposable
             if (!expectScanning && state.State != "waiting")
             {
                 MultiplayerLog.Log($"状态异常: {state.State}");
-                throw new TerracottaLobbyException(
-                    TerracottaLobbyFailure.ProtocolFailed, $"联机模块状态异常：{state.State}");
+                throw new MultiplayerLobbyException(
+                    MultiplayerLobbyFailure.ProtocolFailed, $"联机模块状态异常：{state.State}");
             }
 
             if (DateTime.UtcNow >= deadline)
             {
                 // 超时：host 停在扫描 = 没开局域网世界；其他 = 启动/连接失败
-                throw new TerracottaLobbyException(
+                throw new MultiplayerLobbyException(
                     isHost
                         ? (state.State == "host-scanning"
-                            ? TerracottaLobbyFailure.MinecraftWorldUnavailable
-                            : TerracottaLobbyFailure.StartupFailed)
-                        : TerracottaLobbyFailure.RoomConnectionFailed,
+                            ? MultiplayerLobbyFailure.WorldUnavailable
+                            : MultiplayerLobbyFailure.StartupFailed)
+                        : MultiplayerLobbyFailure.RoomConnectionFailed,
                     isHost ? "未检测到局域网世界（20 秒超时）" : "加入房间超时（20 秒）");
             }
             await Task.Delay(PollIntervalMs, ct);
@@ -401,6 +401,7 @@ public sealed class TerracottaLobbyService : IDisposable
     private async Task MonitorLoopAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        var consecutiveFailures = 0; // REVIEW-D 高4：连续失败计数——复用实例无进程句柄时的死亡判定
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
@@ -410,7 +411,7 @@ public sealed class TerracottaLobbyService : IDisposable
                 if (process?.HasExited == true)
                 {
                     MultiplayerLog.Log("监控: 陶瓦进程已退出，会话停止");
-                    await StopUnexpectedlyAsync(TerracottaStopReason.TerracottaExited);
+                    await StopUnexpectedlyAsync(MultiplayerStopReason.BackendExited);
                     return;
                 }
                 ControllerState state;
@@ -419,7 +420,20 @@ public sealed class TerracottaLobbyService : IDisposable
                     state = await CallStateAsync("/state", ct);
                 }
                 catch (Exception) when (ct.IsCancellationRequested) { return; }
-                catch (Exception) { continue; } // 网络抖动忽略
+                catch (Exception)
+                {
+                    // REVIEW-D 高4：复用现役实例（_ownedProcess==null）时旧代码无进程死亡检测——
+                    // 连接拒绝被当「网络抖动」无限忽略，陶瓦进程死后 UI 永远卡「房间已就绪」。
+                    // 连续 10 秒（10 次）连不上控制器即判定进程死亡（网络抖动 1~2 秒级不会误杀）
+                    if (++consecutiveFailures >= 10)
+                    {
+                        MultiplayerLog.Log("监控: 控制器连续无响应（进程可能已退出），会话停止");
+                        await StopUnexpectedlyAsync(MultiplayerStopReason.BackendExited);
+                        return;
+                    }
+                    continue;
+                }
+                consecutiveFailures = 0; // 一次成功即复位
 
                 if (state.State == "exception")
                 {
@@ -429,14 +443,14 @@ public sealed class TerracottaLobbyService : IDisposable
                 var expected = _mode == SessionMode.Host ? "host-ok" : "guest-ok";
                 if (state.State != expected)
                 {
-                    await StopUnexpectedlyAsync(TerracottaStopReason.ServiceFailed);
+                    await StopUnexpectedlyAsync(MultiplayerStopReason.ServiceFailed);
                     return;
                 }
                 // 玩家变更才发布（签名比对：machine_id\x1fname\x1fkind，'\n' 拼接）
                 if (state.Signature != _lastState.Signature)
                 {
                     _lastState = state;
-                    Publish(MakeSnapshot(TerracottaSessionState.Active, state));
+                    Publish(MakeSnapshot(MultiplayerSessionState.Active, state));
                 }
             }
         }
@@ -492,7 +506,7 @@ public sealed class TerracottaLobbyService : IDisposable
     }
 
     /// <summary>异常终止：停进程 + 清状态 + 触发 Stopped（加锁防重入）</summary>
-    private async Task StopUnexpectedlyAsync(TerracottaStopReason reason)
+    private async Task StopUnexpectedlyAsync(MultiplayerStopReason reason)
     {
         MultiplayerLog.Log($"异常停止: {reason}");
         lock (_gate)
@@ -536,27 +550,27 @@ public sealed class TerracottaLobbyService : IDisposable
 
     private string Url(string path) => $"http://127.0.0.1:{_controllerPort}{path}";
 
-    private TerracottaSnapshot MakeSnapshot(TerracottaSessionState state, ControllerState? s = null)
+    private MultiplayerSnapshot MakeSnapshot(MultiplayerSessionState state, ControllerState? s = null)
     {
         s ??= _lastState;
-        var snapshot = new TerracottaSnapshot(s.Room, state, MapPlayers(s));
+        var snapshot = new MultiplayerSnapshot(s.Room, state, MapPlayers(s));
         Current = snapshot;
         return snapshot;
     }
 
-    private void Publish(TerracottaSnapshot snapshot)
+    private void Publish(MultiplayerSnapshot snapshot)
         => SnapshotChanged?.Invoke(snapshot);
 
-    private static List<TerracottaPlayer> MapPlayers(ControllerState s)
+    private static List<MultiplayerPlayer> MapPlayers(ControllerState s)
     {
-        var list = new List<TerracottaPlayer>();
+        var list = new List<MultiplayerPlayer>();
         var seen = new HashSet<string>();
         var isHostOk = s.State == "host-ok";
         foreach (var p in s.Profiles)
         {
             if (!seen.Add(p.MachineId)) continue; // machine_id 去重
             var isHost = p.Kind == "HOST";
-            list.Add(new TerracottaPlayer(
+            list.Add(new MultiplayerPlayer(
                 p.Name, p.MachineId, isHost,
                 IsLocal: p.Kind == "LOCAL" || (isHostOk && isHost),
                 p.LatencyMs));
@@ -564,27 +578,27 @@ public sealed class TerracottaLobbyService : IDisposable
         return list;
     }
 
-    private static TerracottaLobbyException ForExceptionType(int? type, bool isHost, bool unexpected)
+    private static MultiplayerLobbyException ForExceptionType(int? type, bool isHost, bool unexpected)
     {
         if (isHost)
         {
             return type switch
             {
-                3 => new TerracottaLobbyException(TerracottaLobbyFailure.StartupFailed, "联机模块退出（异常码 3）"),
-                4 => new TerracottaLobbyException(TerracottaLobbyFailure.MinecraftWorldUnavailable, "局域网世界关闭（异常码 4）"),
-                _ => new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）"),
+                3 => new MultiplayerLobbyException(MultiplayerLobbyFailure.StartupFailed, "联机模块退出（异常码 3）"),
+                4 => new MultiplayerLobbyException(MultiplayerLobbyFailure.WorldUnavailable, "局域网世界关闭（异常码 4）"),
+                _ => new MultiplayerLobbyException(MultiplayerLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）"),
             };
         }
         return type is 0 or 1 or 2
-            ? new TerracottaLobbyException(TerracottaLobbyFailure.RoomConnectionFailed, "连不上房主")
-            : new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）");
+            ? new MultiplayerLobbyException(MultiplayerLobbyFailure.RoomConnectionFailed, "连不上房主")
+            : new MultiplayerLobbyException(MultiplayerLobbyFailure.ProtocolFailed, $"联机模块异常（码 {type}）");
     }
 
-    private static TerracottaStopReason ReasonForType(int? type) => type switch
+    private static MultiplayerStopReason ReasonForType(int? type) => type switch
     {
-        3 => TerracottaStopReason.TerracottaExited,
-        4 => TerracottaStopReason.MinecraftWorldClosed,
-        _ => TerracottaStopReason.ServiceFailed,
+        3 => MultiplayerStopReason.BackendExited,
+        4 => MultiplayerStopReason.WorldClosed,
+        _ => MultiplayerStopReason.ServiceFailed,
     };
 
     private static int? ReadLockPort(string lockPath)
@@ -639,7 +653,7 @@ public sealed class TerracottaLobbyService : IDisposable
     {
         var contentLength = resp.Content.Headers.ContentLength ?? 0;
         if (contentLength > MaxResponseBytes)
-            throw new TerracottaLobbyException(TerracottaLobbyFailure.ProtocolFailed, "联机模块响应过大");
+            throw new MultiplayerLobbyException(MultiplayerLobbyFailure.ProtocolFailed, "联机模块响应过大");
         using var doc = await ParseJsonAsync(resp, ct);
         var root = doc.RootElement;
         var state = new ControllerState

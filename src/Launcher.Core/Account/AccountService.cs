@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Launcher.Core.Download;
 
 namespace Launcher.Core.Account;
 
@@ -52,8 +53,9 @@ public sealed class AccountService
     /// <summary>正版登录：保存微软会话为当前账号（type=microsoft；refresh token 持久化供静默刷新）</summary>
     public AccountInfo LoginMicrosoft(MicrosoftAuth.MicrosoftSession session)
     {
-        var acc = new AccountInfo(session.MinecraftName, session.MinecraftUuid, "microsoft",
-            session.AccessToken, session.RefreshToken);
+        // 8-13：profile id 是 32 位无横线 hex，游戏 --uuid 要带横线（离线 UUID 本来就带横线，统一）
+        var acc = new AccountInfo(session.MinecraftName, FormatUuid(session.MinecraftUuid), "microsoft",
+            session.AccessToken, session.RefreshToken, session.ExpiresAtUtc);
         var existing = _accounts.FindIndex(a => a.Name.Equals(session.MinecraftName, StringComparison.OrdinalIgnoreCase));
         if (existing >= 0) _accounts[existing] = acc;
         else _accounts.Add(acc);
@@ -69,12 +71,14 @@ public sealed class AccountService
     {
         if (Current?.Type != "microsoft" || Current.RefreshToken is not { } rt)
             throw new InvalidOperationException("当前不是正版账号");
-        var http = new HttpClient();
+        var http = new HttpClient(HttpClientPool.SharedHandler);
+        // 8-13 刷新前解析 clientId（远程下发/缓存/兜底三层——新进程首刷时生效值就绪）
+        await ClientIdRemote.ResolveAsync(http, ct);
         var session = await MicrosoftAuth.RefreshAsync(http, rt, ct);
         MicrosoftSession = session;
-        // 轮换保存新 refresh token
-        Current = new AccountInfo(session.MinecraftName, session.MinecraftUuid, "microsoft",
-            session.AccessToken, session.RefreshToken);
+        // 轮换保存新 refresh token + 新 Minecraft token 过期时间
+        Current = new AccountInfo(session.MinecraftName, FormatUuid(session.MinecraftUuid), "microsoft",
+            session.AccessToken, session.RefreshToken, session.ExpiresAtUtc);
         var idx = _accounts.FindIndex(a => a.Name.Equals(session.MinecraftName, StringComparison.OrdinalIgnoreCase));
         if (idx >= 0) _accounts[idx] = Current;
         Save();
@@ -116,7 +120,11 @@ public sealed class AccountService
             var saved = JsonSerializer.Deserialize<StoredState>(json);
             if (saved is null) return;
             _accounts = (saved.Accounts ?? [])
-                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type, a.AccessToken, a.RefreshToken))
+                // 8-13 token DPAPI 解密（无前缀旧明文原样返回——迁移兼容，下次保存自动转密）
+                .Select(a => new AccountInfo(a.Name, a.Uuid, a.Type,
+                    Launcher.Core.Utils.Secrets.Read(a.AccessToken),
+                    Launcher.Core.Utils.Secrets.Read(a.RefreshToken),
+                    a.MsExpiresAtUtc))
                 .ToList();
             Current = saved.CurrentName is { } cur
                 ? _accounts.FirstOrDefault(a => a.Name == cur)
@@ -124,7 +132,8 @@ public sealed class AccountService
             if (Current?.Type == "microsoft" && Current.RefreshToken is { } rt)
             {
                 MicrosoftSession = new MicrosoftAuth.MicrosoftSession(
-                    Current.AccessToken ?? "", rt, Current.Uuid, Current.Name);
+                    Current.AccessToken ?? "", rt, Current.Uuid, Current.Name,
+                    Current.MsExpiresAtUtc ?? default);
             }
         }
         catch (Exception) { /* 存储损坏则忽略 */ }
@@ -144,7 +153,11 @@ public sealed class AccountService
             Directory.CreateDirectory(Path.GetDirectoryName(_storePath)!);
             var stored = new StoredState(
                 Current?.Name,
-                _accounts.Select(a => new StoredAccount(a.Name, a.Uuid, a.Type, a.AccessToken, a.RefreshToken)).ToList());
+                // 8-13 token DPAPI 加密落盘（不再明文——accounts.json 拷走也解不开）
+                _accounts.Select(a => new StoredAccount(a.Name, a.Uuid, a.Type,
+                    Launcher.Core.Utils.Secrets.Protect(a.AccessToken),
+                    Launcher.Core.Utils.Secrets.Protect(a.RefreshToken),
+                    a.MsExpiresAtUtc)).ToList());
             File.WriteAllText(_storePath, JsonSerializer.Serialize(stored));
         }
         catch (Exception) { /* 存储失败不阻塞登录 */ }
@@ -160,10 +173,19 @@ public sealed class AccountService
         return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
     }
 
+    /// <summary>8-13 32 位无横线 profile id → 8-4-4-4-12 带横线（游戏 --uuid 要求；已带横线原样返回）</summary>
+    public static string FormatUuid(string profileId)
+    {
+        if (profileId.Length == 36) return profileId;
+        if (profileId.Length == 32)
+            return $"{profileId[..8]}-{profileId[8..12]}-{profileId[12..16]}-{profileId[16..20]}-{profileId[20..]}";
+        return profileId;
+    }
+
     public sealed record AccountInfo(string Name, string Uuid, string Type,
-        string? AccessToken = null, string? RefreshToken = null);
+        string? AccessToken = null, string? RefreshToken = null, DateTime? MsExpiresAtUtc = null);
 
     private sealed record StoredState(string? CurrentName, List<StoredAccount> Accounts);
     private sealed record StoredAccount(string Name, string Uuid, string Type,
-        string? AccessToken = null, string? RefreshToken = null);
+        string? AccessToken = null, string? RefreshToken = null, DateTime? MsExpiresAtUtc = null);
 }

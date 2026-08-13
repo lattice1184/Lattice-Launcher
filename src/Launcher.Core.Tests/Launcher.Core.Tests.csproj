@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Launcher.Core\Launcher.Core.csproj" />
+    <ProjectReference Include="..\Launcher.App\Launcher.App.csproj" />
   </ItemGroup>
 
   <ItemGroup>

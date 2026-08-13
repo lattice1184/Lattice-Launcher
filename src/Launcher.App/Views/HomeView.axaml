@@ -13,8 +13,8 @@
                 <!-- 行1：头像（点击弹账号面板）+ 版本 + 启动/停止 + 状态（一行） -->
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="12">
                     <Button x:Name="AvatarButton" Padding="0" Background="Transparent" BorderThickness="0"
-                            Click="OnAvatarClick" ToolTip.Tip="账号管理（登录/切换/皮肤）">
-                        <Border Width="44" Height="44" CornerRadius="10" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                            Click="OnAvatarClick" ToolTip.Tip="账号管理。登录、切换账号、换皮肤都在这">
+                        <Border Width="44" Height="44" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource BgRaised}">
                             <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"/>
                         </Border>
                     </Button>
@@ -47,7 +47,7 @@
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" MinWidth="84">
                         <Border Width="8" Height="8" CornerRadius="4" Background="{Binding StateColor}"
                                 VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                        <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                     </StackPanel>
                 </Grid>
 
@@ -66,7 +66,7 @@
                                     <Border Classes.stagedot="True" Classes.current="{Binding IsCurrent}"
                                             Width="8" Height="8" CornerRadius="4"
                                             Background="{Binding DotColor}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource TextSecondary}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -84,7 +84,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="去版本页补全" Classes="primary" FontSize="11" Padding="14,5"
                                 Command="{Binding GoRepairCommand}"/>
-                        <Button Content="打开官方下载页" Classes="ghost" FontSize="11" Padding="14,5"
+                        <Button Content="打开官方下载页" Classes="link"
                                 Command="{Binding OpenOfficialDownloadCommand}"/>
                     </StackPanel>
                 </StackPanel>
@@ -98,8 +98,8 @@
         <Border Classes="card" Grid.Row="1" Padding="0">
             <DockPanel>
                 <!-- 头部 Tab -->
-                <Border DockPanel.Dock="Top" Background="{StaticResource BgSurface}" Padding="12,8"
-                        BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1">
+                <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurface}" Padding="12,8"
+                        BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
                     <Button Content="控制台" Classes="tab" Classes.active="{Binding IsConsoleTabSelected}"
                             FontSize="12" Padding="12,5" Command="{Binding SwitchLogTabCommand}" CommandParameter="console"/>
@@ -127,7 +127,7 @@
                     <!-- 启动记录面板 -->
                     <ScrollViewer IsVisible="{Binding IsHistoryTabSelected}">
                         <StackPanel Spacing="4" Margin="12,10">
-                            <TextBlock Text="暂无启动记录" Classes="dim" FontSize="12" HorizontalAlignment="Center"
+                            <TextBlock Text="你还没启动过游戏" Classes="dim" FontSize="12" HorizontalAlignment="Center"
                                        Margin="0,40,0,0" IsVisible="{Binding !HasHistory}"/>
                             <ItemsControl ItemsSource="{Binding LaunchHistory}">
                                 <ItemsControl.ItemTemplate>
@@ -135,7 +135,7 @@
                                         <Grid ColumnDefinitions="Auto,88,*,Auto" ColumnSpacing="8" Margin="0,2" MinHeight="22">
                                             <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="11" LineHeight="16"
-                                                       Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="2" Text="{Binding Error}" FontSize="11"
                                                        Foreground="{StaticResource Danger}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"/>
@@ -166,8 +166,8 @@
                         <!-- 空状态 -->
                         <StackPanel IsVisible="{Binding !HasLogs}" Spacing="6" VerticalAlignment="Center"
                                     HorizontalAlignment="Center">
-                            <TextBlock Text="控制台空闲" Classes="sub" FontSize="15" HorizontalAlignment="Center"/>
-                            <TextBlock Text="选版本点「启动游戏」，日志实时显示在这" Classes="dim" FontSize="11"/>
+                            <TextBlock Text="控制台还没动静" Classes="sub" FontSize="15" HorizontalAlignment="Center"/>
+                            <TextBlock Text="你选好版本点「启动游戏」。日志会实时显示在这" Classes="dim" FontSize="11"/>
                         </StackPanel>
                     </Grid>
                 </Grid>
@@ -182,7 +182,7 @@
                 <StackPanel Spacing="10">
                     <!-- 当前账号行 -->
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                        <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True" Background="{StaticResource BgRaised}">
+                        <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource BgRaised}">
                             <Image Source="{Binding Account.Avatar}" Width="40" Height="40" Stretch="Uniform"/>
                         </Border>
                         <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
@@ -196,7 +196,7 @@
                     </Grid>
 
                     <!-- 已保存账号列表（切换/删除） -->
-                    <Border CornerRadius="6" Background="{StaticResource BgBase}" Padding="8"
+                    <Border CornerRadius="6" Background="{DynamicResource BgBase}" Padding="8"
                             IsVisible="{Binding Account.Accounts.Count}">
                         <ItemsControl ItemsSource="{Binding Account.Accounts}" MaxHeight="160">
                             <ItemsControl.ItemTemplate>
@@ -222,14 +222,36 @@
                     </Border>
 
                     <!-- 登录表单 -->
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                        <TextBox Grid.Column="0" Text="{Binding Account.NameInput}" Watermark="用户名（离线登录）" FontSize="12"/>
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6">
+                        <TextBox Grid.Column="0" Text="{Binding Account.NameInput}" Watermark="用户名" FontSize="12"/>
                         <Button Grid.Column="1" Content="离线登录" Classes="primary" FontSize="11" Padding="12,6"
                                 Command="{Binding Account.LoginOfflineCommand}"/>
                         <Button Grid.Column="2" Content="正版登录" FontSize="11" Padding="12,6"
                                 Command="{Binding Account.LoginMicrosoftCommand}"
                                 IsEnabled="{Binding !Account.IsMsAuthBusy}"/>
+                        <Path Grid.Column="3" Classes="help-hint"
+                                   ToolTip.Tip="离线登录不查账号，你填的名字就是游戏里的名字。联机或同步用正版微软账号"/>
                     </Grid>
+                    <!-- 8-13 设备码登录：配对码大字显示 + 复制 + 重开网页 + 取消 -->
+                    <StackPanel Spacing="6" IsVisible="{Binding Account.IsDeviceCodeMode}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border CornerRadius="6" Padding="14,6" Background="{DynamicResource AccentDark}">
+                                <TextBlock Text="{Binding Account.DeviceCodeText}" FontSize="24" FontWeight="Bold"
+                                           FontFamily="Consolas" Foreground="{DynamicResource AccentLight}"/>
+                            </Border>
+                            <Button Content="复制代码" Classes="ghost" FontSize="11" Padding="10,6"
+                                    VerticalAlignment="Center" Click="OnCopyDeviceCode"/>
+                        </StackPanel>
+                        <TextBlock Text="在打开的网页里输入上面的代码并登录。登录完成后这里会自动继续"
+                                   Classes="dim" FontSize="10" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="重新打开登录网页" Classes="link" FontSize="11" Padding="10,4"
+                                    Command="{Binding Account.ReopenLoginPageCommand}"/>
+                            <Button Content="取消登录" Classes="ghost" FontSize="11" Padding="10,4"
+                                    Command="{Binding Account.CancelMsLoginCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+
                     <Button Content="更换皮肤…" Classes="ghost" FontSize="11" Padding="8,3"
                             HorizontalAlignment="Left" Click="OnPickSkin"/>
 

@@ -6,7 +6,7 @@
 
     <!-- 游戏目录 -->
     <Border Classes="setting-group">
-        <StackPanel Spacing="8">
+        <StackPanel Spacing="10">
             <TextBlock Text="游戏目录" Classes="group-header"/>
             <Grid Classes="setting-row" ColumnDefinitions="*,Auto">
                 <TextBox Grid.Column="0" Text="{Binding GameDirectoryText}" IsReadOnly="True"/>
@@ -17,9 +17,12 @@
             </Grid>
             <TextBlock Text="{Binding SourceLabelText}" Classes="dim" FontSize="11"/>
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="版本隔离（各版本的存档/模组互不干扰）" Classes="sub" FontSize="12"
+                <TextBlock Text="版本隔离" Classes="setting-label"
                            VerticalAlignment="Center"/>
                 <ToggleSwitch IsChecked="{Binding VersionIsolation}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="你开着时每个版本独立文件夹，存档模组不混。关了全挤在一起"
+                           VerticalAlignment="Center"><Path/></Border>
             </StackPanel>
         </StackPanel>
     </Border>

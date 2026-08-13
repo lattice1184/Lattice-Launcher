@@ -1,15 +1,22 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
+using Launcher.Core.Model.Modrinth;
+using Launcher.Core.Services;
 
 namespace Launcher.App.Views;
 
 /// <summary>
 /// 模态确认对话框（DialogService.Confirm 载体）：消息 + 确认/取消按钮。
+/// 8-22 扩展：安装路径确认（可编辑目录 + 实时落点预览 + 浏览），返回 string?。
 /// </summary>
 public partial class MessageDialogWindow : Window
 {
     private TaskCompletionSource<bool>? _result;
+    private TaskCompletionSource<string?>? _resultPath;
+    private string? _instanceId;
+    private ProjectType _pathType;
 
     public MessageDialogWindow()
     {
@@ -26,7 +33,7 @@ public partial class MessageDialogWindow : Window
         win.ConfirmBtn.Content = confirm;
         win.CancelBtn.Content = cancel;
         win.CancelBtn.IsVisible = cancel.Length > 0;
-        return await ShowAndWaitAsync(owner, win);
+        return await ShowAndWaitAsync(owner, win, win._result = new());
     }
 
     /// <summary>
@@ -44,13 +51,26 @@ public partial class MessageDialogWindow : Window
         win.ConfirmBtn.Content = confirm;
         win.CancelBtn.Content = cancel;
         win.CancelBtn.IsVisible = cancel.Length > 0;
-        return await ShowAndWaitAsync(owner, win);
+        return await ShowAndWaitAsync(owner, win, win._result = new());
     }
 
-    private static async Task<bool> ShowAndWaitAsync(Window? owner, MessageDialogWindow win)
+    /// <summary>8-22 安装路径确认：可编辑安装目录 + 实时预览完整落点；null = 取消，否则用户确认的目录</summary>
+    public static async Task<string?> ConfirmInstallPathAsync(Window? owner, string gameDir, string instanceId, ProjectType type)
     {
-        var tcs = new TaskCompletionSource<bool>();
-        win._result = tcs;
+        var win = new MessageDialogWindow { Title = "确认安装位置" };
+        win.MessageText.Text = "安装目录（可以改成别的实例目录或自定义文件夹）：";
+        win.PathPanel.IsVisible = true;
+        win.PathInput.Text = gameDir;
+        win._instanceId = instanceId;
+        win._pathType = type;
+        win.UpdatePathPreview();
+        win.ConfirmBtn.Content = "开始安装";
+        win.CancelBtn.Content = "取消";
+        return await ShowAndWaitAsync(owner, win, win._resultPath = new());
+    }
+
+    private static async Task<T> ShowAndWaitAsync<T>(Window? owner, MessageDialogWindow win, TaskCompletionSource<T> tcs)
+    {
         try
         {
             // owner 不可见/未加载时 ShowDialog 抛异常（静默失败导致确认框不出现）——兜底独立窗口
@@ -65,15 +85,37 @@ public partial class MessageDialogWindow : Window
         return await tcs.Task;
     }
 
+    private void UpdatePathPreview()
+    {
+        if (_pathType == default) return; // 非路径确认对话框不刷预览
+        var dir = PathInput.Text?.Trim() ?? "";
+        var target = EcosystemService.ResolveInstallPath(dir, _instanceId ?? "", _pathType);
+        PathPreviewText.Text = $"将装到：{target}";
+    }
+
+    private void OnPathChanged(object? sender, Avalonia.Controls.TextChangedEventArgs e) => UpdatePathPreview();
+
+    private async void OnBrowse(object? sender, RoutedEventArgs e)
+    {
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "选择安装目录",
+            AllowMultiple = false,
+        });
+        if (folders.Count > 0) PathInput.Text = folders[0].Path.LocalPath;
+    }
+
     private void OnConfirm(object? sender, RoutedEventArgs e)
     {
         _result?.TrySetResult(true);
+        _resultPath?.TrySetResult(PathInput.Text?.Trim() ?? "");
         Close();
     }
 
     private void OnCancel(object? sender, RoutedEventArgs e)
     {
         _result?.TrySetResult(false);
+        _resultPath?.TrySetResult(null);
         Close();
     }
 
@@ -81,6 +123,7 @@ public partial class MessageDialogWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _result?.TrySetResult(false);
+        _resultPath?.TrySetResult(null);
         base.OnClosed(e);
     }
 
@@ -89,6 +132,7 @@ public partial class MessageDialogWindow : Window
         if (e.Key == Avalonia.Input.Key.Escape)
         {
             _result?.TrySetResult(false);
+            _resultPath?.TrySetResult(null);
             Close();
             return;
         }

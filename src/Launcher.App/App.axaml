@@ -13,7 +13,9 @@
     <Application.Resources>
 
         <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
-        <!-- 表面层 -->
+        <!-- 背景色（含 alpha；ApplyBackgroundColor 运行时覆盖；XAML 默认值兜底 = 旧版硬编码值） -->
+        <Color x:Key="BackgroundColor">#B81D222C</Color>
+        <!-- 表面层（ApplyBackgroundColor 运行时按背景色亮暗翻转覆盖——浅色背景 → 深字白卡；此处默认值兜底） -->
         <Color x:Key="BgBase">#14181F</Color>
         <Color x:Key="BgSurface">#1D222C</Color>
         <Color x:Key="BgRaised">#242A36</Color>
@@ -57,6 +59,9 @@
         <BoxShadows x:Key="ShadowPop">0 8 24 0 #26000000</BoxShadows>
         <!-- 共享过渡实例：Expander 展开/收起高度动画（无实例状态，可多 Expander 复用） -->
         <behaviors:ExpandCollapseTransition x:Key="ExpanderTransition"/>
+        <!-- 帮助问号图标（Material help 24x24 矢量路径——不依赖图标字体，任何系统渲染一致；
+             字体渲染（MDL2 E897）在 Skia 下像拼上去的字符，治根换 Path 矢量） -->
+        <StreamGeometry x:Key="HelpIconData">M11,18h2v-2h-2v2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM12,20c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8zM12,6c-2.21,0 -4,1.79 -4,4h2c0,-1.1 0.9,-2 2,-2s2,0.9 2,2c0,2 -3,1.75 -3,5h2c0,-2.25 3,-2.5 3,-5 0,-2.21 -1.79,-4 -4,-4z</StreamGeometry>
     </Application.Resources>
 
     <Application.Styles>
@@ -74,7 +79,7 @@
             <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
             <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
             <Setter Property="behaviors:HoverBrushBehavior.Enabled" Value="True"/>
-            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource BgHover}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource BgHover}"/>
             <Setter Property="Template">
                 <ControlTemplate TargetType="Button">
                     <Border Background="{TemplateBinding Background}"
@@ -101,21 +106,51 @@
 
         <!-- 窗口与文本 -->
         <Style Selector="Window">
-            <Setter Property="Background" Value="{StaticResource BgBase}"/>
+            <Setter Property="Background" Value="{DynamicResource BgBase}"/>
         </Style>
         <Style Selector="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         </Style>
         <Style Selector="TextBlock.sub">
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
         </Style>
         <Style Selector="TextBlock.dim">
-            <Setter Property="Foreground" Value="{StaticResource TextDim}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextDim}"/>
         </Style>
         <!-- AL7 红字规范：关键性/难以挽回的错误信息红字标注（失败 Status 等） -->
         <Style Selector="TextBlock.status-error">
             <Setter Property="Foreground" Value="{StaticResource Danger}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <!-- 问号帮助命中区：Border 全矩形（Path 的命中=填充几何形状——问号圆圈中心的孔不触发，
+         8-14 实测放大图标后鼠标放孔里时有时无）。透明背景 → 整个 bounds（含 padding）可命中：
+         图标视觉 14px 居中，命中区 26x26，孔也命中。XAML 用法：<Border Classes="help-hint" ToolTip.Tip="…"><Path/></Border> -->
+        <Style Selector="Border.help-hint">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip.ShowDelay" Value="500"/>
+        </Style>
+        <Style Selector="Border.help-hint Path">
+            <Setter Property="Data" Value="{DynamicResource HelpIconData}"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Fill" Value="{DynamicResource Accent}"/>
+        </Style>
+        <!-- 外部链接（打开主页/官方下载页）：像超链接——Accent + 下划线 + 手型（8-14 用户要求易识别）。
+         文件夹类按钮（打开 mods 文件夹等）保持 ghost，不误用 -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ContentTemplate">
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" TextDecorations="Underline"
+                               Foreground="{DynamicResource Accent}"/>
+                </DataTemplate>
+            </Setter>
         </Style>
         <Style Selector="TextBlock.page-title">
             <Setter Property="FontSize" Value="17"/>
@@ -128,7 +163,7 @@
 
         <!-- 按钮 -->
         <Style Selector="Button">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
             <Setter Property="Foreground" Value="#C9D2E3"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
             <Setter Property="Padding" Value="14,7"/>
@@ -157,16 +192,16 @@
         <!-- 幽灵按钮（hover 灰底白字由行为驱动） -->
         <Style Selector="Button.ghost">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{StaticResource BgRaised}"/>
-            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{DynamicResource TextPrimary}"/>
         </Style>
 
         <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动） -->
         <Style Selector="Button.tab">
             <Setter Property="Padding" Value="16,7"/>
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
         </Style>
         <Style Selector="Button.tab.active">
@@ -176,10 +211,10 @@
 
         <!-- 输入控件 -->
         <Style Selector="TextBox">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="UseFloatingPlaceholder" Value="True"/>
@@ -193,14 +228,14 @@
         </Style>
         <Style Selector="TextBox:focus">
             <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
-            <Setter Property="Background" Value="{StaticResource BgHover}"/>
+            <Setter Property="Background" Value="{DynamicResource BgHover}"/>
             <Setter Property="PlaceholderForeground" Value="{DynamicResource Accent}"/>
         </Style>
         <Style Selector="ComboBox">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="behaviors:DropDownAnimBehavior.Enabled" Value="True"/>
         </Style>
@@ -222,7 +257,7 @@
                         <Grid Grid.Column="1" x:Name="PART_MovingKnobs" VerticalAlignment="Center"
                               IsHitTestVisible="False">
                             <Border x:Name="SwitchArea" Width="36" Height="18" CornerRadius="9"
-                                    Background="#4D6F7B90" BorderBrush="{StaticResource BorderColor}"
+                                    Background="#4D6F7B90" BorderBrush="{DynamicResource BorderColor}"
                                     BorderThickness="1">
                                 <Ellipse x:Name="Thumb" Width="14" Height="14" Fill="White"
                                          HorizontalAlignment="Left" VerticalAlignment="Center"
@@ -268,33 +303,43 @@
 
         <!-- 卡片（圆角收敛；用于离散信息单元，不用于列表行） -->
         <Style Selector="Border.card">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
         <!-- 设置卡片三层模板（#213 借鉴 BlockHelm）：GroupHeader 分组标题 + SettingGroupCard 半透明阴影卡片 + SettingRow 两列行 -->
         <Style Selector="TextBlock.group-header">
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
-            <Setter Property="Margin" Value="2,0,0,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="Margin" Value="2,0,0,8"/>
+        </Style>
+        <!-- 卡片内子分组标题（下载行为/CurseForge 等）；上边距 10 制造组间分隔感 -->
+        <Style Selector="TextBlock.group-sub">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="Margin" Value="2,10,0,2"/>
         </Style>
         <Style Selector="Border.setting-group">
             <Setter Property="Background" Value="#CC1D222C"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BoxShadow" Value="{StaticResource ShadowCard}"/>
             <Setter Property="Padding" Value="{StaticResource CardPad}"/>
         </Style>
-        <!-- ColumnDefinitions 非 AvaloniaProperty（AVLN3000），列定义由各 Grid 显式声明；此处只统一行内间距 -->
+        <!-- ColumnDefinitions 非 AvaloniaProperty（AVLN3000），列定义由各 Grid 显式声明；此处只统一行内间距与行高 -->
         <Style Selector="Grid.setting-row">
             <Setter Property="ColumnSpacing" Value="10"/>
+            <Setter Property="MinHeight" Value="30"/>
         </Style>
         <Style Selector="TextBlock.setting-label">
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
@@ -302,7 +347,7 @@
         <Style Selector="Border.row">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
             <Setter Property="Transitions">
                 <Transitions>
@@ -311,7 +356,7 @@
             </Setter>
         </Style>
         <Style Selector="Border.row:hover">
-            <Setter Property="Background" Value="{StaticResource BgRaised}"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
         </Style>
 
         <!-- AL11：下载任务行着重标识（覆盖 row 底部虚线为左强调条；active 优先于 hover） -->
@@ -357,7 +402,7 @@
         <!-- 进度条（值变化平滑过渡） -->
         <Style Selector="ProgressBar">
             <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
-            <Setter Property="Background" Value="{StaticResource BorderColor}"/>
+            <Setter Property="Background" Value="{DynamicResource BorderColor}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}"/>
             <Setter Property="Transitions">
                 <Transitions>

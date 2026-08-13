@@ -172,7 +172,10 @@ public partial class CrashReportWindow : Window
 
     private void OnClose(object? sender, RoutedEventArgs e) => Close();
 
-    /// <summary>AL9 一键修复：后台执行（补全重下走下载队列/重解压 natives），完成后提示用户重新启动</summary>
+    /// <summary>AL9 一键修复：补全重下走下载队列/重解压 natives，完成后提示用户重新启动。
+    /// B1 修复：去掉 Task.Run——FixRedownloadAsync 内部 EnqueueGroup 要在 UI 线程入队
+    /// （DownloadManager.Tasks 是 UI 绑定 ObservableCollection，后台线程 Add 会跨线程崩溃）；
+    /// 全程 await IO 不阻塞 UI，后台执行由下载队列自身承担。</summary>
     private async void OnRepair(object? sender, RoutedEventArgs e)
     {
         var versionId = _fixVersionId;
@@ -184,17 +187,18 @@ public partial class CrashReportWindow : Window
         {
             var kind = DiagList.Items.OfType<DiagLine>()
                 .FirstOrDefault(l => l.Kind is FixKind.Redownload or FixKind.ReExtractNatives)?.Kind ?? FixKind.Redownload;
-            var result = await Task.Run(async () =>
+            string result;
+            try
             {
-                try
-                {
-                    return kind == FixKind.ReExtractNatives
-                        ? AutoRepairService.FixNatives(versionId, gameDir)
-                        : await AutoRepairService.FixRedownloadAsync(versionId, gameDir);
-                }
-                catch (Exception ex) { return $"修复失败：{ex.Message}"; }
-            });
+                result = kind == FixKind.ReExtractNatives
+                    ? AutoRepairService.FixNatives(versionId, gameDir)
+                    : await AutoRepairService.FixRedownloadAsync(versionId, gameDir);
+            }
+            catch (Exception ex) { result = $"修复失败：{ex.Message}"; }
             RepairBtn.Content = result.StartsWith("修复失败") ? "修复失败（看日志）" : "修复完成，请重新启动";
+            // AL57 模组缺失自愈：版本文件修复后读游戏日志，缺失前置 → 确认 → 自动补全
+            if (!result.StartsWith("修复失败") && gameDir.Length > 0)
+                await ModRepairFlow.TryRepairAsync(gameDir, versionId, this);
         }
         finally { RepairBtn.IsEnabled = true; }
     }

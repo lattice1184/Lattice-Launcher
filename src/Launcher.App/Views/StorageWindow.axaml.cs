@@ -48,42 +48,25 @@ public partial class StorageWindow : Window
     private async Task LoadAsync()
     {
         Items.Clear();
-        var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
         var gameDir = LauncherSettings.Current.GameDirectory ?? GameDirectory.Detect();
-        var serversRoot = ServerInstaller.ServerDir(gameDir, "").TrimEnd(Path.DirectorySeparatorChar);
+        var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher");
 
-        // ---- 应用数据（%AppData%\Launcher） ----
-        Add(appData + "（应用数据）", isHeader: true);
-        foreach (var f in new[] { "settings.json", "accounts.json", "history.json", "launch-history.json" })
-            Add(Path.Combine(appData, f), isFile: true);
-        Add(Path.Combine(appData, "logs"), "（日志，可删）", canDelete: true);
-        Add(Path.Combine(appData, "cache"), "（缓存，可删）", canDelete: true);
-        Add(Path.Combine(appData, "skins"), "（皮肤）");
-
-        // ---- 游戏目录 ----
-        Add(gameDir + "（游戏目录）", isHeader: true);
-        Add(Path.Combine(gameDir, "versions"), "（版本）");
-        Add(Path.Combine(gameDir, "libraries"), "（库文件）");
-        Add(Path.Combine(gameDir, "assets"), "（资源）");
-        Add(Path.Combine(gameDir, "saves"), "（存档）");
-        Add(Path.Combine(gameDir, "mods"), "（模组）");
-        Add(Path.Combine(gameDir, "resourcepacks"), "（材质包）");
-        Add(Path.Combine(gameDir, "shaderpacks"), "（光影包）");
-        Add(Path.Combine(gameDir, "logs"), "（日志，可删）", canDelete: true);
-        Add(Path.Combine(gameDir, "crash-reports"), "（崩溃报告，可删）", canDelete: true);
-
-        // ---- 服务端（启动器目录树下 servers\） ----
-        Add(serversRoot + "（服务端根目录）", isHeader: true);
-        if (Directory.Exists(serversRoot))
-            foreach (var d in Directory.EnumerateDirectories(serversRoot))
-                Add(d, "（服务端，可删）", canDelete: true);
+        // 分组扫描（Core 层；设置页「模块与存储」分区共用同一逻辑）
+        var groups = await Task.Run(() => StorageScanner.Scan(gameDir, appData));
+        foreach (var g in groups)
+        {
+            Add($"—— {g.DisplayName} ——", isHeader: true);
+            if (g.Items.Count == 0) { Add("（无）", isHeader: true); continue; }
+            foreach (var item in g.Items)
+                Add(item.Path, item.CanDelete ? "（可删）" : null, canDelete: item.CanDelete, isFile: item.IsFile);
+        }
 
         // 后台算大小（大目录 GB 级，逐项异步；防 UI 卡）
         var snap = Items.Where(i => !i.IsHeader).ToList();
         await Task.Run(() =>
         {
             foreach (var item in snap)
-                item.SizeText = FormatSize(ItemSize(item.Path, item.IsFile));
+                item.SizeText = StorageScanner.FormatSize(StorageScanner.ItemSize(item.Path, item.IsFile));
         });
     }
 
@@ -120,25 +103,8 @@ public partial class StorageWindow : Window
                 NotificationService.Error($"删除失败: {ex.Message}");
             }
         });
-    }
+    
+}
 
-    private static long ItemSize(string path, bool isFile)
-    {
-        try
-        {
-            if (isFile) return File.Exists(path) ? new FileInfo(path).Length : 0;
-            if (!Directory.Exists(path)) return 0;
-            return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-                .Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
-        }
-        catch { return 0; }
-    }
 
-    private static string FormatSize(long bytes) => bytes switch
-    {
-        >= 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024 / 1024:0.0} GB",
-        >= 1024 * 1024 => $"{bytes / 1024.0 / 1024:0.0} MB",
-        >= 1024 => $"{bytes / 1024.0:0.0} KB",
-        _ => $"{bytes} B",
-    };
 }

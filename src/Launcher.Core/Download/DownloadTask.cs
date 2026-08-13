@@ -31,21 +31,44 @@ public partial class DownloadTask : ObservableObject
     private readonly Stopwatch _watch = new();
     private readonly object _lock = new();
     private readonly List<CancellationTokenRegistration> _externalCancellations = [];
-    private long _sampleStartBytes;
     private long _lastBytes = -1;
-    private double _sampleStartTime;
+    // REVIEW-速度：滑动窗口计速——近 2 秒瞬时速度采样点 (时间, 字节)。旧实现用「累计平均」
+    // （基线到现在的全程/总耗时），前快后慢时显示虚高数倍（真机 8-11：显示十几 MB/s 实际几 MB/s）。
+    // 文件切换/字节回退（重试、新子任务）时清空重采样。
+    private readonly List<(double Time, long Bytes)> _speedSamples = [];
 
     // 暂停/继续：保留 work 委托与用户暂停标记；恢复时重放（文件断点续传）
     private Func<DownloadProgressHandler, CancellationToken, Task>? _work;
     private Func<DownloadGroupContext, CancellationToken, Task>? _groupWork;
     private volatile bool _suspendRequested;
 
+    // REVIEW-B2：自动重试排程标记——排程期间不完成 Completion（TCS 只应在「真正终态」完成：
+    // 成功 / 重试耗尽 / 取消 / 暂停）。旧代码首次失败就 TrySetResult，调用方（安装完成判定、
+    // 失败弹窗、历史记录、自动移除）在重试还在排期时就收尾 → 网络抖动误报「安装失败」，
+    // 重试实际成功却 UI 永久停在失败。重试开始（Retry/Resume）复位。
+    private volatile bool _retryPending;
+
+    /// <summary>8-18 自动重试排程中（UI 用：首败将重试 → 弹「正在自动重试」而非「失败」）</summary>
+    public bool IsAutoRetryPending => _retryPending;
+
+    /// <summary>8-18 自动重试排程事件（UI 订阅弹提示；Attempt/Total 供文案）</summary>
+    public sealed record AutoRetryArgs(int Attempt, int Total);
+
+    public event EventHandler<AutoRetryArgs>? AutoRetryScheduled;
+
+    // REVIEW-B R-01：重试代际——手动 Retry/Resume 抢先接管时递增，旧排程的 Delay 到点后
+    // 发现代际不符即作废（否则手动重跑耗尽失败后，旧排程仍触发 Retry → 终态后幽灵重跑）
+    private int _retryGeneration;
+
     /// <summary>失败诊断（AL44 统一诊断：原因+建议+修复动作；UI 错误区显示）</summary>
     [ObservableProperty]
     public partial DiagnosticHit? Diagnosis { get; set; }
 
-    /// <summary>是否已自动重试过一次（防重试风暴；用户手动 Retry 不重置）</summary>
-    private bool _autoRetried;
+    /// <summary>已自动重试次数（AL69.1 多轮机会：网络间歇恢复需要试几次才放弃；用户手动 Retry 不重置）</summary>
+    private int _autoRetryCount;
+
+    /// <summary>自动重试上限（叶子 2 次 = 共 3 次尝试；网络类失败才触发——重试耗尽才弹失败窗）</summary>
+    private const int MaxAutoRetries = 2;
 
     /// <summary>组任务的子任务（AddChild 创建）：不自动重试——组内多子任务同时失败全重试=风暴，组语义靠子任务终态推导</summary>
     internal bool IsGroupChild;
@@ -181,7 +204,9 @@ public partial class DownloadTask : ObservableObject
                     : DownloadTaskState.Completed;
                 TerminalState = final;
                 SetState(final);
-                if (!_cts.IsCancellationRequested) Post(() => ProgressPercent = 100);
+                // AL62：完成文案——「已下载 19MB」替代停在「下载中…」的错觉（100% 与 Stage 同一 Post）
+                if (!_cts.IsCancellationRequested)
+                    Post(() => { ProgressPercent = 100; Stage = $"已下载 {FormatBytes(BytesDone)}"; });
             });
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
@@ -195,7 +220,10 @@ public partial class DownloadTask : ObservableObject
             // AL34：token 未被请求的 OCE（HttpClient 超时等内部泄漏）→ 失败并带信息——
             // 静默"已取消"在 UI 上不可重试（RetryCommand 只认 Failed）还丢错误原因（探针 08-09 asm 即此）
             TerminalState = DownloadTaskState.Failed;
-            SetState(DownloadTaskState.Failed, $"下载中断（{ex.GetType().Name}: {ex.Message}）");
+            var msg = $"下载中断（{ex.GetType().Name}: {ex.Message}）";
+            SetState(DownloadTaskState.Failed, msg);
+            // AL68 停滞透明化：失败原因进 Stage——组任务推导时显示「失败：…」而非无信息的「正在完成…」
+            SetStage($"失败：{msg}");
             ScheduleAutoRetry(ex, allowRetry: true);
         }
         catch (Exception ex)
@@ -205,6 +233,8 @@ public partial class DownloadTask : ObservableObject
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
             // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
             SetState(DownloadTaskState.Failed, ex.Message);
+            // AL68：失败原因进 Stage（同上——停滞期用户看到「失败：连接被拒…」而非死寂）
+            SetStage($"失败：{ex.Message}");
             ScheduleAutoRetry(ex, allowRetry: true);
         }
         finally
@@ -212,7 +242,9 @@ public partial class DownloadTask : ObservableObject
             _watch.Stop();
             // 终态（含 Paused？否——暂停只是挂起，Resume 后继续；这里 Paused 由 Suspend 的 Cancel 触发，
             // 需区分：用户暂停 → 不完成；取消 → 完成）。用 _suspendRequested 判定。
-            if (!_suspendRequested) _completionTcs.TrySetResult();
+            // REVIEW-B2：自动重试排程中（_retryPending）也暂不完成——等重试最终结果，
+            // 避免调用方在重试耗尽前误收尾（误报失败弹窗/历史记失败）
+            if (!_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
         }
     }
 
@@ -228,7 +260,10 @@ public partial class DownloadTask : ObservableObject
                 SetState(DownloadTaskState.Downloading);
                 var ctx = new DownloadGroupContext(this, _ui);
                 await groupWork(ctx, _cts.Token);                 // 编排：创建并等待全部子任务
-                await Task.WhenAll(ctx.Children.Select(c => c.Completion));
+                // REVIEW-卡完成：首败早退——任一子任务终态失败（组内叶子无自动重试，失败即终态）
+                // 立即进失败分支（取消其余兄弟 + 组失败），不再等 2000 个 assets 全部下完才报错
+                // （BUGS#4/#5 级联取消失效/「正在完成」死寂的根治；正常全成功路径与 WhenAll 等价）
+                await Task.WhenAny(Task.WhenAll(ctx.Children.Select(c => c.Completion)), ctx.FirstFailure);
 
                 // AL5：用子任务同步终态推导——子任务 State 经 UI Post 异步生效，Completion 同步完成，
                 // WhenAll 返回时读 State 会读到旧值（Downloading）→ 子失败误判父完成（下载历史误报"完成"）
@@ -244,6 +279,10 @@ public partial class DownloadTask : ObservableObject
                 {
                     TerminalState = DownloadTaskState.Failed;
                     SetState(DownloadTaskState.Failed, failed.Error ?? "子任务失败");
+                    // REVIEW-节流：终态后聚合推导被守卫挡住——失败 Stage 须显式设置；
+                    // 内容延迟到队列内解析（Post 在子任务 Error Post 之后 FIFO——
+                    // 首败早退时 Error 的 Post 可能还没执行，直接读会拿到 null）
+                    Post(() => SetStage($"失败：{failed.Error ?? "子任务失败"}"));
                 }
                 else if (_cts.IsCancellationRequested)
                 {
@@ -255,7 +294,8 @@ public partial class DownloadTask : ObservableObject
                 {
                     TerminalState = DownloadTaskState.Completed;
                     SetState(DownloadTaskState.Completed);
-                    Post(() => ProgressPercent = 100);
+                    _selfStage = null; // AL70：终态清自设 Stage（防「获取资源清单…」残留）
+                    Post(() => { ProgressPercent = 100; Stage = "已完成"; });
                 }
             });
         }
@@ -269,7 +309,10 @@ public partial class DownloadTask : ObservableObject
         {
             // AL34：token 未被请求的 OCE（内部泄漏）→ 失败并带信息，避免"神秘已取消"
             TerminalState = DownloadTaskState.Failed;
-            SetState(DownloadTaskState.Failed, $"安装中断（{ex.GetType().Name}: {ex.Message}）");
+            var msg = $"安装中断（{ex.GetType().Name}: {ex.Message}）";
+            SetState(DownloadTaskState.Failed, msg);
+            SetStage($"失败：{msg}"); // AL68：组失败也亮明原因（终态后 Stage 推导不再跑，须自己设）
+            ScheduleAutoRetry(ex, allowRetry: true); // AL69.1：同下
         }
         catch (Exception ex)
         {
@@ -278,12 +321,16 @@ public partial class DownloadTask : ObservableObject
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
             // （真机 08-07 10:37 失败原因丢失即此，诊断全靠猜）。
             SetState(DownloadTaskState.Failed, ex.Message);
-            ScheduleAutoRetry(ex, allowRetry: false); // 组任务只诊断不自动重试（子任务各自承担）
+            SetStage($"失败：{ex.Message}"); // AL68：同上
+            // AL69.1：组任务编排层抛错也自动重试（网络间歇多轮机会）——叶子失败聚合（failed 分支）
+            // 不经过这里，不会重复重试风暴
+            ScheduleAutoRetry(ex, allowRetry: true);
         }
         finally
         {
             _watch.Stop();
-            if (!_suspendRequested) _completionTcs.TrySetResult();
+            // REVIEW-B2：同叶子——组编排层抛错排程了重试（_retryPending）时不完成，等重试最终结果
+            if (!_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
         }
     }
 
@@ -301,30 +348,81 @@ public partial class DownloadTask : ObservableObject
 
     /// <summary>失败重试：清错误重跑 work（断点续传已下载部分）</summary>
     /// <summary>
-    /// AL44 失败诊断 + 自动重试一次：网络/校验类失败 Post 排队重跑（State 经 Post 异步生效，直接调会空转）；
-    /// 取消/暂停竞态守卫挡住；组任务（allowRetry=false）只显示诊断不自动重试（防重下风暴）。
+    /// AL44 失败诊断 + 自动重试（AL69.1 多轮：叶子上限 2 次 = 共 3 次尝试——网络间歇恢复需要机会，
+    /// 全部用尽才弹失败窗；组任务编排层抛错也重试 2 次，叶子失败聚合不重试防风暴）。
+    /// 网络/校验类失败 Post 排队重跑（State 经 Post 异步生效，直接调会空转）；取消/暂停竞态守卫挡住。
     /// </summary>
     private void ScheduleAutoRetry(Exception ex, bool allowRetry)
     {
-        var hit = FailureDiagnostics.ForDownload(ex, _autoRetried);
+        var hit = FailureDiagnostics.ForDownload(ex, _autoRetryCount >= MaxAutoRetries);
         if (hit is not null) Post(() => Diagnosis = hit);
-        if (!allowRetry || _autoRetried || IsGroupChild) return;
-        if (hit is not { Fix: FixKind.RetryDownload or FixKind.Redownload }) return;
-        _autoRetried = true;
+        // 8-18 真正终态失败（不可重试/自动重试也耗尽）：清中间产物不留垃圾——但保留 .parts 给
+        // 重试续传的语义只在「还有后续尝试」时成立；终态后 .parts/.tmp 是纯垃圾（Task 层判定，
+        // Service 层 attempt 耗尽不清理——Task 自动重试还要靠它换源续传）
+        if (!allowRetry || _autoRetryCount >= MaxAutoRetries || IsGroupChild)
+        {
+            CleanupOnTerminalFailure();
+            return;
+        }
+        if (hit is not { Fix: FixKind.RetryDownload or FixKind.Redownload })
+        {
+            CleanupOnTerminalFailure();
+            return;
+        }
+        _autoRetryCount++;
+        _retryPending = true; // REVIEW-B2：排程重试 → 本 finally 不完成 Completion，等重试最终结果
+        var attempt = _autoRetryCount;
+        var gen = _retryGeneration; // R-01：本次排程的代际快照
         // 与 SetState 的 Post 同队列 FIFO：State=Failed 生效后本 Post 才执行 → Retry 不空转
         Post(() =>
         {
-            if (!_cts.IsCancellationRequested && !_suspendRequested) Retry();
+            if (_cts.IsCancellationRequested || _suspendRequested)
+            {
+                // 想重试但用户已取消/暂停 → 这就是最终状态：复位标记并完成 TCS
+                // （否则 finally 因 _retryPending 跳过完成，调用方 await Completion 永久挂起）
+                _retryPending = false;
+                _completionTcs.TrySetResult();
+                return;
+            }
+            // AL68 停滞透明化：重试前先亮明原因 + 第几轮（UI 线程置 Stage），延迟后真正重跑——
+            // 否则「失败→瞬态重试」用户看不到停滞原因，体感=死寂「正在完成…」
+            Stage = $"网络异常，自动重试第 {attempt}/{MaxAutoRetries} 次…";
+            AutoRetryScheduled?.Invoke(this, new AutoRetryArgs(attempt, MaxAutoRetries)); // 8-18：UI 弹「正在自动重试」提示
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(attempt == 1 ? 800 : 3000); // 第 2 轮退避（网络恢复窗口）
+                if (_cts.IsCancellationRequested || _suspendRequested)
+                {
+                    // REVIEW-B2：排程期间被取消/暂停 → 重试作废。必须复位 + 完成 TCS，
+                    // 否则 _retryPending 永真（work 已终态，finally 不再跑）→ 调用方 await Completion 永久挂起
+                    _retryPending = false;
+                    _completionTcs.TrySetResult();
+                    return;
+                }
+                if (_retryGeneration != gen) return; // R-01：期间被手动 Retry/Resume 接管 → 本排程作废
+                Post(() => Retry());
+            });
         });
+    }
+
+    /// <summary>
+    /// 8-18 终态失败清理：任务有自有目标路径（第三方下载）→ 清中间产物（.tmp/.parts/.race*），
+    /// destPath 本体不动（幂等语义）。组任务/叶子 TargetPath=null 不清——组重试时叶子续传材料保留。
+    /// </summary>
+    private void CleanupOnTerminalFailure()
+    {
+        if (TargetPath is { } tp) DownloadService.CleanupResiduals(tp);
     }
 
     public void Retry()
     {
         if (State != DownloadTaskState.Failed) return;
+        _retryPending = false; // REVIEW-B2：重跑开始——本次结果的 finally 决定是否完成 TCS
+        _retryGeneration++; // R-01：新代际——作废所有旧排程的重试
         _suspendRequested = false;
         TerminalState = default; // 重置同步终态（重跑后重新记录）
         _cts = new CancellationTokenSource();
-        Post(() => Error = null);
+        Post(() => { Error = null; Stage = "重试中…"; }); // AL68：重跑前清失败 Stage（避免旧「失败：…」残留）
         if (IsGroup) Post(() => Children.Clear());
         if (IsGroup && _groupWork is not null)
             _ = RunGroupAsync(_groupWork);
@@ -337,6 +435,7 @@ public partial class DownloadTask : ObservableObject
     {
         if (!_suspendRequested) return;
         _suspendRequested = false;
+        _retryGeneration++; // R-01：新代际——作废所有旧排程的重试
         TerminalState = default; // 重置同步终态（重跑后重新记录）
         _cts = new CancellationTokenSource();
         if (IsGroup) Post(() => Children.Clear()); // 清掉暂停的旧子任务，重跑会新建
@@ -362,25 +461,67 @@ public partial class DownloadTask : ObservableObject
                 child.PropertyChanged += OnChildPropertyChanged;
                 // 父取消级联：覆盖"父先取消、子后创建"的时序（Children 级联只覆盖已存在的子任务）
                 child._externalCancellations.Add(_cts.Token.Register(child.Cancel));
-                RecomputeAggregate();
+                ScheduleRecompute(); // 挂载也走节流入口（窗口内合并，总量随尾算发布）
             }
         });
     }
+
+    /// <summary>组聚合节流窗口（毫秒）：并行子任务多时（131 库）旧代码每次进度变化同步重算 +
+    /// 父属性变化逐个 Post UI → 每秒几百次 Post 积压 → 进度显示滞后（真机 8-12「数据跟不上」）。
+    /// 窗口内合并：最多 250ms 一次广播 + 60ms 防抖尾算保证最终一致。</summary>
+    private const long AggregateWindowMs = 250;
+    private long _lastAggregateMs; // Interlocked.Read/Exchange 访问（long 不可 volatile）
+    private int _aggregateDirty;
+    private int _aggregateTimerPending;
 
     private void OnChildPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ProgressPercent) or nameof(TotalBytes)
             or nameof(State) or nameof(Stage) or nameof(Error))
         {
-            RecomputeAggregate();
+            ScheduleRecompute();
         }
     }
 
-    /// <summary>加权聚合：TotalBytes=ΣWeight；percent=Σ(Weight×child%)/Σ；Stage=最后活动子任务；聚合计速。
+    private void ScheduleRecompute()
+    {
+        // REVIEW-节流重构：同步算快照（O(children) 可接受），只节流「发布」。
+        // 发布值 = 窗口内最大 percent（_pendingPercent 单调）——节流不吞峰值：
+        // 旧实现「当前值单调」在窗口内被新挂载覆盖（99 被 69.3 吞掉）→ 爬不回去（真机 8-12）
+        ComputeSnapshot();
+        var now = _watch.ElapsedMilliseconds;
+        var last = Interlocked.Read(ref _lastAggregateMs);
+        if (now - last >= AggregateWindowMs
+            && Interlocked.CompareExchange(ref _lastAggregateMs, now, last) == last)
+        {
+            PublishAggregate();
+            return;
+        }
+        if (Interlocked.Exchange(ref _aggregateTimerPending, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(60);
+            Interlocked.Exchange(ref _aggregateTimerPending, 0);
+            if (Volatile.Read(ref _aggregateDirty) == 0) return;
+            ComputeSnapshot();
+            Interlocked.Exchange(ref _lastAggregateMs, _watch.ElapsedMilliseconds);
+            PublishAggregate();
+        });
+    }
+
+    /// <summary>窗口内待发布的最大聚合值（percent 单调基准——节流不丢峰值）</summary>
+    private double _pendingPercent = -1;
+    private string? _pendingStage;
+    private long _pendingTotal;
+
+    /// <summary>加权聚合快照（节流版计算侧）：同步算 TotalBytes=ΣWeight、percent=Σ(Weight×child%)/Σ、
+    /// Stage=最后活动子任务——结果进 _pending*（窗口内 max 语义），发布由 PublishAggregate 节流执行。
     /// 与 AttachChild 共用锁（Monitor 可重入）保证 Children 迭代/修改互斥，防御偶发 NRE/竞态。</summary>
-    private void RecomputeAggregate()
+    private void ComputeSnapshot()
     {
         if (!IsGroup) return;
+        // 终态后迟到快照不得覆盖——完成路径已设 Stage="已完成"/percent=100（真机 8-12 测试暴露）
+        if (State is DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled) return;
 
         lock (_lock)
         {
@@ -396,46 +537,80 @@ public partial class DownloadTask : ObservableObject
                 if (c.IsActive) active = c;
             }
             active ??= Children.LastOrDefault(c => c is not null && c.State == DownloadTaskState.Downloading);
+            // AL68 停滞透明化：叶子失败（判死/重试排期）时组显示其「失败：原因」Stage——
+            // 不再退回无信息的「正在完成…」（用户卡在末尾看到死寂文案的根因）
+            active ??= Children.LastOrDefault(c => c is not null
+                && c.State == DownloadTaskState.Failed && !string.IsNullOrEmpty(c.Stage));
 
-        var percent = total > 0 ? weighted / total : 0;
-        // AL38：叶子全完成后 active=null——此时组在收尾（VerifyInstalled 完整性校验 + 打标记，1-3s）。
-        // 兜底文案「正在下载…」会让人误以为「满了还在下」——收尾期如实显示「正在完成…」。
-        var anyRunning = Children.Any(c => c is not null
-            && c.State is DownloadTaskState.Queued or DownloadTaskState.Downloading);
-        Stage = active?.Stage ?? (total > 0 ? (anyRunning ? "正在下载…" : "正在完成…") : "准备中…");
-        TotalBytes = total;
-        // AL32：直接赋真实加权值。旧 clamp（只升不降）在阶段 2 晚挂载子任务时
-        // （VersionDownloadPipeline 的 assets 差量，index 下完才知道清单）把父进度卡死在 100%，
-        // 观感「大小已满但一直下载中」。子任务进度自身单调（DownloadService 层已保证），
-        // 聚合唯一可能回落 = 新子任务挂载（真实进度变化，应如实显示，Stage 会同步指到新任务）。
-        // AL33（探针实测 08-09）：聚合封顶 99——已完成的子任务 Post(100) 是合法的（叶子终态），
-        // 但加权平均会把完成的 100 混入：client jar 99% + 若干已完成库 100% → 父聚合 >99 甚至
-        // 顶到 100，而父还没 SetState(Completed)（全部子任务完成瞬间聚合=100、State 仍 Downloading）。
-        // 100 只由 RunGroupAsync 完成路径 Post 给出。
-        ProgressPercent = Math.Min(percent, 99);
-        BytesDone = (long)(total * percent / 100);
+            var percent = total > 0 ? weighted / total : 0;
+            // REVIEW-进度：窗口内最大值（_pendingPercent）单调——节流合并不吞峰值
+            // （c1 收敛 99 后挂载新任务，快照 69.3 —— max 保住 99，发布不回落）
+            if (percent > _pendingPercent) _pendingPercent = percent;
+            // AL38：叶子全完成后 active=null——组在收尾（VerifyInstalled 校验 + 打标记）。
+            // AL70：无 active 叶子时优先显示组 SetStage 的值，从未 SetStage 才回兜底。
+            var anyRunning = Children.Any(c => c is not null
+                && c.State is DownloadTaskState.Queued or DownloadTaskState.Downloading);
+            _pendingStage = active?.Stage ?? _selfStage
+                ?? (total > 0 ? (anyRunning ? "正在下载…" : "正在完成…") : "准备中…");
+            _pendingTotal = total;
+            Interlocked.Exchange(ref _aggregateDirty, 1);
+        }
+    }
 
-        // 聚合计速（聚合字节单调，无需重置基线）
-        var now = _watch.Elapsed.TotalSeconds;
-        if (_lastBytes < 0)
+    /// <summary>聚合发布（节流窗口到期/尾算）：写 UI 属性。percent 取「窗口内最大值」与「已发布值」的
+    /// 较大者（单调不回跳）；封顶 99——100 只由 RunGroupAsync 完成路径 Post 给出（AL33）。
+    /// AL32 教训（clamp 卡 100%）：percent 冻结期间 BytesDone=total×percent 仍随新 total 推进。</summary>
+    private void PublishAggregate()
+    {
+        // 终态后发布的旧排期快照不得覆盖——完成路径已设 Stage="已完成"/percent=100
+        if (State is DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled) return;
+        lock (_lock)
         {
-            _sampleStartBytes = BytesDone;
-            _sampleStartTime = now;
-            _lastBytes = BytesDone;
+            var percent = Math.Min(Math.Max(_pendingPercent, ProgressPercent), 99);
+            ProgressPercent = percent;
+            BytesDone = (long)(_pendingTotal * percent / 100);
+            TotalBytes = _pendingTotal;
+            if (_pendingStage is not null) Stage = _pendingStage;
+            // 聚合计速（滑动窗口：近 2s 瞬时——聚合字节单调但窗口随新子任务挂载重置）
+            UpdateSpeedSample(BytesDone);
         }
-        else if (BytesDone > _lastBytes)
-        {
-            var dt = now - _sampleStartTime;
-            if (dt > 0) SpeedBps = (BytesDone - _sampleStartBytes) / dt;
-            _lastBytes = BytesDone;
-        }
-            OnPropertyChanged(nameof(SpeedText));
-            OnPropertyChanged(nameof(EtaText));
-            OnPropertyChanged(nameof(BytesText));
-            }
+        _pendingPercent = -1;
+        _pendingStage = null;
+        _pendingTotal = 0;
+        OnPropertyChanged(nameof(SpeedText));
+        OnPropertyChanged(nameof(EtaText));
+        OnPropertyChanged(nameof(BytesText));
     }
 
     // ---------- 控制 ----------
+
+    /// <summary>滑动窗口瞬时速度：近 2 秒字节差/时间差（调用方需持锁；字节回退时调用方已清队列）</summary>
+    private double SampleSpeed(double now, long bytes)
+    {
+        _speedSamples.Add((now, bytes));
+        // 至少保留最近 2 点（裁剪过度会把窗口内点全删光 → 无速度可算 → 停在旧值）
+        while (_speedSamples.Count > 2 && now - _speedSamples[0].Time > 2.0)
+            _speedSamples.RemoveAt(0);
+        if (_speedSamples.Count < 2) return SpeedBps;
+        var first = _speedSamples[0];
+        var last = _speedSamples[^1];
+        var dt = last.Time - first.Time;
+        var db = last.Bytes - first.Bytes;
+        return dt > 0.25 && db >= 0 ? db / dt : SpeedBps;
+    }
+
+    /// <summary>聚合采样入口：字节回退（新子任务挂载）时清窗口，避免负速/虚高</summary>
+    private void UpdateSpeedSample(long bytes)
+    {
+        var now = _watch.Elapsed.TotalSeconds;
+        if (_lastBytes < 0 || bytes < _lastBytes)
+        {
+            _speedSamples.Clear();
+            _lastBytes = -1;
+        }
+        SpeedBps = SampleSpeed(now, bytes);
+        _lastBytes = bytes;
+    }
 
     public void Cancel()
     {
@@ -443,7 +618,7 @@ public partial class DownloadTask : ObservableObject
         foreach (var child in Children) child.Cancel();
     }
 
-    /// <summary>报告进度（可来自任意线程）：计速按当前文件字节采样（新文件起始重置基线）</summary>
+    /// <summary>报告进度（可来自任意线程）：滑动窗口计速（近 2s 瞬时——非旧实现的全程累计平均）</summary>
     private void Report(DownloadProgress p)
     {
         string stage, speedText, etaText, bytesText;
@@ -454,13 +629,10 @@ public partial class DownloadTask : ObservableObject
             var now = _watch.Elapsed.TotalSeconds;
             if (_lastBytes < 0 || p.FileBytesDone < _lastBytes)
             {
-                _sampleStartBytes = p.FileBytesDone;
-                _sampleStartTime = now;
+                _speedSamples.Clear(); // 文件切换/回退：清窗口重采样
+                _lastBytes = -1;
             }
-            var dt = now - _sampleStartTime;
-            speed = dt > 0 && p.FileBytesDone > _sampleStartBytes
-                ? (p.FileBytesDone - _sampleStartBytes) / dt
-                : SpeedBps;
+            speed = SampleSpeed(now, p.FileBytesDone);
             _lastBytes = p.FileBytesDone;
 
             stage = string.IsNullOrEmpty(p.Stage) ? "下载中…" : p.Stage;
@@ -500,6 +672,16 @@ public partial class DownloadTask : ObservableObject
             OnPropertyChanged(nameof(IsPaused));
             OnPropertyChanged(nameof(IsFailed));
         });
+    }
+
+    /// <summary>组任务自身最近一次 SetStage（AL70：无 active 叶子时兜底显示——index 获取等编排阶段）</summary>
+    private string? _selfStage;
+
+    /// <summary>跨线程更新 Stage（AL62 质检文案用——下载线程 → UI 线程安全）</summary>
+    public void SetStage(string stage)
+    {
+        if (IsGroup) _selfStage = stage; // 同步记录——推导 Post 可能晚于本 Post，读 _selfStage 拿最新
+        Post(() => Stage = stage);
     }
 
     private void Post(Action action)

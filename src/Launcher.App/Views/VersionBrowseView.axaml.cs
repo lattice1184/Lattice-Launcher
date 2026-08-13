@@ -28,44 +28,23 @@ public partial class VersionBrowseView : UserControl
             MainViewModel.Current?.LaunchVersion(row.Id, row.GameDir);
     }
 
-    /// <summary>导入整合包（选 zip → 确认 → 解压为实例）</summary>
+    /// <summary>导入整合包（选 zip/mrpack → 统一入口：确认 → 下载中心组任务 → 版本页选中）。AL47 支持 CF/mrpack</summary>
     private async void OnImportModpack(object? sender, RoutedEventArgs e)
     {
         var top = TopLevel.GetTopLevel(this);
-        if (top is null || Vm is null) return;
+        if (top is null) return;
         var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "选择整合包",
             AllowMultiple = false,
-            FileTypeFilter = [new FilePickerFileType("整合包") { Patterns = ["*.zip"] }],
+            FileTypeFilter =
+            [
+                new FilePickerFileType("整合包 (*.zip / *.mrpack)") { Patterns = ["*.zip", "*.mrpack"] },
+            ],
         });
         if (files.Count == 0 || !files[0].Path.IsAbsoluteUri) return;
-        var file = files[0].Path.LocalPath;
+        ModpackImportFlow.StartAsync(files[0].Path.LocalPath);
+    
+}
 
-        var info = ModpackImporter.Parse(file, out var reason);
-        if (info is null)
-        {
-            NotificationService.Error(reason ?? "无法解析整合包");
-            return;
-        }
-        var owner = DialogService.MainWindow();
-        if (owner is null || !await DialogService.Confirm(owner,
-                $"导入整合包「{info.VersionId}」？ MC {info.McVersion} · {info.FileCount} 个文件，将解压到版本目录。",
-                "导入整合包", "导入", "取消"))
-        {
-            return;
-        }
-
-        try
-        {
-            var dir = GameDirectory.InstallDir();
-            await Task.Run(() => ModpackImporter.Import(file, dir, CancellationToken.None));
-            NotificationService.Success($"已导入 {info.VersionId}");
-            Vm.OnInstalled(info.VersionId);
-        }
-        catch (Exception ex)
-        {
-            NotificationService.Error($"导入失败: {ex.Message}");
-        }
-    }
 }

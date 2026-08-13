@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
+using PCL.Core.Logging;
 
 namespace Launcher.Core.Download;
 
@@ -51,6 +54,16 @@ public sealed class DownloadService
     /// <summary>每流限速配额（总限速均分到并发流；每流独立累加器 → 总吞吐=设定值）</summary>
     private readonly long _limitPerStream;
 
+    /// <summary>
+    /// 慢速判死阈值（BUGS#1 修复）：限速时阈值随限速下调——限速 50KB/s 时实测速度恒 50KB/s，
+    /// 若阈值仍用默认 100KB/s 则 30s 必判死（限速用户全部下载失败）。取 min(默认, 限速×0.8)；
+    /// 分片总吞吐 = 每流限速×片数，实际速度远超该阈值，安全。
+    /// </summary>
+    private long SlowThresholdForLimit()
+        => _limitPerStream > 0
+            ? Math.Min(_options.SlowSpeedBps, (long)(_limitPerStream * 0.8))
+            : _options.SlowSpeedBps;
+
     /// <summary>每流限速状态（独立累加器——流间不互相拖累，总吞吐=设定值）</summary>
     private sealed class ThrottleState
     {
@@ -75,6 +88,83 @@ public sealed class DownloadService
         public const long WindowMs = 250;
     }
 
+    /// <summary>
+    /// 竞速进度合并器（AL57/AL58）：竞速时多源同时下载同一文件的不同副本，共享同一进度回调。
+    /// 透传各源绝对字节会混合虚高（字节回退 → 计速基线重置 → 完成瞬间速度爆表），
+    /// 而多源累加又造成"下完了"错觉（每源拉完整副本，累加必然虚满——限并发镜像下
+    /// 没有任何源能赢，UI 却停在 99%）。
+    /// 正确语义：进度 = 领先源的真实进度（所有源里已完成字节最大者）——单调、不超 total、
+    /// 不虚满。UI 端"累计/总时间"平均速度同样回到真实值。
+    /// </summary>
+    internal sealed class RaceProgress
+    {
+        /// <summary>竞速所有源共享：跨源最大字节 + 惰性定的文件总大小</summary>
+        private sealed class Shared
+        {
+            public long Total;    // 首个源报告时定（各源 total 一致）
+            public long Max;      // 所有源里已完成字节最大者（单调）
+            public long LastSent; // 已转发的字节（同值不重复转发——按源记录会让落后源重复报全局值）
+        }
+
+        private readonly Shared _shared;
+        private readonly DownloadProgressHandler _inner;
+
+        private RaceProgress(Shared shared, DownloadProgressHandler inner)
+        {
+            _shared = shared;
+            _inner = inner;
+        }
+
+        private readonly int _index;      // 本源序号（per-source 字节记录用）
+        private readonly long[] _bytes;   // per-source 已下载字节（淘汰制评估"谁领先"用）
+
+        private RaceProgress(Shared shared, DownloadProgressHandler inner, int index, long[] bytes)
+        {
+            _shared = shared;
+            _inner = inner;
+            _index = index;
+            _bytes = bytes;
+        }
+
+        /// <summary>为 count 个候选源创建共享同一比较器的转发器（一一对应）</summary>
+        public static RaceProgress Wrap(int count, DownloadProgressHandler progress)
+        {
+            var shared = new Shared();
+            var bytes = new long[count];
+            var arr = new DownloadProgressHandler[count];
+            for (var i = 0; i < count; i++)
+                arr[i] = new RaceProgress(shared, progress, i, bytes).Invoke;
+            return new RaceProgress(shared, progress, 0, bytes) { Handlers = arr };
+        }
+
+        /// <summary>每个候选源对应的转发器（与 Wrap 的 count 一一对应）</summary>
+        public DownloadProgressHandler[] Handlers { get; private init; } = [];
+
+        /// <summary>某源的已下载字节（竞速淘汰评估用——Interlocked 读，任意线程安全）</summary>
+        public long GetBytes(int index) => Interlocked.Read(ref _bytes[index]);
+
+        /// <summary>8-13 文件总大小（惰性定——首个源报告时写入；淘汰评估速度外推用）</summary>
+        public long GetTotal() => Interlocked.Read(ref _shared.Total);
+
+        private void Invoke(DownloadProgress p)
+        {
+            if (_shared.Total <= 0 && p.FileTotalBytes > 0) _shared.Total = p.FileTotalBytes;
+            // 本源字节记录（淘汰评估用）
+            if (p.FileBytesDone > Interlocked.Read(ref _bytes[_index]))
+                Interlocked.Exchange(ref _bytes[_index], p.FileBytesDone);
+            // 更新领先值（CompareExchange 读 + 条件写：多源并发写 Max 安全）
+            long cur;
+            while ((cur = Interlocked.Read(ref _shared.Max)) < p.FileBytesDone
+                   && Interlocked.CompareExchange(ref _shared.Max, p.FileBytesDone, cur) != cur) { }
+            if (_shared.Total <= 0) return;
+            var bytes = Math.Min(Interlocked.Read(ref _shared.Max), _shared.Total);
+            if (bytes <= 0) return;
+            if (Interlocked.Exchange(ref _shared.LastSent, bytes) == bytes) return; // 同值不重复转发
+            _inner(new DownloadProgress(p.Stage, p.CurrentFile, bytes, _shared.Total,
+                Math.Min(bytes * 100.0 / _shared.Total, 99)));
+        }
+    }
+
     /// <summary>每流限速节流：每 64KB 结算一次，超出配额则等待</summary>
     private static async Task ThrottleStreamAsync(int n, CancellationToken ct, ThrottleState st, long limit)
     {
@@ -93,13 +183,9 @@ public sealed class DownloadService
 
     private static HttpClient CreateClient()
     {
-        // 连接建立 5s 超时（AL32 秒接：原 15s——国内直连官方源常卡 TCP/TLS 握手，配合并行竞速
-        // 慢源 5s 内判死，不再等满 15s 才轮到镜像）；
+        // AL45：共享连接池（HttpClientPool）——连接复用 + HTTP/2，消除每文件的 TCP+TLS 握手开销。
         // 不设整体 Timeout——body 下载不受限（51MB 大文件慢网也要 1 分钟+，整体超时会误杀正常下载）
-        var handler = new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(5) };
-        var client = new HttpClient(handler);
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
-        return client;
+        return HttpClientPool.Shared;
     }
 
     /// <summary>
@@ -139,19 +225,45 @@ public sealed class DownloadService
                 return;
         }
 
-        // 候选源：按下载源策略排（官方优先=官方+镜像按速度排；镜像优先=镜像固定在前；仅镜像=只要镜像）
-        var resolved = _resolver.Resolve(url);
-        var candidates = _options.DownloadSource switch
-        {
-            DownloadSourcePreference.MirrorFirst => resolved.Count > 1 ? [resolved[1], resolved[0]] : resolved,
-            DownloadSourcePreference.MirrorOnly => resolved.Count > 1 ? [resolved[1]] : resolved,
-            _ => _sourceStats.Rank(resolved), // OfficialFirst：官方+镜像按历史速度排序（最快优先）
-        };
         var backoff = _options.BackoffProvider ?? RetryPolicy.Backoff;
         Exception? last = null;
+        // 网络检查用 host 集合（每轮累积；ghapi 占位非 http URL 不参与 host 检查）
+        var hosts = new HashSet<string>();
+        var swDl = System.Diagnostics.Stopwatch.StartNew(); // 8-19 下载日志：总耗时
 
         for (var attempt = 0; attempt < _options.MaxSourceAttempts; attempt++)
         {
+            // 候选源在每轮内重解（AL58b）：ghapi 签名 URL 约 1 小时过期——403 失败后下一轮
+            // 重新 Resolve → 重新换链拿新签名；镜像死了也天然剔除
+            var resolved = _resolver.Resolve(url);
+            var candidates = _options.DownloadSource switch
+            {
+                DownloadSourcePreference.MirrorFirst => resolved.Count > 1 ? [resolved[1], resolved[0]] : resolved,
+                DownloadSourcePreference.MirrorOnly => resolved.Count > 1 ? [resolved[1]] : resolved,
+                _ => _sourceStats.Rank(resolved), // OfficialFirst：官方+镜像按历史速度排序（最快优先）
+            };
+            // 8-16：ghapi 候选预换链 + 签名 URL 套镜像展开——签名直链（objects.githubusercontent.com）
+            // 实测国内 64KB/s（OBS 大文件骤降几百 KB 的兜底源），镜像转发可提速；换链失败/过期 →
+            // 本轮剔除（下一轮重新 Resolve 重试），避免下载时才失败浪费一轮。
+            if (candidates.Any(c => c.StartsWith(GitHubApiDirect.Scheme)))
+            {
+                var expanded = new List<string>(candidates.Count + 4);
+                foreach (var c in candidates)
+                {
+                    if (!c.StartsWith(GitHubApiDirect.Scheme)) { expanded.Add(c); continue; }
+                    var signed = await GitHubApiDirect.GetSignedUrlAsync(c, ct);
+                    if (signed is null) continue; // 换链失败 → 剔除（下一轮重试）
+                    expanded.Add(signed); // 签名直连（镜像全挂时的兜底）
+                    foreach (var m in ThirdPartyDlSourceResolver.Mirrors)
+                        expanded.Add($"{m}/{signed}"); // 镜像转发签名 URL（提速路径）
+                }
+                candidates = expanded;
+            }
+            foreach (var c in candidates)
+                if (!c.StartsWith(GitHubApiDirect.Scheme) && Uri.TryCreate(c, UriKind.Absolute, out var cu))
+                    hosts.Add(cu.Host);
+            // 8-19 下载日志：每轮候选源（分析「哪个源赢/为什么慢」用——HTTP 层看不到竞速业务语义）
+            LogWrapper.Debug($"[下载] 第{attempt + 1}轮 {url} 候选({candidates.Count}): {string.Join(" | ", candidates.Select(ShortUrl))}");
             if (candidates.Count == 1)
             {
                 // 单候选（不可映射 URL）：走直接路径——保留断点续传（dest.tmp 预写 → Range 续传）
@@ -159,11 +271,13 @@ public sealed class DownloadService
                 try
                 {
                     await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, ct);
+                    LogWrapper.Info($"[下载] 完成 {ShortUrl(url)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                     return;
                 }
                 catch (Exception ex) when (ex is HttpRequestException or InvalidDataException)
                 {
                     last = ex;
+                    LogWrapper.Warn($"[下载] 单候选失败 {ShortUrl(candidates[0])}: {ex.Message}");
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -182,33 +296,78 @@ public sealed class DownloadService
             }
             // AL32 并行竞速（秒接）：一轮内所有候选源同时发起，先到先得——官方卡 5s 超时时
             // 镜像已在同步下载，不再串行等满一轮（旧实现最坏 2 轮×2 源×5~15s）。
-            // 每源独立 race 目标（destPath.race{i}）→ 中间文件（.tmp/.parts）天然隔离；
+            // 每源独立 race 目标（destPath.race{URL 哈希}）→ 中间文件（.tmp/.parts）天然隔离；
             // 首个校验通过的源赢：rename 到真名，取消其余源并清理残留。
-            for (var i = 0; i < candidates.Count; i++) CleanupRaceFiles(destPath, i); // 上次崩溃残留保底
+            // 8-13 轮间不清残留：同 URL 跨轮复用已完成片集（判死换路后下轮从断点续——「中途换源不丢进度」）；
+            // 赢家出现后清输家、终态失败 CleanupResiduals 全清——正常路径无积累
             using var raceCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var pending = new List<(int Index, string Src, Task<(bool Ok, Exception? Error)> Task)>();
+            // AL59 淘汰制：每源独立 cts（linked 到 raceCts）——可取消指定源而不动其他源
+            var pending = new List<(int Index, string Src, Task<(bool Ok, Exception? Error)> Task, CancellationTokenSource Cts)>();
+            // AL57 竞速进度合并：多源同时拉同一文件的不同副本（.race{i}）且共享同一进度回调时，
+            // 直接透传各源绝对字节会混合虚高——字节交替回退触发计速基线重置，完成瞬间剩余字节
+            // 全挤进最后 0.25s 窗口 → 速度爆表（实机：19MB 真下 10s，显示几百 MB/s）。
+            // 语义为"领先源进度"（AL58b）：每源独立转发器，全局取领先值单调转发。
+            var perSourceProgress = progress is null ? null : RaceProgress.Wrap(candidates.Count, progress);
             for (var i = 0; i < candidates.Count; i++)
             {
                 var idx = i;
                 var src = candidates[i];
+                var srcCts = CancellationTokenSource.CreateLinkedTokenSource(raceCts.Token);
                 pending.Add((idx, src, Task.Run(() => RaceOneAsync(idx, src, destPath,
-                    expectedSha1, expectedSize, progress, raceCts.Token, ct), ct)));
+                    expectedSha1, expectedSize, perSourceProgress?.Handlers[idx], srcCts.Token, ct), ct), srcCts));
             }
             Exception? raceLast = null;
             var won = false;
+            // AL59 淘汰评估计时：到点且无赢家 → 取消非领先源（限并发镜像 3 源×8 片=24 连接是灾难，
+            // 收敛到领先源让它的 ramp-up 自决并发；无 progress 数据时无法评估——跳过）
+            var evalSw = System.Diagnostics.Stopwatch.StartNew();
+            var evalInterval = _options.RaceEliminateInterval;
+            var lastEvalBytes = new long[candidates.Count]; // 8-13 速度外推评估：上次评估各源字节
             while (pending.Count > 0)
             {
-                var done = await Task.WhenAny(pending.Select(p => p.Task));
+                var remaining = evalInterval - evalSw.Elapsed;
+                var evalDelay = remaining > TimeSpan.Zero ? Task.Delay(remaining, ct) : Task.CompletedTask;
+                var done = await Task.WhenAny(pending.Select(p => p.Task).Cast<Task>().Append(evalDelay));
+                if (done == evalDelay)
+                {
+                    if (pending.Count > 1 && perSourceProgress is not null)
+                    {
+                        // 8-13 淘汰评估改「预计剩余时间」（速度外推）：总量评估错杀稳定镜像——
+                        // CDN 直连开局快（首字节毫秒级）总量领先 → ghproxy 镜像（握手慢但全程 2MB/s）
+                        // 15s 评估被淘汰 → 赢家是后段限速 64KB/s 的 CDN（实测 PowerToys 271MB 均 755KB/s）。
+                        // eta = 剩余 × 窗口 / 增量：合并中源（bytes=Total）eta=0 自然保留；卡死源（增量 0）被淘汰
+                        var total = perSourceProgress.GetTotal();
+                        var cur = pending.Select(p => perSourceProgress.GetBytes(p.Index)).ToArray();
+                        var prev = pending.Select(p => lastEvalBytes[p.Index]).ToArray();
+                        var leadPos = PickRaceLeader(cur, prev, total, evalInterval.TotalSeconds);
+                        foreach (var p in pending)
+                            lastEvalBytes[p.Index] = perSourceProgress.GetBytes(p.Index);
+                        var leadIndex = pending[leadPos].Index;
+                        foreach (var p in pending.Where(p => p.Index != leadIndex))
+                            p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                    }
+                    evalSw.Restart();
+                    continue;
+                }
                 var entry = pending.First(p => p.Task == done);
                 pending.Remove(entry);
-                var (ok, err) = await done;
+                var (ok, err) = await (Task<(bool Ok, Exception? Error)>)done;
                 if (ok)
                 {
+                    // AL58 赢家先落盘再收尾：旧实现先等所有 pending 停止再 rename——慢源（限并发镜像
+                    // 的龟速分片）取消传播要几十秒，UI 停在"下完了"静默；且慢源永远赢不了时
+                    // 任务被拖死（376MB 限并发实测 0.1MB/s）。rename 先行：任务立即完成，
+                    // 输家取消 + 残留清理放后台（先 Wait 等它停再删，防边写边删）。
+                    File.Move($"{destPath}.race{RaceKey(entry.Src)}", destPath, true); // 赢家 → 真名
+                    LogWrapper.Info($"[下载] 竞速赢家({entry.Index}): {ShortUrl(entry.Src)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                     raceCts.Cancel(); // 其余源取消
-                    // 等取消中的任务真正停下再清理——否则边写边删会留未观察异常
-                    foreach (var p in pending) { try { await p.Task; } catch { } }
-                    foreach (var p in pending) CleanupRaceFiles(destPath, p.Index);
-                    File.Move($"{destPath}.race{entry.Index}", destPath, true); // 赢家 → 真名
+                    var stragglers = pending.ToList();
+                    if (stragglers.Count > 0)
+                        _ = Task.Run(() =>
+                        {
+                            foreach (var p in stragglers) { try { p.Task.Wait(); } catch { } }
+                            foreach (var p in stragglers) CleanupRaceFiles(destPath, RaceKey(p.Src));
+                        });
                     won = true;
                     break;
                 }
@@ -223,13 +382,22 @@ public sealed class DownloadService
             }
         }
 
-        // 重试耗尽：检查网络并报告（用户要求"重试 3 次后检查网络并报告"）
-        var hosts = candidates.Select(c => new Uri(c).Host).Distinct().ToList();
-        var reachable = await _networkChecker(hosts, ct);
+        // 重试耗尽：检查网络并报告（用户要求"重试 3 次后检查网络并报告"）。
+        // 注意：此处不清理中间产物——Task 层还有自动重试（ScheduleAutoRetry），清理放在
+        // 「真正终态失败」（自动重试也耗尽）时，否则 Task 重试的换源续传材料（.parts）被提前清掉
+        var reachable = await _networkChecker(hosts.ToList(), ct);
+        LogWrapper.Warn($"[下载] 失败 {ShortUrl(url)} 重试{_options.MaxSourceAttempts}轮耗尽: {last?.Message ?? "未知"} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
         if (!reachable)
             throw new InvalidOperationException(
                 $"网络不可达：{string.Join("、", hosts)} 均无法连接，请检查网络/代理/防火墙（已重试 {_options.MaxSourceAttempts} 轮）");
         throw last ?? new InvalidOperationException($"下载失败: {url}");
+    }
+
+    /// <summary>8-19 下载日志：URL 截断（签名 URL/镜像前缀超长，日志可读性）</summary>
+    private static string ShortUrl(string url)
+    {
+        if (url.Length <= 100) return url;
+        return url[..60] + "…" + url[^30..];
     }
 
     /// <summary>
@@ -240,7 +408,9 @@ public sealed class DownloadService
         int index, string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress, CancellationToken raceCt, CancellationToken ct)
     {
-        var raceDest = $"{destPath}.race{index}";
+        // 8-13 片集按 URL 哈希命名：同 URL 跨轮复用已完成片（判死换路后下轮续传，不归零）；
+        // 候选顺序轮间变化（Resolve 重排）不影响——键与 URL 绑定而非下标
+        var raceDest = $"{destPath}.race{RaceKey(url)}";
         try
         {
             await DownloadFromSourceAsync(url, raceDest, expectedSha1, expectedSize, progress, raceCt);
@@ -257,13 +427,63 @@ public sealed class DownloadService
         }
     }
 
-    /// <summary>清理某源的竞速残留（.race{i} 本体 + .tmp + .parts 目录）</summary>
-    private static void CleanupRaceFiles(string destPath, int index)
+    /// <summary>清理某源的竞速残留（.race{key} 本体 + .tmp + .parts 目录）</summary>
+    private static void CleanupRaceFiles(string destPath, string raceKey)
     {
-        var raceDest = $"{destPath}.race{index}";
+        var raceDest = $"{destPath}.race{raceKey}";
         try { File.Delete(raceDest + ".tmp"); } catch { }
         try { Directory.Delete(raceDest + ".parts", true); } catch { }
         try { File.Delete(raceDest); } catch { }
+    }
+
+    /// <summary>8-13 竞速片集键：URL 的 SHA1 前 8 位 hex——同 URL 跨轮复用（键与 URL 绑定，候选顺序无关）</summary>
+    internal static string RaceKey(string url)
+        => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..8];
+
+    /// <summary>8-13 竞速淘汰评估（纯函数，按调用方数组顺序返回位置）：预计剩余时间最小者胜。
+    /// 已下完（bytes ≥ total，合并中）的源直接保留（eta=0 语义——弃它 = 弃已下完文件）；
+    /// 其余按 eta = (total - bytes) × window / delta——增量 ≤0 跳过（卡死）；全部无增量 → 回退总量领先。
+    /// 数组非空由调用方保证。</summary>
+    internal static int PickRaceLeader(long[] bytes, long[] lastBytes, long total, double windowSec)
+    {
+        if (total > 0)
+            for (var i = 0; i < bytes.Length; i++)
+                if (bytes[i] >= total) return i; // 已下完（合并中）→ 直接保留
+        var lead = -1;
+        var bestEta = double.MaxValue;
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            var delta = bytes[i] - lastBytes[i];
+            if (delta <= 0) continue;
+            var eta = total > 0 ? (double)(total - bytes[i]) * windowSec / delta : double.MaxValue;
+            if (eta < bestEta) { bestEta = eta; lead = i; }
+        }
+        if (lead >= 0) return lead;
+        lead = 0;
+        for (var i = 1; i < bytes.Length; i++)
+            if (bytes[i] > bytes[lead]) lead = i;
+        return lead;
+    }
+
+    /// <summary>
+    /// 8-18 清理目标的全部中间产物：.tmp、.parts 目录、.race* 系列（本体/.tmp/.parts）。
+    /// 永不动 destPath 本身——幂等检查（File.Exists(destPath)）依赖 destPath 存在的语义；
+    /// 写入全走中间产物 + 原子 rename，destPath 不可能半截。终态失败时调用（不留垃圾文件）。
+    /// </summary>
+    internal static void CleanupResiduals(string destPath)
+    {
+        try { File.Delete(destPath + ".tmp"); } catch { }
+        try { Directory.Delete(destPath + ".parts", true); } catch { }
+        var dir = Path.GetDirectoryName(destPath);
+        var name = Path.GetFileName(destPath);
+        if (dir is null || name.Length == 0) return;
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(dir, name + ".race*")) { try { File.Delete(f); } catch { } }
+            foreach (var d in Directory.EnumerateDirectories(dir, name + ".race*.parts")) { try { Directory.Delete(d, true); } catch { } }
+            foreach (var f in Directory.EnumerateFiles(dir, name + ".race*.tmp")) { try { File.Delete(f); } catch { } }
+        }
+        catch { }
     }
 
     /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计</summary>
@@ -271,6 +491,14 @@ public sealed class DownloadService
         string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress, CancellationToken ct)
     {
+        // 黑科技 A：ghapi 占位 URL → GitHub API 换签名直链（null = 换链失败，快速失败不影响竞速）
+        if (url.StartsWith(GitHubApiDirect.Scheme))
+        {
+            var signed = await GitHubApiDirect.GetSignedUrlAsync(url, ct);
+            if (signed is null)
+                throw new HttpRequestException("GitHub API 换链失败", null, System.Net.HttpStatusCode.BadGateway);
+            url = signed;
+        }
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var totalSize = expectedSize ?? await GetContentLengthAsync(url, ct);
         try
@@ -321,15 +549,36 @@ public sealed class DownloadService
             var buffer = new byte[_options.BufferSize];
             long read = 0;
             var throttle = new ThrottleState();
+            // AL61 心率监测：持续低速（默认 30s < 100KB/s）→ 判源死抛异常 → 外层换路。
+            // BUGS#1 修复：限速时阈值随限速下调（限速 50KB/s 时实测速度恒 50KB/s < 默认 100KB/s → 必判死）
+            var slowDetector = new SlowSourceDetector(SlowThresholdForLimit(), _options.SlowSamples, _options.SlowProbeMs);
+            // AL66 读心跳：读挂起（静默断流）时 AL61 检测跑不到（挂在数据循环体内）——心跳兜底判死
+            using var stallCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stallCts.CancelAfter(TimeSpan.FromMilliseconds(_options.ReadStallTimeoutMs));
+            // REVIEW-卡进度：单连接进度节流（250ms）——旧代码每 64KB 块上报一次，
+            // 高速下载（60MB/s ≈ 1000 次/秒）把 Avalonia UI Post 队列打爆 → 进度显示滞后
+            // （真机 8-12 用户洞察「数据跟不上下载速度」——PCL 慢所以永远跟得上）
+            var reportSw = Stopwatch.StartNew();
+            var lastReportMs = 0L;
             int n;
-            while ((n = await src.ReadAsync(buffer, ct)) > 0)
+            while ((n = await ReadWithStallAsync(src, buffer, stallCts, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
                 await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 read += n;
-                progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
-                    total > 0 ? Math.Min(read * 100.0 / total, 99) : 0));
+                // 8-22 补：剩余不足一片不判死（同分片路径——弃尾清零净亏，等流读完；total 未知时保持原判死行为）
+                if ((total <= 0 || total - read >= ChunkSizeFor(total)) && slowDetector.ShouldAbort(read, ct))
+                    throw new SlowSourceException(_options.SlowSpeedBps, slowDetector.LastSpeed);
+                if (reportSw.ElapsedMilliseconds - lastReportMs >= 250)
+                {
+                    lastReportMs = reportSw.ElapsedMilliseconds;
+                    progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
+                        total > 0 ? Math.Min(read * 100.0 / total, 99) : 0));
+                }
             }
+            // 收尾强制报一次（节流窗口内的最后字节不丢）
+            progress?.Invoke(new DownloadProgress("", Path.GetFileName(destPath), read, total,
+                total > 0 ? Math.Min(read * 100.0 / total, 99) : 0));
             await dst.FlushAsync(ct);
         }
 
@@ -346,22 +595,66 @@ public sealed class DownloadService
         File.Move(tmp, destPath, true);
     }
 
-    /// <summary>发送请求；416（Range 起点不可满足）时删除文件从零重下一次</summary>
+    /// <summary>发送请求（AL64 响应头超时：半开连接不卡死）；416（Range 起点不可满足）时删除文件从零重下一次</summary>
     private async Task<HttpResponseMessage> SendWith416RetryAsync(HttpRequestMessage request, string destPath, CancellationToken ct)
     {
         try
         {
-            return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            return await SendWithHeaderTimeoutAsync(request, ct);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
         {
             File.Delete(destPath + ".tmp"); // AL29 H1：416 只删中间产物，destPath 未验证前不动
             var retry = new HttpRequestMessage(HttpMethod.Get, request.RequestUri!);
-            return await _http.SendAsync(retry, HttpCompletionOption.ResponseHeadersRead, ct);
+            return await SendWithHeaderTimeoutAsync(retry, ct);
+        }
+    }
+
+    /// <summary>
+    /// AL64 响应头超时：TCP 半开连接上 SendAsync(ResponseHeadersRead) 永不返回 → 子任务卡死
+    /// → 组任务 WhenAll 挂 10 小时「下载中」（真机 08-11：26.2+Fabric 148.2/148.5MB 满速卡死）。
+    /// 响应头 ResponseHeaderTimeoutMs 内拿不到 → 转 HttpRequestException（可重试/换路）；
+    /// body 下载不受限（大文件慢网继续）。用户取消原样上抛（when 不匹配）。
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithHeaderTimeoutAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromMilliseconds(_options.ResponseHeaderTimeoutMs));
+        try
+        {
+            return await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new HttpRequestException(
+                $"等待响应头超时（>{_options.ResponseHeaderTimeoutMs / 1000}s）——源可能已死，自动换路", null);
+        }
+    }
+
+    /// <summary>
+    /// body 读心跳（AL66）：stallCts 的 CancelAfter 由调用方在每轮数据后重置——数据持续到达永不触发；
+    /// ReadAsync 挂起（TCP 半开静默）→ 心跳超时 → 抛可重试错误（外层换路/重试）。
+    /// 用户取消原样上抛（when 不匹配）。
+    /// </summary>
+    private async Task<int> ReadWithStallAsync(Stream src, Memory<byte> buffer,
+        CancellationTokenSource stallCts, CancellationToken ct)
+    {
+        try
+        {
+            var n = await src.ReadAsync(buffer, stallCts.Token);
+            stallCts.CancelAfter(TimeSpan.FromMilliseconds(_options.ReadStallTimeoutMs)); // 数据到达 → 心跳重置
+            return n;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new HttpRequestException(
+                $"下载卡死：>{_options.ReadStallTimeoutMs / 1000}s 无数据——源静默断流，自动换路", null);
         }
     }
 
     /// <summary>多连接 Range 分片下载：分片并行（单片重试 1 次）→ 合并 → SHA1 校验；整体失败回退单连接</summary>
+    /// <summary>多连接 Range 分片下载：固定片大小 + 并发调度（并发 = gate 槽位；升片 = 提高并发不清进度）
+    /// → 合并 → 总长/SHA1 校验；整体失败回退单连接</summary>
     private async Task DownloadChunkedAsync(
         string url, string destPath, long totalSize, string? expectedSha1,
         DownloadProgressHandler? progress, CancellationToken ct)
@@ -371,47 +664,155 @@ public sealed class DownloadService
             var partDir = destPath + ".parts";
             Directory.CreateDirectory(partDir);
 
-            var chunkCount = Math.Max(1, _options.ChunkCount);
-            var chunkSize = totalSize / chunkCount;
-            // AL31：统一实时计数器——节流上报与片完成上报同源（片完成时 cp.Bytes 已含该片全部字节），
-            // 避免旧 downloadedBytes（只含已完成分片）与实时字节打架导致进度回退
-            var cp = new ChunkProgress();
+            var maxChunks = Math.Max(1, _options.ChunkCount);
+            // 8-19 片大小自适应（入口一次定、永不变化）：边界固定 → 已完成片跨 attempt/换源/并发变化
+            // 全部复用（换源续进度核心）；大文件自动大片（少请求、RTT 惩罚小）——旧实现（totalSize/chunkCount
+            // 片=并发）片数一变边界全变，旧 .part 全废——升片/重试必然从零重下。
+            var chunkSize = ChunkSizeFor(totalSize);
+            var totalChunks = Math.Max(1, (int)Math.Ceiling(totalSize / (double)chunkSize));
+            var currentConcurrency = Math.Clamp(await ProbeAndDecideConcurrencyAsync(url, totalSize, partDir, ct), 1, maxChunks);
+            // 并发 = gate 槽位数（初始探测值，上限 maxChunks）；升片 = Release 腾出更多槽位，排队片自动进入
+            using var gate = new SemaphoreSlim(currentConcurrency, maxChunks);
+            var lastUpgradeAt = DateTime.MinValue;
 
-            var tasks = new List<Task>();
-            for (var i = 0; i < chunkCount; i++)
+            // AL61 分片总吞吐监测：cp.Bytes 每采样间隔测速，持续低速（默认 30s < 100KB/s）→ 判死换路；
+            // 8-16 渐进限速 → 升片（只提高并发，不清 .parts 不重切——已下字节保留）；8-17 并发到顶仍慢 → 立即判死
+            var slowDetector = new SlowSourceDetector(SlowThresholdForLimit(), _options.SlowSamples, _options.SlowProbeMs);
+            using var slowCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var slowAborted = 0;
+            var speedRing = new double[3];
+            var speedIdx = 0;
+            var prevBytes = 0L;
+            var cp = new ChunkProgress();
+            var slowWatch = Task.Run(async () =>
             {
-                var start = i * chunkSize;
-                var end = i == chunkCount - 1 ? totalSize - 1 : start + chunkSize - 1;
+                try
+                {
+                    while (!slowCts.IsCancellationRequested)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(_options.SlowProbeMs), slowCts.Token);
+                        var bytes = cp.Bytes;
+                        speedRing[speedIdx % 3] = (bytes - prevBytes) / (TimeSpan.FromMilliseconds(_options.SlowProbeMs).TotalSeconds);
+                        prevBytes = bytes;
+                        speedIdx++;
+                        // 8-22 补：AL61 持续低速判死同样受剩余守卫约束（同 679 行末尾判死）——
+                        // 剩余不足一片时不判死（弃尾清零净亏，等最后一片下完）
+                        if (totalSize - bytes >= chunkSize && slowDetector.ShouldAbort(bytes, slowCts.Token))
+                        {
+                            Volatile.Write(ref slowAborted, 1);
+                            slowCts.Cancel();
+                            break;
+                        }
+                        var avg = (speedRing[0] + speedRing[1] + speedRing[2]) / 3;
+                        // 升片判定：3 采样均速 < 阈值、剩余够下、并发有余量、距上次升片 ≥10s
+                        if (speedIdx >= 3 && ShouldUpgradeChunks(
+                                avg, bytes, totalSize, currentConcurrency, maxChunks,
+                                (DateTime.UtcNow - lastUpgradeAt).TotalSeconds))
+                        {
+                            lastUpgradeAt = DateTime.UtcNow;
+                            var target = Math.Min(maxChunks, currentConcurrency * 2);
+                            gate.Release(target - currentConcurrency);
+                            currentConcurrency = target;
+                            LogWrapper.Info($"[下载] 升片 {ShortUrl(url)} 并发 {target / 2}→{target} 均速{avg / 1024:0}KB/s");
+                        }
+                        // 8-17 并发到顶仍慢 → 立即判死换路（镜像竞速淘汰后不会回来——外层重新 Resolve 让镜像重新参与）；
+                        // 8-19 末尾（剩余 <8MB）低速也判死：升片被剩余守卫挡、并发 4（快源保底）未到顶——
+                        // 该死区慢源（GitHub 连接级累积限速：末尾每连接传输量大被 throttle 到几十 KB）会拖到尾；
+                        // 换路 = 新连接重新累积（前几 MB 快），收益远大于 Resolve+探测开销
+                        // 8-22 补：剩余不足一片（<chunkSize）不判死——只剩最后一片在下，判死 = 弃 99.6% 清零重下
+                        // （真机 8-12 PowerToys 271MB 最后 1MB 判死换路净亏）；等最后一片下完（至多几十秒）
+                        if (speedIdx >= 3 && avg < SlowThresholdForLimit()
+                            && (currentConcurrency >= maxChunks || totalSize - bytes < MinUpgradeRemainBytes)
+                            && totalSize - bytes >= chunkSize)
+                        {
+                            Volatile.Write(ref slowAborted, 1);
+                            slowCts.Cancel();
+                            break;
+                        }
+                    }
+                }
+                catch (OperationCanceledException) { }
+            }, ct);
+
+            // 固定边界分片：已完成段复用入账（长度匹配即有效）、部分片入账后片内续传；未完成片排队等 gate
+            var tasks = new List<Task>();
+            for (var i = 0; i < totalChunks; i++)
+            {
+                var start = (long)i * chunkSize;
+                var end = Math.Min(start + chunkSize - 1, totalSize - 1);
                 var partPath = Path.Combine(partDir, $"{i}.part");
                 var expectedLen = end - start + 1;
 
-                // 已完成段直接复用
+                // 已完成段直接复用（边界固定 → 跨 attempt/换源无缝续传）
                 if (File.Exists(partPath) && new FileInfo(partPath).Length == expectedLen)
                 {
                     Interlocked.Add(ref cp.Bytes, expectedLen);
                     continue;
                 }
 
+                // AL67 部分片（中断残留）：已下字节先入账（进度从断点续走不归零），
+                // DownloadChunkAsync 内部从 have 处续传——片内重试不会再入账（重试不经过本循环）
+                if (File.Exists(partPath) && new FileInfo(partPath).Length is > 0 and var have)
+                    Interlocked.Add(ref cp.Bytes, have);
+
                 tasks.Add(Task.Run(async () =>
                 {
-                    await DownloadChunkAsync(url, partPath, start, end, ct, cp, Path.GetFileName(destPath), totalSize, progress);
-                    // 片完成即时上报（force：允许同值重复报，见 ReportOnce 注释）
-                    ReportOnce(cp, Path.GetFileName(destPath), totalSize, progress, force: true);
-                }, ct));
+                    await gate.WaitAsync(slowCts.Token);
+                    try
+                    {
+                        await DownloadChunkAsync(url, partPath, start, end, slowCts.Token, cp, Path.GetFileName(destPath), totalSize, progress);
+                        // 片完成即时上报（force：允许同值重复报，见 ReportOnce 注释）
+                        ReportOnce(cp, Path.GetFileName(destPath), totalSize, progress, force: true);
+                    }
+                    finally { gate.Release(); }
+                }, slowCts.Token));
             }
-            await Task.WhenAll(tasks);
+            try
+            {
+                await Task.WhenAll(tasks);
+                // 分片全成功 → 立即停监测，不等自然判死（慢速阈值=0 时 slowWatch 永不退出——真机靠
+                // 「速度归零判死」碰巧退出，阈值关闭/短任务时 await slowWatch 永挂）
+                slowCts.Cancel();
+                await slowWatch;
+            }
+            catch
+            {
+                if (Volatile.Read(ref slowAborted) == 1)
+                {
+                    LogWrapper.Warn($"[下载] 判死换路 {ShortUrl(url)} 均速{slowDetector.LastSpeed / 1024:0}KB/s 剩余{(totalSize - cp.Bytes) / 1024 / 1024}MB");
+                    throw new SlowSourceException(_options.SlowSpeedBps, slowDetector.LastSpeed); // 源死：直接换路
+                }
+                throw;
+            }
+            finally
+            {
+                slowCts.Cancel();
+            }
             // 全片完成后补报最终值（片回调已覆盖时 Reported 护栏自动跳过，不重复）
+
+            // 8-19 合并阶段提示：大文件合并（顺序读 64 片 + 写 166MB）要几秒，期间无下载活动——
+            // 速度显示几十 KB 会被误认为「末尾限速卡死」；上报 Stage 让用户看到收尾而不是死寂
+            progress?.Invoke(new DownloadProgress("正在合并文件…", Path.GetFileName(destPath),
+                totalSize, totalSize, 99));
 
             // 合并写 tmp（AL29 H1：完整校验通过前不落真名）
             var tmp = destPath + ".tmp";
             await using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                for (var i = 0; i < chunkCount; i++)
+                for (var i = 0; i < totalChunks; i++)
                 {
                     var partPath = Path.Combine(partDir, $"{i}.part");
+                    // AL67 片长度校验：服务器忽略 Range 返回 200 全量时片超长——拒绝换路（否则错位文件落盘）
+                    var partLen = new FileInfo(partPath).Length;
+                    var expectLen = i == totalChunks - 1 ? totalSize - (long)i * chunkSize : chunkSize;
+                    if (partLen != expectLen)
+                        throw new InvalidDataException($"分片 {i} 长度异常（{partLen} != {expectLen}）: {url}");
                     await using var part = File.OpenRead(partPath);
                     await part.CopyToAsync(dst, ct);
                 }
+                // 8-18 总长度校验：无 sha1（第三方下载）时字节数一致性的最后兜底——防分片计算/源大小漂移
+                if (dst.Length != totalSize)
+                    throw new InvalidDataException($"合并后总长度不符（{dst.Length} != {totalSize}）: {url}");
             }
             Directory.Delete(partDir, true);
 
@@ -423,6 +824,8 @@ public sealed class DownloadService
             }
             File.Move(tmp, destPath, true); // AL29 H1：校验通过后原子替换
         }
+        catch (SlowSourceException) { throw; } // AL61 源死：不回退单连接（还要再等 30s 才判死）——直接换路
+        catch (OperationCanceledException) { throw; } // 8-13 暂停/取消：保留 .parts（断点续传材料）——Resume 复用不清零
         catch
         {
             // 分片阶段失败：清理残留，回退单连接（弱网/镜像内容差异自愈）。
@@ -433,22 +836,161 @@ public sealed class DownloadService
         }
     }
 
+
+    /// <summary>
+    /// 8-18 固定分片下限（1MB，PCL 同款）：边界永不变化 → 已完成片跨 attempt/换源/并发变化全部复用
+    /// （换源续进度核心）。8-18 深夜用户实测：256KB 片对 GitHub 高延迟链路是灾难——每片一次 HTTP RTT
+    /// （~100ms），吞吐崩到 1.5-2.5MB/s；改 1MB 后 RTT 惩罚降 4 倍。8-19 起片大小自适应
+    /// （ChunkSizeFor）——本常量是下限（小文件恒 1MB，行为不变）。
+    /// </summary>
+    private const long FixedChunkSize = 1024 * 1024;
+
+    /// <summary>8-19 片大小目标片数（大文件片 = totalSize/64——8 并发 × 8 波 = 0.8s RTT 上界）</summary>
+    private const int TargetChunkCount = 64;
+
+    /// <summary>8-19 片大小上限（4MB）：零字节失败重下粒度 + 服务器忽略 Range 检测前浪费的代价上限</summary>
+    private const long MaxChunkSize = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// 8-19 片大小自适应（纯函数）：小文件（&lt;64MB）恒 1MB（Modrinth 小库文件吃并发）；
+    /// 大文件片 = totalSize/64（166MB → 2.6MB → 64 片，RTT 惩罚降 2.6 倍 vs 1MB）；
+    /// 上限 4MB（1GB → 256 片，8 并发 32 波 = 3.2s）。片大小入口一次定、永不变化——
+    /// 与并发解耦（探测/升片只动并发）→ 边界固定 → 换源续传复用语义保留。
+    /// </summary>
+    internal static long ChunkSizeFor(long totalSize)
+        => Math.Clamp(totalSize / TargetChunkCount, FixedChunkSize, MaxChunkSize);
+
+    /// <summary>ramp-up 探测段大小（1MB——快源 0.4s 内拉完提前决策，慢源 2s 窗口截断采样）</summary>
+    private const long ProbeBytes = 1024 * 1024;
+
+    /// <summary>ramp-up 探测窗口：超过此时间未拉完探测段 → 按已得字节决策</summary>
+    private static readonly TimeSpan ProbeWindow = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// GitHub CDN 域（objects.githubusercontent.com / codeload.github.com / github.com）的探测档位：
+    /// 8-15 用户实测小文件快、大文件掉几百 KB——GitHub CDN 对长连接渐进式限速（前几 MB 全速后被 throttle），
+    /// 默认 1MB/2s 探测测不出 → 误判高速给 1 片 → 后续掉速。加大窗口让限速暴露 → 分片数决策正确。
+    /// </summary>
+    private const long ProbeBytesGitHub = 4 * 1024 * 1024;
+    private static readonly TimeSpan ProbeWindowGitHub = TimeSpan.FromSeconds(5);
+
+    /// <summary>是否 GitHub CDN 域（渐进式限速特征——需要更大探测窗口）</summary>
+    public static bool IsGitHubCdn(string url)
+    {
+        try
+        {
+            var host = new Uri(url).Host;
+            return host == "github.com" || host.EndsWith(".github.com") || host == "objects.githubusercontent.com";
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// 单连接速度 ≥ 此值 → 快源。8-19 起大文件（&gt;8MB）快源不再降单连接：RTT 惩罚（每片一次往返
+    /// ~100ms）对吞吐检测不可见（恒 &gt;10MB/s），慢速检测/升片永不触发——必须在探测时刻摊薄，
+    /// 保底 4 并发（每连接单请求 ≤2.6-4MB 在 GitHub「前几 MB 节流」窗口内，不新增节流暴露）。
+    /// 小文件（≤8MB）保持 1 连接：≤8 波 × 100ms = 0.8s RTT 可忽略，且限并发源不受影响。
+    /// </summary>
+    private const double FastSingleBps = 800 * 1024;
+
+    /// <summary>单连接速度 < 此值 → 满片（按连接限速源需要分片）</summary>
+    private const double SlowSingleBps = 200 * 1024;
+
+    /// <summary>8-16 动态升片阈值：分片总吞吐持续低于此值 → 升片（渐进限速源掉速信号；高于判死阈值）</summary>
+    private const double UpgradeSpeedBps = 300 * 1024;
+
+    /// <summary>
+    /// 8-16 动态升片判定（纯函数）：均速低于阈值（渐进限速掉速）、剩余 ≥ 8MB（剩余太少升片收益
+    /// 不划算——8-17 用户实测 OBS 后期 80%+ 才掉速，「完成 <80%」会挡住后期升片，改按剩余量判断）、
+    /// 并发未到上限、距上次升片 ≥10s（防抖动循环）。8-18 参数改并发语义（固定片后总片数恒 ≥ 上限，
+    /// 旧「片数 < max」永不触发）。
+    /// </summary>
+    public static bool ShouldUpgradeChunks(double avgBps, long bytes, long totalSize,
+        int currentConcurrency, int maxConcurrency, double secondsSinceUpgrade)
+        => avgBps < UpgradeSpeedBps && totalSize - bytes >= MinUpgradeRemainBytes
+           && currentConcurrency < maxConcurrency && secondsSinceUpgrade >= 10;
+
+    /// <summary>升片最小剩余量（低于此值不再升片——重下损失大于收益）</summary>
+    public const long MinUpgradeRemainBytes = 8 * 1024 * 1024;
+
+    /// <summary>
+    /// AL60 探测并发决策：拉文件头 1MB（或 2s 窗口）测单连接速度 → 返回并发建议（固定片后并发数 ≠ 片数；
+    /// 8-18 片边界固定 1MB，探测只决定同时下几片）。探测段写 probe.part（探测后删除）。
+    /// </summary>
+    internal async Task<int> ProbeAndDecideConcurrencyAsync(string url, long totalSize, string partDir, CancellationToken ct)
+    {
+        var maxChunks = Math.Max(1, _options.ChunkCount);
+        if (totalSize < ProbeBytes) return maxChunks; // 小文件（<1MB）保持旧满片行为——按连接限速源（Modrinth 单连几十 KB/s）
+                                                      // 的 MC 小库文件需要分片；探测对它们无意义（探测段≈整个文件）
+
+        // 8-15 GitHub CDN 档位：更大探测窗口让渐进式限速暴露（默认档会误判高速给 1 片 → 大文件掉速）
+        var probeLimit = IsGitHubCdn(url) ? ProbeBytesGitHub : ProbeBytes;
+        var probeWindow = IsGitHubCdn(url) ? ProbeWindowGitHub : ProbeWindow;
+
+        var probeEnd = Math.Min(probeLimit - 1, totalSize - 1);
+        var probePart = Path.Combine(partDir, "probe.part");
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var probeTask = Task.Run(() => DownloadChunkAsync(url, probePart, 0, probeEnd, probeCts.Token));
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var probeDone = await Task.WhenAny(probeTask, Task.Delay(probeWindow, ct));
+        var elapsed = Math.Max(sw.Elapsed.TotalSeconds, 0.001);
+        long probeBytes;
+        if (probeDone == probeTask)
+        {
+            try { await probeTask; probeBytes = probeEnd + 1; }
+            catch { return 1; } // 探测失败 → 单连接直拉（分片阶段 catch 还有回退兜底）
+        }
+        else
+        {
+            probeBytes = File.Exists(probePart) ? new FileInfo(probePart).Length : 0;
+            probeCts.Cancel();
+            try { await probeTask; } catch { }
+        }
+        try { File.Delete(probePart); } catch { }
+
+        var speed = probeBytes / elapsed;
+        // 8-19 快源大文件保底 4 并发（RTT 摊薄；小文件 ≤8MB 保持 1——限并发源不受影响）；
+        // 8-13 GitHub CDN 大文件直接满并发：连接级累积限速按「每连接传输量」——满并发把 271MB
+        // 摊到 8 连接（每连接 34MB），每连接尽量留在「前几 MB 快」窗口内
+        return speed >= FastSingleBps
+            ? totalSize <= 8 * 1024 * 1024 ? 1
+              : IsGitHubCdn(url) ? maxChunks : Math.Min(4, maxChunks)
+            : speed >= SlowSingleBps ? Math.Min(4, maxChunks)
+            : maxChunks;
+    }
+
     private async Task DownloadChunkAsync(string url, string partPath, long start, long end, CancellationToken ct,
         ChunkProgress? cp = null, string? destName = null, long totalSize = 0,
         DownloadProgressHandler? progress = null, int attempt = 0)
     {
         try
         {
+            // AL67 片断点续传：残留部分片（中断/重试）从已下长度续拉，不整片重下——
+            // Modrinth 实测每次末尾断流，37.4/39MB 判死后只需补 1.6MB
+            long have = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+            var expectedLen = end - start + 1;
+            if (have >= expectedLen)
+            {
+                if (have == expectedLen) return; // 完整段复用（重试入口兜底）
+                File.Delete(partPath);           // 超长残留（内容错误）→ 删除重下
+                have = 0;
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Range = new RangeHeaderValue(start, end);
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            request.Headers.Range = new RangeHeaderValue(start + have, end); // 从断点续传
+            using var response = await SendWithHeaderTimeoutAsync(request, ct); // AL64 响应头超时
+            var isPartial = response.StatusCode == HttpStatusCode.PartialContent; // 206 才追加；200（服务器忽略 Range）重写防错位
             response.EnsureSuccessStatusCode();
             await using var src = await response.Content.ReadAsStreamAsync(ct);
-            await using var dst = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            await using var dst = new FileStream(partPath,
+                have > 0 && isPartial ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None);
             var buffer = new byte[_options.BufferSize];
             var throttle = new ThrottleState();
+            // AL66 读心跳：探测段也走本函数（探测读挂起时 slowWatch 尚未启动——心跳兜底）
+            using var stallCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stallCts.CancelAfter(TimeSpan.FromMilliseconds(_options.ReadStallTimeoutMs));
             int n;
-            while ((n = await src.ReadAsync(buffer, ct)) > 0)
+            while ((n = await ReadWithStallAsync(src, buffer, stallCts, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
                 await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
@@ -456,6 +998,7 @@ public sealed class DownloadService
                     ReportChunkProgress(cp, n, destName!, totalSize, progress);
             }
         }
+        catch (OperationCanceledException) { throw; } // 取消不重试（探测取消/用户取消原样上抛——否则重试请求悬挂）
         catch when (attempt < 1)
         {
             // 单片瞬时失败重试 1 次
@@ -496,24 +1039,28 @@ public sealed class DownloadService
         }
     }
 
-    /// <summary>HEAD 取长度：试全部候选源，全失败返回 0（走单连接按响应长度下载）</summary>
+    /// <summary>HEAD 取长度：试全部候选源，全失败返回 0（走单连接按响应长度下载）。
+    /// 每源限时 8s——HEAD 卡住（CDN 丢包/线路抖动）不拖长分片前的等待，超时直接换下一源。</summary>
     private async Task<long> GetContentLengthAsync(string url, CancellationToken ct)
     {
         foreach (var src in _resolver.Resolve(url))
         {
             try
             {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(TimeSpan.FromSeconds(8)); // 无超时时 HttpClient 默认等响应头 100s = 停顿
                 using var request = new HttpRequestMessage(HttpMethod.Head, src);
-                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                 response.EnsureSuccessStatusCode();
                 return response.Content.Headers.ContentLength ?? 0;
             }
-            catch (Exception) { /* 试下一候选源 */ }
+            catch (Exception) { /* 超时/失败 → 试下一候选源 */ }
         }
         return 0;
     }
 
-    private static async Task<bool> Sha1MatchesAsync(string path, string expected, CancellationToken ct)
+    // AL70：internal——VersionDownloadPipeline 复用（asset index 已存在 SHA1 匹配时跳过下载）
+    internal static async Task<bool> Sha1MatchesAsync(string path, string expected, CancellationToken ct)
     {
         try
         {
@@ -681,6 +1228,8 @@ public sealed class DownloadService
                 var assetTasks = new List<Task>();
                 var totalAssets = index.Objects.Count;
                 var doneAssets = 0;
+                long doneAssetsBytes = 0; // REVIEW-速度：累计资产字节（上报用真实字节——旧代码把文件序号当 FileBytesDone → 速度=文件数/秒却显示 MB/s 虚高）
+                var totalAssetsBytes = index.Objects.Values.Sum(o => o.Size);
                 foreach (var (_, obj) in index.Objects)   // key 是文件路径，hash 在 value
                 {
                     var h = obj.Hash;
@@ -688,6 +1237,7 @@ public sealed class DownloadService
                     if (File.Exists(objPath) && new FileInfo(objPath).Length == obj.Size)
                     {
                         Interlocked.Increment(ref doneAssets);
+                        Interlocked.Add(ref doneAssetsBytes, obj.Size);
                         continue;
                     }
                     var url = $"https://resources.download.minecraft.net/{h[..2]}/{h}";
@@ -699,10 +1249,11 @@ public sealed class DownloadService
                             await DownloadFileAsync(url, objPath, h, obj.Size,
                                 Wrap($"下载资源 {Volatile.Read(ref doneAssets)}/{totalAssets}", h), ct);
                             var n = Interlocked.Increment(ref doneAssets);
+                            var doneB = Interlocked.Add(ref doneAssetsBytes, obj.Size);
                             if (progress is not null)
-                                progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", h, n, totalAssets,
+                                progress(new DownloadProgress($"下载资源 {n}/{totalAssets}", h, doneB, totalAssetsBytes,
                                     estimated > 0
-                                        ? Math.Min((accumulated + (long)((double)n / totalAssets * assetsBytes)) * 100.0 / estimated, 99)
+                                        ? Math.Min((accumulated + doneB) * 100.0 / estimated, 99)
                                         : 0));
                         }
                         finally { assetSemaphore.Release(); }

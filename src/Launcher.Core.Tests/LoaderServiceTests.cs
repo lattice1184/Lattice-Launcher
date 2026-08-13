@@ -20,7 +20,10 @@ public class LoaderServiceTests
     {
         var http = new HttpClient(new StubHandler(routes));
         var downloads = new DownloadService(http, gameDirectory: gameDir);
-        return new LoaderService(http, downloads, gameDir);
+        // 临时缓存目录：profile json 缓存隔离（防测试间共享 AppData 缓存污染）
+        var cache = Path.Combine(Path.GetTempPath(), $"lpc-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(cache);
+        return new LoaderService(http, downloads, gameDir, loaderProfileCacheDir: cache);
     }
 
     [Fact]
@@ -241,6 +244,9 @@ public class LoaderServiceTests
         var mgr = new DownloadManager(null);
         var task = mgr.EnqueueGroup($"下载 1.21.10 + Forge", (ctx, ct) => svc.InstallAsync(plan, ctx, ct));
         await task.Completion;
+        // REVIEW-节流：等 State 终态稳定（SetState Post 与 Completion 的调度时序——防断言中间态）
+        for (var i = 0; i < 200 && task.State is not (DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled); i++)
+            await Task.Delay(10);
         return task;
     }
 
@@ -369,7 +375,10 @@ public class LoaderServiceTests
             Assert.Equal(DownloadTaskState.Completed, task.State);
             Assert.Null(task.Error);
             Assert.DoesNotContain(task.Children, c => c.State == DownloadTaskState.Failed);
-            Assert.True(File.Exists(Path.Combine(forgeDir, ".yanla-installed")), "校验通过应打安装标记");
+            // 8-14 守卫语义：修复路径的目录是版本实际目录（PCL/官方扫描源同场景）——补文件≠本启动器安装，
+            // 不得打标记（旧行为写 .yanla-installed → PCL 版本误标「本启动器」；自建目录安装打标记不受影响）
+            Assert.False(File.Exists(Path.Combine(forgeDir, ".yanla-installed")),
+                "修复路径非自建目录不得写安装标记");
         }
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }
@@ -451,5 +460,68 @@ public class LoaderServiceTests
                 Content = new StringContent(body, System.Text.Encoding.UTF8),
             });
         }
+    }
+
+    /// <summary>REVIEW-flake 根因回归：mtime 精确并列（密集写入同刻落盘，真机/测试均出现过）时
+    /// 旧逻辑按枚举顺序选中父版本「1.21.10」→ 校验/标记打在原版目录 → forge 不显示已装。
+    /// 修复后带 inheritsFrom 的安装器产出物必须胜出（tie-break）。</summary>
+    [Fact]
+    public async Task ForgeInstall_MtimeTie_InheritsFromWins()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        var vanillaDir = SeedVanilla(gameDir, "1.21.10");
+        try
+        {
+            var task = await RunGroupInstallAsync(gameDir, (_, _, _, _) =>
+            {
+                var forgeDir = Path.Combine(gameDir, "versions", "forge-1.21.10-60.1.0");
+                Directory.CreateDirectory(forgeDir);
+                File.WriteAllText(Path.Combine(forgeDir, "forge-1.21.10-60.1.0.json"),
+                    """{"id":"forge-1.21.10-60.1.0","inheritsFrom":"1.21.10","mainClass":"net.minecraftforge.client.main.ForgeMain","libraries":[{"name":"net.minecraftforge:forge:1.21.10-60.1.0:client","downloads":{"artifact":{"path":"net/minecraftforge/forge/1.21.10-60.1.0/forge-1.21.10-60.1.0-client.jar","url":"","size":31989134}}}]}""");
+                File.WriteAllText(Path.Combine(vanillaDir, "1.21.10.jar"), "12345");
+                // 强制 mtime 精确并列：vanilla json 时间设为与 forge json 完全相同——
+                // 旧逻辑稳定排序按枚举顺序取「1.21.10」（先创建排前）→ 标记打错目录
+                var forgeJson = Path.Combine(gameDir, "versions", "forge-1.21.10-60.1.0", "forge-1.21.10-60.1.0.json");
+                File.SetLastWriteTime(Path.Combine(vanillaDir, "1.21.10.json"), File.GetLastWriteTime(forgeJson));
+                return Task.FromResult(0);
+            });
+
+            Assert.Equal(DownloadTaskState.Completed, task.State);
+            Assert.True(File.Exists(Path.Combine(gameDir, "versions", "forge-1.21.10-60.1.0", ".yanla-installed")),
+                "mtime 并列时安装标记必须打在安装器产出目录（inheritsFrom tie-break）");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
+    }
+
+    /// <summary>8-19：GetVersionsAsync 对年份号（26.2）降级返回全量后，fabric-api 必须精确匹配 mcVersion 构建——
+    /// 无对应构建（26.2 无发布/版本不匹配）→ 静默跳过，防装错版本进实例崩（fabric.mod.json 版本锁定）。</summary>
+    [Fact]
+    public async Task FabricInstall_FabricApiVersionMismatch_StillSkips()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"loader-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.21.1"));
+        try
+        {
+            File.WriteAllText(Path.Combine(gameDir, "versions", "1.21.1", "1.21.1.json"),
+                """{"id":"1.21.1","mainClass":"net.minecraft.client.main.Main","libraries":[],"downloads":{"client":{"url":"https://piston/1.21.1/client.jar","size":5}}}""");
+            var routes = new Dictionary<string, string>
+            {
+                ["/v2/versions/loader/1.21.1"] = """[{"loader":{"version":"0.16.13","stable":true}}]""",
+                ["/v2/versions/loader/1.21.1/0.16.13/profile/json"] = FabricProfileJson,
+                ["/v2/project/fabric-api"] = """{"id":"P7dR8mSH","slug":"fabric-api","project_type":"mod","title":"Fabric API","description":"x","downloads":1,"follows":1,"date_created":"2024-01-01T00:00:00Z","date_modified":"2024-01-01T00:00:00Z"}""",
+                // 版本列表只有 1.20.1 构建（不含目标 1.21.1）——客户端过滤后为空 → 静默跳过
+                ["/v2/project/P7dR8mSH/version"] = """[{"id":"v1","project_id":"P7dR8mSH","name":"Fabric API 0.92.0","version_number":"0.92.0+1.20.1","game_versions":["1.20.1"],"loaders":["fabric"],"files":[{"id":"f1","url":"https://cdn.modrinth.com/fabric-api-1.20.1.jar","filename":"fabric-api-1.20.1.jar","size":5,"primary":true}],"date_published":"2024-01-01T00:00:00Z"}]""",
+            };
+            var svc = CreateService(routes, gameDir);
+            var plan = await svc.CreatePlanAsync(LoaderKind.Fabric, "1.21.1", "0.16.13", CancellationToken.None)
+                with { InstallFabricApi = true };
+            await svc.InstallAsync(plan, (DownloadProgressHandler?)null, CancellationToken.None);
+
+            var id = "fabric-loader-0.16.13-1.21.1";
+            Assert.True(InstallMarker.IsMarked(gameDir, id), "API 版本不匹配不影响加载器安装完成");
+            Assert.False(Directory.Exists(Path.Combine(gameDir, "versions", id, "mods")),
+                "版本不匹配时 mods 目录不应出现（防装错版本）");
+        }
+        finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }
 }

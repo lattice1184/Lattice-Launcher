@@ -59,7 +59,7 @@ public class DownloadOptionsTests
     {
         var o = DownloadOptions.FromSettings(new LauncherSettings());
         Assert.Equal(81920, o.BufferSize);
-        Assert.Equal(8, o.ChunkCount);
+        Assert.Equal(16, o.ChunkCount); // 默认档位 Medium(16)
         Assert.Equal(DownloadSourcePreference.OfficialFirst, o.DownloadSource);
         Assert.Equal(0, o.BytesPerSecond);
     }

@@ -166,7 +166,12 @@ public sealed class ModDependencyResolver
 
     private static bool IsCompatibleFile(ModDependencyFile file, string targetMinecraftVersion, HashSet<string> targetLoaders)
     {
-        if (!HasExactGameVersionMatch(file, targetMinecraftVersion))
+        // 8-19：年份号（26.2）或空 target 在 CF/Modrinth 文件版本（1.21.6 格式）中永不精确匹配——
+        // 放宽为不要求版本（loader 过滤保留；SelectBestFile 排序仍精确优先→选最新构建）；
+        // 传统 1.x target 严格匹配不变（1.20.4 不匹配必须失败——Resolve_VersionMismatch 锁定）
+        if (targetMinecraftVersion.Length > 0
+            && !Launcher.Core.Services.EcosystemService.IsYearFormatVersion(targetMinecraftVersion)
+            && !HasExactGameVersionMatch(file, targetMinecraftVersion))
         {
             return false;
         }

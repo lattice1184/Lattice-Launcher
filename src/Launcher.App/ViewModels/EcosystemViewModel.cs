@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
@@ -18,12 +19,15 @@ namespace Launcher.App.ViewModels;
 public partial class EcosystemViewModel : ViewModelBase
 {
     private readonly EcosystemService _eco = new();
-    private readonly CurseForgeService _cf = new();
+    private readonly CurseForgeService _cf = new(); // key 直连（设置 DPAPI 密文落盘）
     private readonly ProjectType _type;
     private CancellationTokenSource? _searchCts;
     private int _requestSeq;
 
     private const int PageSize = 20;
+
+    private bool _suppressSearch;
+    private bool _searchStarted;
 
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
@@ -31,7 +35,9 @@ public partial class EcosystemViewModel : ViewModelBase
         SelectedSort = SortOptions[0];
         SelectedGameVersion = GameVersionOptions[0];
         BuildSourceOptions();
-        SelectedSource = SourceOptions[0];
+        _suppressSearch = true; // 构造期不搜——预加载 4 个标签只建 VM 不请求，首次激活才搜
+        SelectedSource = SourceOptions[1]; // 默认 Modrinth 单源——CF 慢不拖首屏；用户可手动切「全部」
+        _suppressSearch = false;
         // 全局版本绑定：主页切换版本 → 本页实例下拉跟随（AF1）
         if (MainViewModel.Current is { } main)
             main.PropertyChanged += OnMainPropertyChanged;
@@ -40,6 +46,7 @@ public partial class EcosystemViewModel : ViewModelBase
     private void OnMainPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(MainViewModel.CurrentVersion)) return;
+        if (!Launcher.Core.Utils.LauncherSettings.Current.EcoFollowInstance) return; // 8-19 开关：关 = 不自动跟随实例
         if (MainViewModel.Current?.CurrentVersion is not { } cur) return;
         var hit = Instances.FirstOrDefault(i => i.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase));
         if (hit is not null) SelectedInstance = hit;
@@ -62,20 +69,16 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>加载器 chips（"全部"=null）</summary>
     public static IReadOnlyList<string> LoaderOptions { get; } = ["全部", "Fabric", "Forge", "NeoForge", "Quilt"];
 
-    /// <summary>游戏版本下拉（"跟随实例"=null + 常用版本）——Display/Value 分离，避免字面字符串当过滤条件</summary>
-    public static IReadOnlyList<GameVersionOption> GameVersionOptions { get; } =
-    [
-        new GameVersionOption("跟随实例", null),
-        new GameVersionOption("1.21.6", "1.21.6"),
-        new GameVersionOption("1.21.5", "1.21.5"),
-        new GameVersionOption("1.21.4", "1.21.4"),
-        new GameVersionOption("1.21.3", "1.21.3"),
-        new GameVersionOption("1.21.1", "1.21.1"),
-        new GameVersionOption("1.20.4", "1.20.4"),
-        new GameVersionOption("1.20.1", "1.20.1"),
-        new GameVersionOption("1.19.4", "1.19.4"),
-        new GameVersionOption("1.18.2", "1.18.2"),
-    ];
+    /// <summary>
+    /// 游戏版本下拉（"跟随实例"=null + manifest release 动态生成，语义降序——26.2 这类 YY.M 排最上）。
+    /// 8-12 起不再硬编码：Mojang 清单 24h 缓存拉取后填充；拉取失败（断网无缓存）回退内置常用列表。
+    /// </summary>
+    public ObservableCollection<GameVersionOption> GameVersionOptions { get; } = [new GameVersionOption("跟随实例", null)];
+
+    /// <summary>manifest 拉取失败的兜底常用版本（1.21.6 新格式后是 26.2 系——语义序）</summary>
+    private static readonly string[] FallbackGameVersions =
+        ["26.2", "1.21.10", "1.21.9", "1.21.8", "1.21.7", "1.21.6", "1.21.5", "1.21.4", "1.21.3", "1.21.1",
+         "1.20.4", "1.20.1", "1.19.4", "1.18.2"];
 
     public sealed record GameVersionOption(string Display, string? Value);
 
@@ -107,7 +110,11 @@ public partial class EcosystemViewModel : ViewModelBase
     [ObservableProperty]
     public partial SourceOption? SelectedSource { get; set; }
 
-    partial void OnSelectedSourceChanged(SourceOption? value) => _ = RunSearchAsync(reset: true);
+    partial void OnSelectedSourceChanged(SourceOption? value)
+    {
+        if (_suppressSearch) return;
+        _ = RunSearchAsync(reset: true);
+    }
 
     /// <summary>功能分类（Modrinth categories，中文显示；"全部"=null）</summary>
     public static IReadOnlyList<CategoryOption> CategoryOptions { get; } =
@@ -206,8 +213,12 @@ public partial class EcosystemViewModel : ViewModelBase
     partial void OnSelectedLoaderChanged(string? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedGameVersionChanged(GameVersionOption? value) => _ = RunSearchAsync(reset: true);
 
-    /// <summary>切换目标实例 → 立即按新实例重新搜索（列表与实例保持一致）</summary>
-    partial void OnSelectedInstanceChanged(VersionInstanceVM? value) => _ = RunSearchAsync(reset: true);
+    /// <summary>切换目标实例 → 立即按新实例重新搜索（列表与实例保持一致）；已打开的详情页跟随刷新（AL56）</summary>
+    partial void OnSelectedInstanceChanged(VersionInstanceVM? value)
+    {
+        _ = RunSearchAsync(reset: true);
+        if (Detail is { } d) d.UpdateContext(value);
+    }
     partial void OnSelectedCategoryChanged(CategoryOption? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedSortChanged(SortOption value) => _ = RunSearchAsync(reset: true);
 
@@ -216,20 +227,27 @@ public partial class EcosystemViewModel : ViewModelBase
     private void SelectLoader(string loader)
         => SelectedLoader = loader == "全部" ? null : loader.ToLowerInvariant();
 
-    /// <summary>初始化：扫描已装实例（跨扫描源补漏：加载器版本不在 Mojang manifest）并触发首搜</summary>
+    /// <summary>初始化：扫描实例（json-only 判定——26.2 父版本 jar 落加载器子目录也能选）并触发首搜</summary>
     public async Task InitializeAsync()
     {
         try
         {
             var all = new List<VersionInstanceVM>();
             var svc = new VersionManifestService();
-            await svc.RefreshAsync();
-            foreach (var e in svc.Entries.Where(e => e.Installed))
-                all.Add(new VersionInstanceVM(e.Id, e.GameDirectory.Length > 0
-                    ? Launcher.Core.Utils.GameDirectory.SourceLabel(Launcher.Core.Utils.GameDirectory.SourceOf(e.GameDirectory))
-                    : "", e.GameDirectory,
-                    Launcher.Core.Launch.LoaderDetector.Detect(e.GameDirectory, e.Id) ?? ""));
-            // 目录补漏：fabric/forge/neoforge/quilt 等不在 manifest 的已装版本（带来源目录——MOD 落点关键）
+            // 版本清单单独容错：失败只回退动态下拉到内置常用列表，不阻塞实例扫描
+            try
+            {
+                await svc.RefreshAsync();
+                foreach (var id in VersionManifestService.FilterGameVersionOptions(svc.Entries))
+                    GameVersionOptions.Add(new GameVersionOption(id, id));
+            }
+            catch
+            {
+                // 断网且无缓存：内置常用版本兜底（语义序，26.2 在最上）
+                foreach (var id in FallbackGameVersions)
+                    GameVersionOptions.Add(new GameVersionOption(id, id));
+            }
+            // 跨扫描源枚举全部版本目录（manifest 覆盖不全 fabric/forge 等加载器版本——直接扫目录最全）
             foreach (var (dir, _) in Launcher.Core.Utils.GameDirectory.ScanSourceDirs())
             {
                 var versionsDir = Path.Combine(dir, "versions");
@@ -237,9 +255,8 @@ public partial class EcosystemViewModel : ViewModelBase
                 foreach (var d in Directory.EnumerateDirectories(versionsDir))
                 {
                     var id = Path.GetFileName(d);
-                    if (all.Any(i => i.Name.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                    // AL29：已安装 = json+jar（残件版本不作 mod 安装目标）
-                    if (VersionManifestService.IsInstalled(dir, id))
+                    // 实例判定 = json 存在即可 + 预取残留排除（IsInstanceTarget）——带来源目录（MOD 落点关键）
+                    if (VersionManifestService.IsInstanceTarget(dir, id))
                         all.Add(new VersionInstanceVM(id, Launcher.Core.Utils.GameDirectory.SourceLabel(
                             Launcher.Core.Utils.GameDirectory.SourceOf(dir)), dir,
                             Launcher.Core.Launch.LoaderDetector.Detect(dir, id) ?? ""));
@@ -256,13 +273,22 @@ public partial class EcosystemViewModel : ViewModelBase
         }
         catch { /* 实例扫描失败不阻塞搜索 */ }
 
-        // 全局版本绑定：主页当前版本优先选中（AF1），否则第一个
+        // 全局版本绑定：主页当前版本优先选中（AF1），否则第一个；8-19 开关关 = 只取第一个不跟随
         if (Instances.Count > 0)
-            SelectedInstance = MainViewModel.Current?.CurrentVersion is { } cur
+            SelectedInstance = Launcher.Core.Utils.LauncherSettings.Current.EcoFollowInstance
+                && MainViewModel.Current?.CurrentVersion is { } cur
                 && Instances.FirstOrDefault(i => i.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase)) is { } hit
                 ? hit
                 : Instances[0];
-        await RunSearchAsync(reset: true);
+        // 搜索推迟到标签首次激活（Activate）——预加载不搜
+    }
+
+    /// <summary>标签激活：首次调用才触发搜索（幂等；切回标签不重搜）</summary>
+    public void Activate()
+    {
+        if (_searchStarted) return;
+        _searchStarted = true;
+        _ = RunSearchAsync(reset: true);
     }
 
     partial void OnQueryChanged(string value) => DebouncedSearch();
@@ -295,12 +321,15 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
             var instance = SelectedInstance;
-            // 三级筛选：显式选择优先，否则跟随实例（真实加载器徽章优先——AG1，名字猜测兜底）
+            // 三级筛选：显式选择优先，否则跟随实例（真实加载器徽章优先——AG1，名字猜测兜底）。
+            // 8-19 补：光影包/材质包无加载器概念——派生的 fabric/forge facet 会把 Modrinth 结果滤没
+            // （光影包几乎不标 loader，实测 26.2 带 fabric 只剩 3 个、不带显示全部）；用户显式选不受影响
             var loader = SelectedLoader
-                ?? (instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
-                    : instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
+                ?? (IsModType && instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
+                    : IsModType && instance is not null ? EcosystemService.GuessLoader(instance.Name) : null);
             var gameVersion = SelectedGameVersion?.Value
-                ?? (instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
+                ?? (Launcher.Core.Utils.LauncherSettings.Current.EcoFollowInstance
+                    && instance is not null && EcosystemService.TryParseGameVersion(instance.Name, out var gv) ? gv : null);
             var category = SelectedCategory?.Key;
 
             var source = SelectedSource?.Key;
@@ -326,9 +355,12 @@ public partial class EcosystemViewModel : ViewModelBase
 
     private async Task RunMrSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
     {
-        var resp = await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
-            index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
-            limit: PageSize, offset: CurrentPage * PageSize, ct);
+        // AL63 中文分流：查询含中文 → MC百科汉化链路（Modrinth 索引是英文标题，中文查询 0 命中）
+        var resp = McmodSearchService.ContainsChinese(Query)
+            ? await _eco.SearchChineseAsync(_type, Query, ct)
+            : await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+                index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
+                limit: PageSize, offset: CurrentPage * PageSize, ct);
         if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
         Cards.Clear(); // 服务器分页：每次重建当前页
         AddCards(resp?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
@@ -341,26 +373,37 @@ public partial class EcosystemViewModel : ViewModelBase
         {
             if (seq != _requestSeq) return;
             Cards.Clear();
-            FinishPage(seq, 0, gameVersion, "未配置 CurseForge API Key（设置 → CurseForge API Key）");
+            FinishPage(seq, 0, gameVersion, "你还没配 CurseForge API Key。去设置页填一个才能用。");
             return;
         }
         var sort = CfSortOf(SelectedSort?.Index);
-        var page = await _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct);
+        // REVIEW-C：CF API index 语义是「偏移量」不是页码——旧代码传 CurrentPage 导致第 2 页起与
+        // 第 1 页 19/20 条重复（Modrinth 侧 offset=CurrentPage*PageSize 正确，两侧不对称）
+        var page = await TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct));
         if (seq != _requestSeq) return;
         Cards.Clear();
         AddCards(page?.Projects ?? [], p => p.name, p => p.summary, p => new ProjectCardVM(p));
-        FinishPage(seq, page?.TotalCount ?? 0, gameVersion, page is null ? "无响应" : null);
+        FinishPage(seq, page?.TotalCount ?? 0, gameVersion, page is null ? "无响应"
+            : page.VersionFilterDropped ? "该版本 CurseForge 暂不支持过滤，已显示全部版本" : null);
     }
+
+    /// <summary>CF 搜索（GetJsonAsync 内已有 404/5xx 一次重试；此处不再叠加外层重试——15s 超时兜底慢源）</summary>
+    private static Task<CurseForgeSearchPage?> TryCfSearchAsync(Func<Task<CurseForgeSearchPage?>> search)
+        => search();
 
     private async Task RunBothSearchAsync(int seq, string? loader, string? gameVersion, string? category, CancellationToken ct)
     {
         var sort = CfSortOf(SelectedSort?.Index);
-        // 双源并行发起、独立捕获：单源失败（超时/网络/限流）只降级该源，另一源照常显示
-        var mrTask = _eco.SearchAsync(_type, Query, gameVersion, loader, category,
-            index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
-            limit: PageSize, offset: CurrentPage * PageSize, ct);
+        // 双源并行发起、独立捕获：单源失败（超时/网络/限流）只降级该源，另一源照常显示。
+        // B5：中文 query 在「全部」双源模式也走 MC百科链（Modrinth 索引是英文，直搜 0 命中）
+        var isChinese = Launcher.Core.Services.McmodSearchService.ContainsChinese(Query);
+        var mrTask = isChinese
+            ? _eco.SearchChineseAsync(_type, Query, ct)
+            : _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+                index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
+                limit: PageSize, offset: CurrentPage * PageSize, ct);
         var cfTask = _cf.IsEnabled
-            ? _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage, ct)
+            ? TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct))
             : Task.FromResult<CurseForgeSearchPage?>(null);
         string? mrErr = null, cfErr = null;
         var mr = await TrySearchAsync(mrTask, ex => mrErr = ex.Message);
@@ -374,8 +417,9 @@ public partial class EcosystemViewModel : ViewModelBase
         foreach (var p in cf?.Projects ?? []) all.Add(new ProjectCardVM(p));
         AddCards(all, c => c.Title, c => c.Description, c => c);
         var total = (mr?.TotalHits ?? 0) + (cf?.TotalCount ?? 0);
+        var cfDropped = cf?.VersionFilterDropped == true;
         var note = mrErr is null && cfErr is null
-            ? (mr is null && cf is null ? "无响应" : null)
+            ? (mr is null && cf is null ? "无响应" : (cfDropped ? "该版本 CurseForge 暂不支持过滤，已显示全部版本" : null))
             : mrErr is null ? $"CurseForge 搜索失败（{cfErr}），仅显示 Modrinth 结果"
             : cfErr is null ? $"Modrinth 搜索失败（{mrErr}），仅显示 CurseForge 结果"
             : "双源搜索均失败";
@@ -497,8 +541,10 @@ public partial class EcosystemViewModel : ViewModelBase
             await InstallCfCardAsync(card, instance, gameVersion);
             return;
         }
-        var loader = instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
-            : instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
+        // 8-19：光影包/材质包无加载器概念——派生 loader 会把 Modrinth 版本滤没（同 RunSearchAsync gate）
+        var loader = card.Type == ProjectType.Mod
+            && instance is not null && instance.LoaderBadge.Length > 0 ? instance.LoaderBadge
+            : card.Type == ProjectType.Mod && instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
         try
         {
             var version = await _eco.FindBestVersionAsync(card.Id, gameVersion, loader, CancellationToken.None);
@@ -506,6 +552,22 @@ public partial class EcosystemViewModel : ViewModelBase
             {
                 NotificationService.Error($"{card.Title} 没有适配当前实例的版本");
                 return;
+            }
+
+            // 实例先判空——路径确认与依赖确认都建立在目标实例有效之上
+            if (instance is null)
+            {
+                NotificationService.Error("先选目标实例");
+                return;
+            }
+            var instanceName = instance.Name;
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
+            var installDir = instance.GameDir;
+            if (DialogService.MainWindow() is { } pathOwner)
+            {
+                var chosen = await DialogService.ConfirmInstallPath(pathOwner, installDir, instanceName, card.Type);
+                if (chosen is null) return;
+                installDir = chosen;
             }
 
             // 依赖解析内部同步等网络（EcosystemDependencyAdapter .GetResult()）——必须离线 UI 线程，否则永久死锁
@@ -519,32 +581,43 @@ public partial class EcosystemViewModel : ViewModelBase
                     $"要装 {deps.Count} 个前置：{list}", $"安装 {card.Title}", "全部安装", "仅主文件");
             }
 
-            if (instance is null)
-            {
-                NotificationService.Error("先选目标实例");
-                return;
-            }
-            var instanceName = instance.Name;
             DependencyInstallReport? report = null;
-            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", async (p, ct) =>
+            var task = DownloadManager.Instance.EnqueueGroup($"安装 {card.Title}", async (gctx, ct) =>
             {
                 report = includeDeps
                     ? await _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,
-                        gameVersion, loader, dp => p(dp), ct)
-                    : await InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, p, ct);
+                        gameVersion, loader, null, ct, gameDirOverride: installDir, ctx: gctx) // AF2：装实例真实目录（8-22 可改）
+                    : await InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, gctx, ct, installDir);
             });
             // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
             MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
             {
-                NotificationService.Success(
-                    report is { Installed.Count: > 0 }
-                        ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
-                        : $"{card.Title} 安装完成", 4500);
+                var path = report is { Installed.Count: > 0 } ? report.Installed[0].Path : "";
+                if (card.Type == ProjectType.Modpack && path.Length > 0
+                    && DialogService.MainWindow() is { } dlg
+                    && await DialogService.Confirm(dlg,
+                        "整合包已下载完成，立即导入并创建可启动的版本实例？",
+                        "导入整合包", "立即导入", "稍后"))
+                {
+                    // AL47 断链修复：整合包下载完直接导入建实例
+                    ModpackImportFlow.StartAsync(path);
+                }
+                else
+                {
+                    NotificationService.Success(
+                        report is { Installed.Count: > 0 }
+                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
+                            : $"{card.Title} 安装完成", 4500);
+                }
             }
             else if (task.Error is { } err)
+            {
                 NotificationService.Error(err);
+                // AL69：坦言网络原因未装成 + 给手动下载入口——浏览器自己下，放 mods 即用
+                await OfferManualDownloadAsync(card.Title, $"https://modrinth.com/mod/{card.Id}", err);
+            }
         }
         catch (Exception ex)
         {
@@ -552,13 +625,31 @@ public partial class EcosystemViewModel : ViewModelBase
         }
     }
 
-    /// <summary>仅安装主文件（依赖可选跳过路径）；返回报告供路径 Toast</summary>
-    private async Task<DependencyInstallReport?> InstallMainOnlyAsync(string projectId, ModrinthVersion version,
-        string instanceName, ProjectType type, DownloadProgressHandler progress, CancellationToken ct)
+    /// <summary>AL69：安装失败（多为网络原因）→ 弹窗坦言 + 「打开下载页」按钮（默认浏览器）</summary>
+    private static async Task OfferManualDownloadAsync(string title, string url, string err)
     {
-        var path = await _eco.InstallAsync(projectId, version, instanceName, type, dp => progress(dp), ct);
+        if (DialogService.MainWindow() is not { } owner) return;
+        var open = await DialogService.Confirm(owner,
+            $"因网络原因未安装成功：{err}\n\n打开 {title} 的下载页，手动下载后放入对应实例的 mods 文件夹即可。",
+            "安装失败", "打开下载页", "关闭");
+        if (open) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+    }
+
+    /// <summary>仅安装主文件（依赖可选跳过路径）；返回报告供路径 Toast。有组上下文 → 子任务</summary>
+    private async Task<DependencyInstallReport?> InstallMainOnlyAsync(string projectId, ModrinthVersion version,
+        string instanceName, ProjectType type, DownloadGroupContext? ctx, CancellationToken ct, string? gameDirOverride = null)
+    {
+        string? path = null;
+        if (ctx is null)
+            path = await _eco.InstallAsync(projectId, version, instanceName, type, null, ct, gameDirOverride);
+        else
+        {
+            var child = ctx.AddChild($"主文件 {version.Name}", 0,
+                (p, c) => _eco.InstallAsync(projectId, version, instanceName, type, p, c, gameDirOverride));
+            await child.Completion.WaitAsync(ct);
+        }
         var r = new DependencyInstallReport();
-        r.Installed.Add(new InstalledDependency(projectId, version.Id, path));
+        r.Installed.Add(new InstalledDependency(projectId, version.Id, path ?? ""));
         return r;
     }
 
@@ -575,6 +666,21 @@ public partial class EcosystemViewModel : ViewModelBase
                 return;
             }
 
+            if (instance is null)
+            {
+                NotificationService.Error("先选目标实例");
+                return;
+            }
+            var instanceName = instance.Name;
+            // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
+            var installDir = instance.GameDir;
+            if (DialogService.MainWindow() is { } pathOwner)
+            {
+                var chosen = await DialogService.ConfirmInstallPath(pathOwner, installDir, instanceName, card.Type);
+                if (chosen is null) return;
+                installDir = chosen;
+            }
+
             var depCount = (file.dependencies ?? []).Count(d => d.relationType == 1);
             var includeDeps = true;
             if (depCount > 0 && DialogService.MainWindow() is { } owner)
@@ -583,25 +689,22 @@ public partial class EcosystemViewModel : ViewModelBase
                     $"要装 {depCount} 个前置依赖", $"安装 {card.Title}", "全部安装", "仅主文件");
             }
 
-            if (instance is null)
-            {
-                NotificationService.Error("先选目标实例");
-                return;
-            }
-            var instanceName = instance.Name;
             DependencyInstallReport? report = null;
-            var task = DownloadManager.Instance.Enqueue($"安装 {card.Title}", async (p, ct) =>
+            var task = DownloadManager.Instance.EnqueueGroup($"安装 {card.Title}", async (gctx, ct) =>
             {
                 if (includeDeps)
                 {
                     report = await _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type,
-                        gameVersion, dp => p(dp), ct);
+                        gameVersion, null, ct, gameDirOverride: installDir, ctx: gctx); // AF2：装实例真实目录（8-22 可改）
                 }
                 else
                 {
-                    var path = await _cf.InstallAsync(modId, file, instanceName, card.Type, dp => p(dp), ct);
+                    string? path = null;
+                    var child = gctx.AddChild($"主文件 {file.fileName}", file.fileLength,
+                        (p, c) => _cf.InstallAsync(modId, file, instanceName, card.Type, p, c, gameDirOverride: installDir));
+                    await child.Completion.WaitAsync(ct);
                     var r = new DependencyInstallReport();
-                    r.Installed.Add(new InstalledDependency(modId.ToString(), file.id.ToString(), path));
+                    r.Installed.Add(new InstalledDependency(modId.ToString(), file.id.ToString(), path ?? ""));
                     report = r;
                 }
             });
@@ -610,13 +713,30 @@ public partial class EcosystemViewModel : ViewModelBase
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
             {
-                NotificationService.Success(
-                    report is { Installed.Count: > 0 }
-                        ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
-                        : $"{card.Title} 安装完成", 4500);
+                var path = report is { Installed.Count: > 0 } ? report.Installed[0].Path : "";
+                if (card.Type == ProjectType.Modpack && path.Length > 0
+                    && DialogService.MainWindow() is { } dlg
+                    && await DialogService.Confirm(dlg,
+                        "整合包已下载完成，立即导入并创建可启动的版本实例？",
+                        "导入整合包", "立即导入", "稍后"))
+                {
+                    // AL47 断链修复：整合包下载完直接导入建实例
+                    ModpackImportFlow.StartAsync(path);
+                }
+                else
+                {
+                    NotificationService.Success(
+                        report is { Installed.Count: > 0 }
+                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
+                            : $"{card.Title} 安装完成", 4500);
+                }
             }
             else if (task.Error is { } err)
+            {
                 NotificationService.Error(err);
+                // AL69：坦言 + 手动下载入口（CurseForge 版）
+                await OfferManualDownloadAsync(card.Title, $"https://www.curseforge.com/minecraft/mc-mods/{modId}", err);
+            }
         }
         catch (Exception ex)
         {

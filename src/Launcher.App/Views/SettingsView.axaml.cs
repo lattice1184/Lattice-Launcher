@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Controls.Primitives;
 using Launcher.App.Animations;
 using Launcher.Core.Utils;
 
@@ -92,6 +93,7 @@ public partial class SettingsView : UserControl
         1 => new SectionLaunchView(),
         2 => new SectionAppearanceView(),
         3 => new SectionDownloadView(),
+        5 => new SectionModulesView(),
         _ => new SectionAboutView(),
     };
 
@@ -102,6 +104,7 @@ public partial class SettingsView : UserControl
         SetNavVisual(SettingsNavLaunch, _activeSection == 1, accent);
         SetNavVisual(SettingsNavAppearance, _activeSection == 2, accent);
         SetNavVisual(SettingsNavDownload, _activeSection == 3, accent);
+        SetNavVisual(SettingsNavModules, _activeSection == 5, accent);
         SetNavVisual(SettingsNavAbout, _activeSection == 4, accent);
     }
 
@@ -110,7 +113,8 @@ public partial class SettingsView : UserControl
         btn.Background = active ? new SolidColorBrush(Color.Parse("#12332F")) : Brushes.Transparent;
         btn.Foreground = active ? Brushes.White : new SolidColorBrush(Color.Parse("#8A93A6"));
         btn.BorderBrush = active ? accent : Brushes.Transparent;
-        btn.BorderThickness = active ? new Thickness(3, 0, 0, 0) : new Thickness(0);
+        // 恒为 3px 左占位：激活显强调条，非激活透明（若 0↔3 切换 Button 模板内容会内缩 3px 造成错位）
+        btn.BorderThickness = new Thickness(3, 0, 0, 0);
     }
 
     private static IBrush AccentBrush()
@@ -124,39 +128,58 @@ public partial class SettingsView : UserControl
         || ReferenceEquals(btn, SettingsNavLaunch) && _activeSection == 1
         || ReferenceEquals(btn, SettingsNavAppearance) && _activeSection == 2
         || ReferenceEquals(btn, SettingsNavDownload) && _activeSection == 3
+        || ReferenceEquals(btn, SettingsNavModules) && _activeSection == 5
         || ReferenceEquals(btn, SettingsNavAbout) && _activeSection == 4;
+
+    /// <summary>设置导航按钮目标视觉（激活深青/白字 vs 透明/灰字）——瞬跳与过渡共用</summary>
+    private (IBrush Bg, IBrush Fg) SettingsNavTarget(Button btn)
+    {
+        var active = IsActiveNav(btn);
+        return (active ? new SolidColorBrush(Color.Parse("#12332F")) : Brushes.Transparent,
+                active ? Brushes.White : new SolidColorBrush(Color.Parse("#8A93A6")));
+    }
 
     private void SettingsNavEnter(object? sender, PointerEventArgs e)
     {
         if (sender is not Button btn) return;
         if (ReferenceEquals(btn, SettingsMenuButton))
         {
-            btn.Background = new SolidColorBrush(Color.Parse("#2C3544")); // ☰ 触发钮无激活态，hover 直接变灰
+            UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav"); // ☰ 无激活态，hover 直接变灰
             return;
         }
         if (IsActiveNav(btn)) return; // 激活项 hover 不改色
-        btn.Background = new SolidColorBrush(Color.Parse("#2C3544"));
-        btn.Foreground = new SolidColorBrush(Color.Parse("#E8EAF0"));
+        UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav");
+        UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, new SolidColorBrush(Color.Parse("#E8EAF0")), UiAnim.Durations.Fast, "nav");
     }
 
     private void SettingsNavExit(object? sender, PointerEventArgs e)
     {
         if (ReferenceEquals(sender, SettingsMenuButton))
-            SettingsMenuButton.Background = Brushes.Transparent;
+            UiAnim.TweenBrush(SettingsMenuButton, TemplatedControl.BackgroundProperty, Brushes.Transparent, UiAnim.Durations.Fast, "nav");
         else
-            ApplySettingsNavVisuals();
+            TweenSettingsNavBack(sender);
     }
 
     private void SettingsNavPress(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is Button btn) btn.Background = new SolidColorBrush(Color.Parse("#1A2029"));
+        if (sender is Button btn)
+            UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#1A2029")), UiAnim.Durations.Fast, "nav");
     }
 
     private void SettingsNavRelease(object? sender, PointerReleasedEventArgs e)
     {
         if (ReferenceEquals(sender, SettingsMenuButton))
-            SettingsMenuButton.Background = new SolidColorBrush(Color.Parse("#2C3544")); // 松手仍悬停 → 回到 hover 色
+            UiAnim.TweenBrush(SettingsMenuButton, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav"); // 松手仍悬停 → hover 色
         else
-            ApplySettingsNavVisuals();
+            TweenSettingsNavBack(sender);
+    }
+
+    /// <summary>悬停退出/松手释放：动画回激活态目标色（不再瞬跳）</summary>
+    private void TweenSettingsNavBack(object? s)
+    {
+        if (s is not Button btn) return;
+        var (bg, fg) = SettingsNavTarget(btn);
+        UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, bg, UiAnim.Durations.Fast, "nav");
+        UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, fg, UiAnim.Durations.Fast, "nav");
     }
 }
