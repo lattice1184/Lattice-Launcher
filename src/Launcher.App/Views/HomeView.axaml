@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
              xmlns:svc="using:Launcher.App.Services"
+             xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Launcher.App.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
@@ -15,7 +16,15 @@
                     <Button x:Name="AvatarButton" Padding="0" Background="Transparent" BorderThickness="0"
                             Click="OnAvatarClick" ToolTip.Tip="账号管理。登录、切换账号、换皮肤都在这">
                         <Border Width="44" Height="44" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource BgRaised}">
-                            <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"/>
+                            <!-- 8-13：头像加载期间首字母占位，不露白 -->
+                            <Grid>
+                                <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"
+                                       IsVisible="{Binding PlayerAvatar, Converter={x:Static conv:ObjectConverters.IsNotNull}}"/>
+                                <TextBlock Text="{Binding PlayerAvatarFallback}" FontSize="18" FontWeight="Bold"
+                                           Foreground="{DynamicResource Accent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           IsVisible="{Binding PlayerAvatar, Converter={x:Static conv:ObjectConverters.IsNull}}"/>
+                            </Grid>
                         </Border>
                     </Button>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
@@ -183,7 +192,14 @@
                     <!-- 当前账号行 -->
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                         <Border Width="40" Height="40" CornerRadius="8" ClipToBounds="True" Background="{DynamicResource BgRaised}">
-                            <Image Source="{Binding Account.Avatar}" Width="40" Height="40" Stretch="Uniform"/>
+                            <Grid>
+                                <Image Source="{Binding Account.Avatar}" Width="40" Height="40" Stretch="Uniform"
+                                       IsVisible="{Binding Account.Avatar, Converter={x:Static conv:ObjectConverters.IsNotNull}}"/>
+                                <TextBlock Text="{Binding Account.AvatarFallback}" FontSize="16" FontWeight="Bold"
+                                           Foreground="{DynamicResource Accent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           IsVisible="{Binding Account.Avatar, Converter={x:Static conv:ObjectConverters.IsNull}}"/>
+                            </Grid>
                         </Border>
                         <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
                             <TextBlock Text="{Binding Account.CurrentName}" FontSize="14" FontWeight="SemiBold"/>

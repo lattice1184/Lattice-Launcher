@@ -88,6 +88,10 @@ public static class MicrosoftAuth
         HttpClient http, DeviceCodeSession session, Action<string>? onTick = null, CancellationToken ct = default)
     {
         var deadline = DateTime.UtcNow.AddSeconds(Math.Min(session.ExpiresInSec, 900));
+        // 8-13 提速：前 3 分钟 3s 快轮询（授权盲区从 5s 降到 3s——用户输完码等启动器反应的体感），
+        // 之后回微软建议间隔；微软若要求降频（slow_down）立即回 session.IntervalSec
+        var fastWindowEnd = DateTime.UtcNow.AddMinutes(3);
+        var intervalSec = session.IntervalSec <= 3 ? session.IntervalSec : 3;
         var lastStatus = "";
         while (DateTime.UtcNow < deadline)
         {
@@ -119,6 +123,10 @@ public static class MicrosoftAuth
                     var status = "等待你在浏览器中输入代码并登录…";
                     if (status != lastStatus) { lastStatus = status; onTick?.Invoke(status); }
                 }
+                else if (code == "slow_down")
+                {
+                    intervalSec = session.IntervalSec; // 微软要求降频：回建议间隔
+                }
                 else
                 {
                     var desc = root.TryGetProperty("error_description", out var d) ? d.GetString() : "";
@@ -129,7 +137,8 @@ public static class MicrosoftAuth
             {
                 throw new InvalidOperationException("微软返回了无法解析的授权响应");
             }
-            await Task.Delay(TimeSpan.FromSeconds(session.IntervalSec), ct);
+            if (DateTime.UtcNow > fastWindowEnd) intervalSec = session.IntervalSec;
+            await Task.Delay(TimeSpan.FromSeconds(intervalSec), ct);
         }
         throw new TimeoutException("登录码已过期，请重新发起登录");
     }
@@ -229,9 +238,16 @@ public static class MicrosoftAuth
         var root = doc.RootElement;
         if (root.TryGetProperty("XErr", out _) || !root.TryGetProperty("Token", out var t))
             throw new InvalidOperationException("XSTS 授权失败（可能该账号未购买 Minecraft）");
-        var uhs = root.GetProperty("Xui")[0].GetProperty("uhs").GetString()
-            ?? throw new InvalidOperationException("XSTS 响应缺少 UserHash");
-        return (t.GetString()!, uhs);
+        // 8-13 修复：uhs 在 DisplayClaims.xui[0].uhs（顶层没有 Xui 键——真机 KeyNotFound 真凶；
+        // user.auth/XSTS 的 XBL 响应都是这个结构）
+        if (root.TryGetProperty("DisplayClaims", out var dc)
+            && (dc.TryGetProperty("xui", out var xui) || dc.TryGetProperty("Xui", out xui))
+            && xui.GetArrayLength() > 0
+            && xui[0].TryGetProperty("uhs", out var uhsEl))
+        {
+            return (t.GetString()!, uhsEl.GetString() ?? "");
+        }
+        throw new InvalidOperationException("XSTS 响应缺少 UserHash");
     }
 
     // ---------- 工具 ----------

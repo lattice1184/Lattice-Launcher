@@ -28,11 +28,8 @@ public partial class App : Application
             // 主窗口关闭前不退出
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
-            // 8-13 批次 34：原生 splash 先亮（Win32 分层窗独立线程——动画与主窗口构造重活完全并行，
-            // 构造期间照常流畅，不卡；体积零新增，失败静默退化）
-            NativeSplash.Show();
-
-            // 主窗口（启动浮层由独立 splash 承担——AL16 强切顾虑用交叉淡化解决）
+            // 8-13 批次 34 终局：无启动动画（各版动画在真机上帧驱动跳变/抢 CPU——用户拍板全删），
+            // 窗口构造完直接全量显示，启动最短路径
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainViewModel(),
@@ -95,25 +92,12 @@ public partial class App : Application
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
             Guard("Lifecycle.OnInitialize", () => Lifecycle.OnInitialize());
 
-            // Show → 首帧就绪 → splash 淡出关闭（批次 34：主窗口不抢焦点，splash 关后激活）
-            var mainWindow = (MainWindow)desktop.MainWindow;
-            mainWindow.ShowActivated = false;
-            mainWindow.Show();
-            // 首帧检测：Opened + 双重低优先级 Post（首个 Background 回调必然在首帧渲染提交之后）
-            mainWindow.Opened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    NativeSplash.Dismiss();
-                    try { mainWindow.Activate(); } catch { }
-                }, Avalonia.Threading.DispatcherPriority.Background),
-                Avalonia.Threading.DispatcherPriority.Background);
-            // 兜底：主窗口异常导致 Opened 永不触发时，15s 强制关 splash（Dismiss 幂等）
-            _ = Task.Run(async () => { await Task.Delay(15000); NativeSplash.Dismiss(); });
+            // Show（8-13 批次 34 终局：直接激活显示，无 splash 无等待）
+            desktop.MainWindow.Show();
 
             // 首次启动询问游戏目录（settings.json 未指定时），确认后写入，之后不再询问
             if (LauncherSettings.Current.GameDirectory is null)
             {
-                await Task.Delay(250); // splash 淡出（150ms）完成后再弹问询，防 Topmost 遮挡
                 try { await new GameDirSetupWindow().ShowDialog(desktop.MainWindow); }
                 catch (Exception ex) { System.Console.Error.WriteLine($"[FATAL] GameDirSetupWindow: {ex}"); }
             }

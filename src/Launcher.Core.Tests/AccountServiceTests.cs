@@ -272,7 +272,7 @@ public class AccountServiceTests
         // 完整认证链：user.auth（RPS 交换）→ xsts → login_with_xbox → profile
         var handler = new SequenceHandler()
             .WithJson("""{"Token":"xbl-token"}""")
-            .WithJson("""{"Token":"xsts-token","Xui":[{"uhs":"uhs-1"}]}""")
+            .WithJson("""{"Token":"xsts-token","DisplayClaims":{"xui":[{"uhs":"uhs-1"}]}}""")
             .WithJson("""{"access_token":"mc-token","expires_in":7200}""")
             .WithJson("""{"id":"uuid-1","name":"Steve"}""");
         var http = new HttpClient(handler);

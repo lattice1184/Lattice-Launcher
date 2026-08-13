@@ -27,17 +27,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // splash 阶段窗口完全透明（logo 悬浮桌面）：隐藏亚克力层与描边，hint 先行切 Transparent
-        // （Win11 WinUIComposition 支持；不支持则降级 AcrylicBlur/None，不算 bug）
-        TransparencyLevelHint = new[]
-        {
-            WindowTransparencyLevel.Transparent,
-            WindowTransparencyLevel.AcrylicBlur,
-            WindowTransparencyLevel.Blur,
-            WindowTransparencyLevel.None,
-        };
-        RootSurface.IsVisible = false;
-        WindowRoot.BorderBrush = Brushes.Transparent;
+        // 8-13 批次 34 终局：无启动动画——亚克力层/描边默认即显示（axaml 默认 AcrylicBlur hint）
         _navButtons["home"] = NavHome;
         _navButtons["version"] = NavVersions;
         _navButtons["download"] = NavDownloads;
@@ -78,10 +68,8 @@ public partial class MainWindow : Window
                 main.Settings.AppearanceChanged += () => ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
                 main.Settings.PreviewChanged += () => ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
             }
-            // 8-13 批次 33：窗口以目标尺寸铺开（透明，内容由独立 SplashWindow 罩着）→ 首帧后 150ms 淡入
-            // （与 splash 淡出交叉——AL16 强切顾虑的解法）。不做窗口 resize 动画：
-            // 透明窗口逐帧 SetWindowPos 走软件合成路径（实测只有几帧），窗口不动的纯内部动画
-            // （ScaleTransform/Opacity）走 GPU 合成，帧率满。
+            // 8-13 批次 34 终局：窗口以目标尺寸铺开直接全量显示（无启动动画——各版动画真机均不被接受）。
+            // 不做窗口 resize 动画：透明窗口逐帧 SetWindowPos 走软件合成路径（实测只有几帧）。
             var (tw, th) = ResolveTargetSize();
             MinWidth = NormalMinWidth;
             MinHeight = NormalMinHeight;
@@ -92,7 +80,10 @@ public partial class MainWindow : Window
                 var scale = RenderScaling > 0 ? RenderScaling : 1.0;
                 Position = new PixelPoint(a.X + (int)((a.Width - tw * scale) / 2), a.Y + (int)((a.Height - th * scale) / 2));
             }
-            FadeInContent();
+            // 兜底：启动期间导航未布局被跳过，可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
+            var indicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            indicatorTimer.Tick += (_, _) => { indicatorTimer.Stop(); ApplyNavVisuals(); };
+            indicatorTimer.Start();
             // 彩蛋：启动完成后随机一条小提示（可关）
             if (LauncherSettings.Current.StartupTipEnabled)
             {
@@ -112,33 +103,7 @@ public partial class MainWindow : Window
         Closing += (_, _) => SaveWindowSize();
     }
 
-    /// <summary>8-13 批次 33 内容淡入：背景与内容同步 150ms 淡入（与独立 splash 的 150ms 淡出交叉——无强切）。
-    /// 全程只写 Opacity/画刷，纯 GPU 合成。完成后切回液态玻璃合成级别 + 补一次导航指示条定位。</summary>
-    private void FadeInContent()
-    {
-        RootSurface.IsVisible = true;
-        UiAnim.Animate(UiAnim.Durations.Fast, UiAnim.Curves.Decelerate, e =>
-        {
-            AppContent.Opacity = e;
-            RootSurface.Opacity = e;
-            WindowRoot.BorderBrush = LerpBrush(Colors.Transparent, Color.Parse("#4D2F3745"), e);
-        }, () =>
-        {
-            AppContent.Opacity = 1;
-            // 切回液态玻璃：背景与描边已铺满（Opacity=1），这里只切合成级别
-            WindowRoot.BorderBrush = LerpBrush(Colors.Transparent, Color.Parse("#4D2F3745"), 1);
-            TransparencyLevelHint = new[]
-            {
-                WindowTransparencyLevel.AcrylicBlur,
-                WindowTransparencyLevel.Blur,
-                WindowTransparencyLevel.None,
-            };
-            // 兜底：启动期间导航未布局被跳过，RootSurface 可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
-            var indicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-            indicatorTimer.Tick += (_, _) => { indicatorTimer.Stop(); ApplyNavVisuals(); };
-            indicatorTimer.Start();
-        }, UiAnim.Host);
-    }
+    /// <summary>8-13 批次 34 终局：无启动动画——RootSurface 默认可见（axaml 默认状态），描边终值即 axaml 的 #4D2F3745。</summary>
 
     /// <summary>颜色线性插值（亚克力层淡入时描边同步渐显；不依赖 Color.Lerp 的版本差异）</summary>
     private static IBrush LerpBrush(Color from, Color to, double e)
