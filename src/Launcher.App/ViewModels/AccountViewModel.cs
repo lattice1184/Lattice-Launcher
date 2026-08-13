@@ -74,7 +74,7 @@ public partial class AccountViewModel : ViewModelBase
     private void LoginOffline()
     {
         var name = NameInput.Trim();
-        if (string.IsNullOrEmpty(name)) { Status = "请输入用户名"; return; }
+        if (string.IsNullOrEmpty(name)) { Status = "你还没填用户名"; return; }
         _accounts.LoginOffline(name);
         Status = $"已登录 {name}";
         Refresh();
@@ -97,7 +97,7 @@ public partial class AccountViewModel : ViewModelBase
     {
         var owner = DialogService.MainWindow();
         if (owner is null || !await DialogService.Confirm(owner,
-                $"删除账号「{row.Name}」？此操作不可恢复。", "删除账号", "删除", "取消"))
+                $"删除账号「{row.Name}」？删了就找不回来了。", "删除账号", "删除", "取消"))
         {
             return;
         }
@@ -127,11 +127,26 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsMsAuthBusy { get; set; }
 
-    /// <summary>设备码登录进度（user_code / 等待授权 / 认证中）</summary>
+    /// <summary>微软登录进度（等待浏览器授权 / 认证中）</summary>
     [ObservableProperty]
     public partial string MsAuthStatus { get; set; } = "";
 
-    /// <summary>微软正版登录：设备码流程（PCL 同款，Mojang 公开 client_id）</summary>
+    /// <summary>8-13 设备码登录：配对码（微软服务器生成，8 位）大字显示，用户在浏览器里输入</summary>
+    [ObservableProperty]
+    public partial string DeviceCodeText { get; set; } = "";
+
+    /// <summary>浏览器输码页地址（重新打开网页按钮用；默认 microsoft.com/link）</summary>
+    [ObservableProperty]
+    public partial string DeviceCodeVerifyUri { get; set; } = "";
+
+    /// <summary>是否处于设备码等待状态（显示配对码 + 重开网页/取消按钮）</summary>
+    [ObservableProperty]
+    public partial bool IsDeviceCodeMode { get; set; }
+
+    /// <summary>取消设备码登录（用户在浏览器里输码期间可随时取消）</summary>
+    private CancellationTokenSource? _msCts;
+
+    /// <summary>微软正版登录（8-13 Live 设备码流）：配对码 → 浏览器输码登录 → 轮询拿 token → 认证链</summary>
     [RelayCommand]
     private async Task LoginMicrosoft()
     {
@@ -143,38 +158,70 @@ public partial class AccountViewModel : ViewModelBase
             using var http = new HttpClient();
             http.Timeout = TimeSpan.FromSeconds(30);
 
-            // 1. 设备码
-            var device = await MicrosoftAuth.RequestDeviceCodeAsync(http, CancellationToken.None);
-            MsAuthStatus = $"浏览器打开 {device.VerificationUri}，输入代码：{device.UserCode}";
-            try { Process.Start(new ProcessStartInfo(device.VerificationUri) { UseShellExecute = true }); }
-            catch { /* 无法自动打开则手动 */ }
+            // 0. 解析 clientId（远程下发/缓存/兜底三层）——登录前保证生效值就绪
+            await ClientIdRemote.ResolveAsync(http, CancellationToken.None);
 
-            // 2. 轮询授权（用户输码后自动继续；15 分钟超时）
-            var oauthToken = await MicrosoftAuth.PollOAuthTokenAsync(http, device, CancellationToken.None);
-            MsAuthStatus = "授权成功，正在认证 Minecraft…";
+            // 1. 发起设备码会话 → 显示配对码 + 打开浏览器输码页
+            var session = await MicrosoftAuth.StartDeviceCodeAsync(http, CancellationToken.None);
+            DeviceCodeText = session.UserCode;
+            DeviceCodeVerifyUri = session.VerificationUri.Length > 0 ? session.VerificationUri : "https://www.microsoft.com/link";
+            IsDeviceCodeMode = true;
+            MsAuthStatus = "在打开的网页里输入配对码并登录";
+            try { Process.Start(new ProcessStartInfo(DeviceCodeVerifyUri) { UseShellExecute = true }); }
+            catch { /* 无法自动打开则手动访问 microsoft.com/link */ }
 
-            // 3. Xbox/XSTS/Minecraft 认证链 → 正版账号
-            var session = await MicrosoftAuth.AuthenticateMinecraftAsync(http, oauthToken, "", CancellationToken.None);
-            _accounts.LoginMicrosoft(session);
+            // 2. 轮询等授权（可取消）→ 认证链
+            _msCts = new CancellationTokenSource();
+            var (oauthToken, refreshToken) = await MicrosoftAuth.PollDeviceCodeAsync(
+                http, session, status => MsAuthStatus = status, _msCts.Token);
+            MsAuthStatus = "正在认证 Minecraft…";
+            var msSession = await MicrosoftAuth.AuthenticateMinecraftAsync(http, oauthToken, refreshToken, _msCts.Token);
+            _accounts.LoginMicrosoft(msSession);
             MsAuthStatus = "";
-            Status = $"已以正版账号 {session.MinecraftName} 登录";
-            NotificationService.Success($"正版账号 {session.MinecraftName} 登录成功");
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
+            Status = $"已以正版账号 {msSession.MinecraftName} 登录";
+            NotificationService.Success($"正版账号 {msSession.MinecraftName} 登录成功");
             Refresh();
         }
-        catch (OperationCanceledException) { MsAuthStatus = "已取消授权"; }
-        catch (TimeoutException ex) { MsAuthStatus = ex.Message; LogMsError(ex.Message); }
+        catch (OperationCanceledException)
+        {
+            MsAuthStatus = "";
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
+            Status = _msCts?.IsCancellationRequested == true
+                ? "已取消登录"
+                : "登录超时，请重新发起";
+        }
         catch (Exception ex)
         {
             MsAuthStatus = "";
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
             Status = $"登录失败: {ex.Message}";
             NotificationService.Error($"微软登录失败: {ex.Message}");
             LogMsError(ex.ToString());
         }
         finally
         {
+            _msCts?.Dispose();
+            _msCts = null;
             IsMsAuthBusy = false;
         }
     }
+
+    /// <summary>8-13 重新打开输码网页（浏览器被关掉后不用重新发起登录）</summary>
+    [RelayCommand]
+    private void ReopenLoginPage()
+    {
+        if (DeviceCodeVerifyUri.Length == 0) return;
+        try { Process.Start(new ProcessStartInfo(DeviceCodeVerifyUri) { UseShellExecute = true }); }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问 microsoft.com/link"); }
+    }
+
+    /// <summary>8-13 取消设备码登录（停止轮询，收起等待区）</summary>
+    [RelayCommand]
+    private void CancelMsLogin() => _msCts?.Cancel();
 
     /// <summary>微软登录错误落盘（AppData\Launcher\logs\microsoft-auth.log）——下次失败可回看原因</summary>
     private static void LogMsError(string detail)

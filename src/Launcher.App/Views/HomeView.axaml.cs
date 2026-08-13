@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class HomeView : UserControl
@@ -24,6 +25,16 @@ public partial class HomeView : UserControl
     {
         if (e.Action == NotifyCollectionChangedAction.Add)
             Avalonia.Threading.Dispatcher.UIThread.Post(() => LogScroll?.ScrollToEnd());
+    }
+
+    /// <summary>8-13 复制设备码配对码（正版登录：浏览器输码页粘贴用）</summary>
+    private async void OnCopyDeviceCode(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not HomeViewModel vm || vm.Account.DeviceCodeText.Length == 0) return;
+        var top = TopLevel.GetTopLevel(this);
+        if (top?.Clipboard is not { } cb) return;
+        await cb.SetTextAsync(vm.Account.DeviceCodeText);
+        Launcher.App.Services.NotificationService.Success("配对码已复制");
     }
 
     /// <summary>复制控制台全部日志到剪贴板（错误信息可直接粘贴给他人）</summary>
@@ -105,5 +116,7 @@ public partial class HomeView : UserControl
         });
         if (files.Count > 0 && files[0].Path.IsAbsoluteUri)
             vm.ApplyLocalSkin(files[0].Path.LocalPath);
-    }
+    
+}
+
 }

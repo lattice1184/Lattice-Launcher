@@ -49,10 +49,11 @@ public class VersionInstallerTests
 
         await installer.InstallAsync(version, (DownloadProgressHandler?)null, CancellationToken.None);
 
-        // client jar + 库都落地，标记写入，不抛
+        // client jar + 库都落地，不抛（8-14 守卫：临时目录非自建 → 不打标记——自建目录打标记由真机验证）
         Assert.True(File.Exists(Path.Combine(gameDir, "versions", "1.21.11", "1.21.11.jar")));
         Assert.True(File.Exists(Path.Combine(gameDir, "libraries", "net", "x", "ok", "1.0", "ok-1.0.jar")));
-        Assert.True(File.Exists(Path.Combine(gameDir, "versions", "1.21.11", ".yanla-installed")));
+        Assert.False(File.Exists(Path.Combine(gameDir, "versions", "1.21.11", ".yanla-installed")),
+            "非自建目录（PCL/官方扫描源同语义）不得写安装标记");
     }
 
     [Fact]
@@ -188,8 +189,10 @@ public class VersionInstallerTests
     }
 
     [Fact]
-    public async Task GetOrFetchVersionJson_MarksPrefetched()
+    public async Task GetOrFetchVersionJson_NonOwnDir_NoMarker()
     {
+        // 8-14 误标根因守卫：临时目录不是自建目录（PCL/官方等扫描源同语义）——任何标记都不写
+        // （旧行为对任意目录打 .prefetched → 修复路径把标记写进 PCL 目录 → 版本页误标「本启动器」）
         var gameDir = Path.Combine(Path.GetTempPath(), $"vinst-{Guid.NewGuid():N}");
         try
         {
@@ -198,7 +201,8 @@ public class VersionInstallerTests
 
             _ = await installer.GetOrFetchVersionJsonAsync("1.21.10", "http://test/mc.json", CancellationToken.None);
 
-            Assert.True(InstallMarker.IsPrefetched(gameDir, "1.21.10"), "预取 json 必须带 .prefetched 标记");
+            Assert.False(InstallMarker.IsPrefetched(gameDir, "1.21.10"), "非自建目录不得写 .prefetched");
+            Assert.False(InstallMarker.IsMarked(gameDir, "1.21.10"), "非自建目录不得写 .yanla-installed");
         }
         finally { if (Directory.Exists(gameDir)) Directory.Delete(gameDir, true); }
     }

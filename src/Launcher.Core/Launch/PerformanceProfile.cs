@@ -1,7 +1,7 @@
 namespace Launcher.Core.Launch;
 
 /// <summary>
-/// 性能管线预设：仅控制 JVM 参数（内存/GC/线程），不动游戏内设置。
+/// 性能管线预设：控制 JVM 参数（内存/GC/线程）+ 进程优先级（联动，不分开设置），不动游戏内设置。
 /// </summary>
 public enum PerformanceProfile
 {
@@ -26,4 +26,5 @@ public static class PerformanceProfiles
             _ => (4096, 2048, ["-XX:+UseG1GC"]),
         };
     }
+
 }

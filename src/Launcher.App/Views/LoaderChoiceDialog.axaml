@@ -3,7 +3,7 @@
         x:Class="Launcher.App.Views.LoaderChoiceDialog"
         Title="选择加载器" Width="440" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgSurface}">
+        Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock x:Name="VersionTitle" FontSize="17" FontWeight="Bold"/>
@@ -26,7 +26,13 @@
             <TextBlock Text="加载器版本" Classes="sub" FontSize="12"/>
             <ComboBox x:Name="VersionBox" Width="260" HorizontalAlignment="Left" PlaceholderText="加载版本…"/>
             <TextBlock x:Name="VersionStatus" Classes="dim" FontSize="11"/>
-            <CheckBox x:Name="FabricApiCheck" Content="同时安装 Fabric API（多数 Fabric 模组的前置依赖）" FontSize="11"/>
+            <CheckBox x:Name="FabricApiCheck" FontSize="11">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="同时安装 Fabric API"/>
+                    <Border Classes="help-hint"
+                               ToolTip.Tip="多数 Fabric 模组都靠它，勾上省得你以后再补"><Path/></Border>
+                </StackPanel>
+            </CheckBox>
         </StackPanel>
 
         <TextBlock Text="下载原版 + 所选加载器" Classes="dim" FontSize="11"/>

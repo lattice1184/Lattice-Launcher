@@ -3,8 +3,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Launcher.Animation;
+using Launcher.App.Services;
 using Launcher.App.ViewModels;
 using Launcher.App.Views;
+using Launcher.Core.Services;
 using Launcher.Core.Utils;
 using PCL.Core.App.IoC;
 using PCL.Core.Logging;
@@ -26,11 +28,17 @@ public partial class App : Application
             // 主窗口关闭前不退出
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
 
-            // 启动浮层在主窗口内部（AL16：避免独立 splash 窗口关窗/开窗的强切，过渡连续可见）
+            // 8-13 批次 34：原生 splash 先亮（Win32 分层窗独立线程——动画与主窗口构造重活完全并行，
+            // 构造期间照常流畅，不卡；体积零新增，失败静默退化）
+            NativeSplash.Show();
+
+            // 主窗口（启动浮层由独立 splash 承担——AL16 强切顾虑用交叉淡化解决）
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainViewModel(),
             };
+            // 问号 ToolTip 屏幕边缘翻转（8-13）：全局挂主窗口，窗口右/下边缘的提示自动翻向可视区域
+            ToolTipEdgeFlip.Attach(desktop.MainWindow);
             // 外观实时应用：保存（AppearanceChanged）与预览（PreviewChanged）都刷新强调色 + 自定义背景。
             // AL7：预览必须传 VM 值（Settings 未写盘时读不到新值——旧版预览永远不生效）
             if (desktop.MainWindow.DataContext is MainViewModel mainVm)
@@ -39,11 +47,13 @@ public partial class App : Application
                 mainVm.Settings.AppearanceChanged += () =>
                 {
                     ApplyAccentColor(LauncherSettings.Current.AccentColor);
+                    ApplyBackgroundColor(LauncherSettings.Current.BackgroundColor);
                     window?.ApplyBackgroundImage(LauncherSettings.Current.BackgroundImagePath);
                 };
                 mainVm.Settings.PreviewChanged += () =>
                 {
                     ApplyAccentColor(mainVm.Settings.AccentColor);
+                    ApplyBackgroundColor(mainVm.Settings.BackgroundColor);
                     window?.ApplyBackgroundImage(mainVm.Settings.BackgroundImagePathText);
                 };
             }
@@ -51,8 +61,30 @@ public partial class App : Application
             // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);
 
-            // 应用个性化强调色与自定义背景（设置页可改，运行时可换）
+            // CF Key 一次性迁移（AL50）：旧版 KeyProxy 密文 key.bin → 设置（DPAPI 加密落盘），
+            // 迁移成功即删密文文件与空目录（key 不再经代理，直接在主进程使用）。
+            // 后台执行不阻塞窗口；迁移失败（文件缺失/损坏）静默，用户在设置页重新填写。
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var s = LauncherSettings.Current;
+                    if (!string.IsNullOrWhiteSpace(s.CurseForgeApiKey)) return; // 已配置，无需迁移
+                    var legacy = LegacyKeyStore.ReadLegacyKey();
+                    if (string.IsNullOrWhiteSpace(legacy)) return;
+                    s.CurseForgeApiKey = legacy;
+                    s.Save(); // Secrets.Protect 自动加密落盘
+                    if (File.Exists(LegacyKeyStore.DefaultFilePath)) File.Delete(LegacyKeyStore.DefaultFilePath);
+                    var dir = Path.GetDirectoryName(LegacyKeyStore.DefaultFilePath)!;
+                    if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                        Directory.Delete(dir);
+                }
+                catch { /* 迁移失败不阻塞启动 */ }
+            });
+
+            // 应用个性化强调色、背景色与自定义背景（设置页可改，运行时可换）
             ApplyAccentColor(LauncherSettings.Current.AccentColor);
+            ApplyBackgroundColor(LauncherSettings.Current.BackgroundColor);
             (desktop.MainWindow as MainWindow)?.ApplyBackgroundImage(LauncherSettings.Current.BackgroundImagePath);
 
             // [生命周期引导] 注入 Avalonia 适配层
@@ -63,12 +95,25 @@ public partial class App : Application
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
             Guard("Lifecycle.OnInitialize", () => Lifecycle.OnInitialize());
 
-            // Show → Opened → StartSplashSequence（小窗 logo 缩放出现 → 窗口放大到正式页面）
-            desktop.MainWindow.Show();
+            // Show → 首帧就绪 → splash 淡出关闭（批次 34：主窗口不抢焦点，splash 关后激活）
+            var mainWindow = (MainWindow)desktop.MainWindow;
+            mainWindow.ShowActivated = false;
+            mainWindow.Show();
+            // 首帧检测：Opened + 双重低优先级 Post（首个 Background 回调必然在首帧渲染提交之后）
+            mainWindow.Opened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    NativeSplash.Dismiss();
+                    try { mainWindow.Activate(); } catch { }
+                }, Avalonia.Threading.DispatcherPriority.Background),
+                Avalonia.Threading.DispatcherPriority.Background);
+            // 兜底：主窗口异常导致 Opened 永不触发时，15s 强制关 splash（Dismiss 幂等）
+            _ = Task.Run(async () => { await Task.Delay(15000); NativeSplash.Dismiss(); });
 
             // 首次启动询问游戏目录（settings.json 未指定时），确认后写入，之后不再询问
             if (LauncherSettings.Current.GameDirectory is null)
             {
+                await Task.Delay(250); // splash 淡出（150ms）完成后再弹问询，防 Topmost 遮挡
                 try { await new GameDirSetupWindow().ShowDialog(desktop.MainWindow); }
                 catch (Exception ex) { System.Console.Error.WriteLine($"[FATAL] GameDirSetupWindow: {ex}"); }
             }
@@ -157,6 +202,31 @@ public partial class App : Application
             Resources["OnAccent"] = Avalonia.Media.Color.FromRgb(on.R, on.G, on.B);
         }
         catch { /* 强调色非法则保持默认 */ }
+    }
+
+    /// <summary>
+    /// 应用背景色（亮暗二态翻转）：解析背景色（含 alpha）→ 派生整套表面色 → 写 BackgroundColor/文字色/卡片色
+    /// 资源键。浅色背景 → 深字白卡；暗色/低 alpha → 现状暗主题。非法值回退默认（不覆盖现有资源）。
+    /// </summary>
+    private void ApplyBackgroundColor(string? hex)
+    {
+        try
+        {
+            var bg = BackgroundPaletteMath.TryParse(hex) ?? BackgroundPaletteMath.TryParse(BackgroundPaletteMath.DefaultBackground);
+            if (bg is null) return;
+            var p = BackgroundPaletteMath.Derive(bg);
+            Resources["BackgroundColor"] = Avalonia.Media.Color.FromArgb(bg.A, bg.R, bg.G, bg.B);
+            Resources["TextPrimary"] = Avalonia.Media.Color.FromRgb(p.TextPrimary.R, p.TextPrimary.G, p.TextPrimary.B);
+            Resources["TextSecondary"] = Avalonia.Media.Color.FromRgb(p.TextSecondary.R, p.TextSecondary.G, p.TextSecondary.B);
+            Resources["TextDim"] = Avalonia.Media.Color.FromRgb(p.TextDim.R, p.TextDim.G, p.TextDim.B);
+            Resources["BgBase"] = Avalonia.Media.Color.FromRgb(p.BgBase.R, p.BgBase.G, p.BgBase.B);
+            Resources["BgSurface"] = Avalonia.Media.Color.FromRgb(p.BgSurface.R, p.BgSurface.G, p.BgSurface.B);
+            Resources["BgRaised"] = Avalonia.Media.Color.FromRgb(p.BgRaised.R, p.BgRaised.G, p.BgRaised.B);
+            Resources["BgHover"] = Avalonia.Media.Color.FromRgb(p.BgHover.R, p.BgHover.G, p.BgHover.B);
+            Resources["BgActive"] = Avalonia.Media.Color.FromRgb(p.BgActive.R, p.BgActive.G, p.BgActive.B);
+            Resources["BorderColor"] = Avalonia.Media.Color.FromRgb(p.BorderColor.R, p.BorderColor.G, p.BorderColor.B);
+        }
+        catch { /* 背景色非法则保持现有资源 */ }
     }
 
     /// <summary>生命周期调用兜底：异常只记录，不阻止窗口创建</summary>

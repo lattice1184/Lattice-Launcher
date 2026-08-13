@@ -24,4 +24,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- AL57：RaceProgress 等 internal 实现细节供测试项目直接验证 -->
+    <InternalsVisibleTo Include="Launcher.Core.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -5,6 +5,7 @@ using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 using Launcher.Core.Utils;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class SectionAppearanceView : UserControl
@@ -59,5 +60,7 @@ public partial class SectionAppearanceView : UserControl
         });
         if (files.Count > 0 && files[0].Path.IsAbsoluteUri)
             Vm.ApplyBackgroundImage(files[0].Path.LocalPath);
-    }
+    
+}
+
 }

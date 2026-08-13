@@ -48,7 +48,7 @@
 
             <!-- 筛选行 2：版本/分类/排序/来源 Grid 均分（宽窗口无右侧空白）+ 收藏右对齐 -->
             <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10">
-                <ComboBox Grid.Column="0" ItemsSource="{x:Static vm:EcosystemViewModel.GameVersionOptions}"
+                <ComboBox Grid.Column="0" ItemsSource="{Binding GameVersionOptions}"
                           SelectedItem="{Binding SelectedGameVersion}" MinWidth="110">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:EcosystemViewModel+GameVersionOption">
@@ -98,7 +98,7 @@
                     <Button Content="重试" Command="{Binding SearchCommand}"
                             HorizontalAlignment="Left"/>
                 </StackPanel>
-                <TextBlock DockPanel.Dock="Top" Text="没有找到相关内容" Foreground="#8A93A6" HorizontalAlignment="Center"
+                <TextBlock DockPanel.Dock="Top" Text="没找到你要的内容" Foreground="#8A93A6" HorizontalAlignment="Center"
                            Margin="0,40" IsVisible="{Binding IsEmpty}"/>
 
                 <!-- 分页栏（◀ 页码 ▶） -->
@@ -123,19 +123,19 @@
                                         CommandParameter="{Binding}">
                                     <Button.Styles>
                                         <Style Selector="Button:hover > Border.modcard">
-                                            <Setter Property="Background" Value="{StaticResource BgHover}"/>
+                                            <Setter Property="Background" Value="{DynamicResource BgHover}"/>
                                             <Setter Property="BorderBrush" Value="#3C4757"/>
                                         </Style>
                                         <Style Selector="Button:pressed > Border.modcard">
-                                            <Setter Property="Background" Value="{StaticResource BgActive}"/>
+                                            <Setter Property="Background" Value="{DynamicResource BgActive}"/>
                                         </Style>
                                     </Button.Styles>
                                     <Border Classes="modcard" Background="Transparent"
-                                            Padding="10,8" BorderBrush="{StaticResource BorderColor}"
+                                            Padding="10,8" BorderBrush="{DynamicResource BorderColor}"
                                             BorderThickness="0,0,0,1">
                                         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
                                             <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
-                                                    ClipToBounds="True" Background="{StaticResource BgActive}"
+                                                    ClipToBounds="True" Background="{DynamicResource BgActive}"
                                                     VerticalAlignment="Center">
                                                 <Image Source="{Binding Icon}" Width="40" Height="40" Stretch="Uniform"/>
                                             </Border>
@@ -147,24 +147,24 @@
                                                             VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding SourceText}" FontSize="10" Foreground="{DynamicResource AccentLight}"/>
                                                     </Border>
-                                                    <TextBlock Text="{Binding Author}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
+                                                    <TextBlock Text="{Binding Author}" Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
                                                 </StackPanel>
                                                 <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
                                                            MaxLines="2" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
-                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right">
+                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right">
                                                     <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
                                                 </TextBlock>
-                                                <TextBlock Foreground="{StaticResource TextDim}" FontSize="11" TextAlignment="Right"
+                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right"
                                                            IsVisible="{Binding ShowFollows}">
                                                     <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
                                                 </TextBlock>
-                                                <TextBlock Text="{Binding UpdatedText}" Foreground="{StaticResource TextDim}"
+                                                <TextBlock Text="{Binding UpdatedText}" Foreground="{DynamicResource TextDim}"
                                                            FontSize="10" TextAlignment="Right"/>
                                             </StackPanel>
                                             <StackPanel Grid.Column="3" Spacing="4" VerticalAlignment="Center">
-                                                <Button Content="安装" Classes="primary" FontSize="11" Padding="14,4"
+                                                <Button Content="安装" Classes="primary" FontSize="13" Padding="20,7"
                                                         Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).InstallCardCommand}"
                                                         CommandParameter="{Binding}"/>
                                                 <Button Classes="ghost" FontSize="14" Padding="4,0"

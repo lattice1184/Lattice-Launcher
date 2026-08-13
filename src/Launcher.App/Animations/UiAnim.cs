@@ -30,6 +30,8 @@ public static class UiAnim
         public static readonly IEasing Accelerate = new SplineEasing(0.4, 0, 1, 1);
         /// <summary>强调曲线（350ms 弹簧过冲，按钮释放回弹/logo 出现）</summary>
         public static readonly IEasing Overshoot = CreateSpring(0.6, 120, 1, 0);
+        /// <summary>线性进度：调用方自带缓动公式时用（BackOut/CubicEaseOut 已把 e 再做一层 Ease）</summary>
+        public static readonly IEasing Linear = new LinearEasing();
     }
 
     /// <summary>标准时长令牌（ms）</summary>
@@ -60,16 +62,19 @@ public static class UiAnim
         public Action? Done;
         public bool Canceled;
         public IDisposable? CancelReg;
+        public string? Slot;
     }
 
     private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     private static readonly List<ActiveAnim> Active = new();
     private static DispatcherTimer? _fallbackTimer;
 
-    /// <summary>统一动画内核：渲染帧驱动插值 0→1（曲线已缓动），同 visual 新动画打断旧动画（不写终值）；
-    /// onCancel 在 ct 取消时调用（不写终值）；onDone 在正常到 1.0 时调用。</summary>
+    /// <summary>统一动画内核：渲染帧驱动插值 0→1（曲线已缓动），同 visual+同槽位新动画打断旧动画（不写终值）；
+    /// onCancel 在 ct 取消时调用（不写终值）；onDone 在正常到 1.0 时调用。
+    /// slot：互斥粒度细分——同一 visual 上可并行多路动画（如 hover 颜色 "brush" 与缩放 "scale"），
+    /// 同槽位才互斥打断。旧调用不传 slot → 行为与原先完全一致（null 槽位）。</summary>
     public static void Animate(double ms, IEasing curve, Action<double> set, Action? onDone = null,
-        Visual? host = null, CancellationToken ct = default, Action? onCancel = null)
+        Visual? host = null, CancellationToken ct = default, Action? onCancel = null, string? slot = null)
     {
         var now = Clock.Elapsed.TotalMilliseconds;
         var anim = new ActiveAnim
@@ -80,15 +85,15 @@ public static class UiAnim
             Curve = curve,
             Set = set,
             Done = onDone,
+            Slot = slot,
         };
-        // 每 visual 互斥：同 visual 已有动画直接打断（不写终值，不触发 done）。host=null 不互斥
-        // （涟漪等独立动画可叠加，互不打断）
+        // 每 visual+槽位互斥：同 visual 同槽位已有动画直接打断（不写终值，不触发 done）。host=null 不互斥
         if (host is not null)
         {
             for (var i = Active.Count - 1; i >= 0; i--)
             {
                 var a = Active[i];
-                if (!a.Canceled && ReferenceEquals(a.Visual, host))
+                if (!a.Canceled && ReferenceEquals(a.Visual, host) && a.Slot == slot)
                 {
                     a.Canceled = true;
                     a.CancelReg?.Dispose();
@@ -134,6 +139,7 @@ public static class UiAnim
     private static void Step()
     {
         var now = Clock.Elapsed.TotalMilliseconds;
+        FrameStats.Tick(now);
         for (var i = Active.Count - 1; i >= 0; i--)
         {
             var a = Active[i];
@@ -319,5 +325,80 @@ public static class UiAnim
                 s.ScaleY = 1 - 0.03 * e;
             }
         }, done, root);
+    }
+
+    /// <summary>控件画刷属性颜色过渡（hover/按下平滑渐变）：非 SolidColorBrush 源/目标 → SetValue 瞬跳兜底；
+    /// 否则复用单个 SolidColorBrush 实例每帧只改 Color（零分配，渲染属性非布局），完成时写回目标 brush。
+    /// 同槽位互斥：快速进出自动打断旧动画、从当前中间色续接（无跳变、无闪烁）。</summary>
+    public static void TweenBrush(Control c, StyledProperty<IBrush?> prop, IBrush? to,
+        double ms = Durations.Fast, string? slot = "brush", Action? done = null)
+    {
+        var from = c.GetValue(prop);
+        if (from is not SolidColorBrush f || to is not SolidColorBrush t)
+        {
+            c.SetValue(prop, to);
+            done?.Invoke();
+            return;
+        }
+        var brush = new SolidColorBrush(f.Color); // 每个动画一次分配；帧内只改 Color
+        c.SetValue(prop, brush);
+        Animate(ms, Curves.Standard, e => { brush.Color = LerpColor(f.Color, t.Color, e); }, () =>
+        {
+            c.SetValue(prop, to); // 写回样式定义的 brush 实例（本地值不留匿名 brush）
+            done?.Invoke();
+        }, c, slot: slot);
+    }
+
+    /// <summary>逐通道颜色插值（不依赖 Color.Lerp 版本差异；与 MainWindow.LerpBrush 同算法）</summary>
+    private static Color LerpColor(Color from, Color to, double e) => Color.FromArgb(
+        (byte)(from.A + (to.A - from.A) * e),
+        (byte)(from.R + (to.R - from.R) * e),
+        (byte)(from.G + (to.G - from.G) * e),
+        (byte)(from.B + (to.B - from.B) * e));
+
+    /// <summary>帧率统计（环境变量 LATTICE_FRAMESTATS=1 开启，默认关——Enabled=false 时每帧仅一次 bool 判断）：
+    /// Step 内测相邻帧间隔，2s 滑动窗口输出 avg/max/p99 + GC0 + 分配量。
+    /// 全方案观测点——迁移后所有动画都汇入 UiAnim，这里直接反映动画期间 UI 线程帧健康度。</summary>
+    public static class FrameStats
+    {
+        /// <summary>环境变量 LATTICE_FRAMESTATS=1 自动开启（DEBUG 构建验收开关；正式版零开销）</summary>
+        public static readonly bool Enabled = Environment.GetEnvironmentVariable("LATTICE_FRAMESTATS") == "1";
+        private static double _lastMs = -1;
+        private static double _windowStart;
+        private static readonly List<double> Sizes = new();
+        private static long _allocBase;
+        private static int _gcBase;
+
+        public static void Tick(double nowMs)
+        {
+            if (!Enabled) return;
+            if (_lastMs < 0)
+            {
+                _lastMs = nowMs;
+                _windowStart = nowMs;
+                _allocBase = GC.GetTotalAllocatedBytes(true);
+                _gcBase = GC.CollectionCount(0);
+                return;
+            }
+            Sizes.Add(nowMs - _lastMs);
+            _lastMs = nowMs;
+            if (nowMs - _windowStart < 2000) return;
+            Sizes.Sort();
+            var avg = Sizes.Average();
+            var max = Sizes[^1];
+            var p99 = Sizes[(int)(Sizes.Count * 0.99) - 1];
+            System.Diagnostics.Debug.WriteLine(
+                $"[FrameStats] {Sizes.Count}帧 avg={avg:0.0}ms max={max:0.0}ms p99={p99:0.0}ms " +
+                $"| GC0 +{GC.CollectionCount(0) - _gcBase} | alloc +{(GC.GetTotalAllocatedBytes(true) - _allocBase) / 1024.0:0.0}KB");
+            var line = $"[FrameStats] {Sizes.Count}帧 avg={avg:0.0}ms max={max:0.0}ms p99={p99:0.0}ms " +
+                $"| GC0 +{GC.CollectionCount(0) - _gcBase} | alloc +{(GC.GetTotalAllocatedBytes(true) - _allocBase) / 1024.0:0.0}KB";
+            System.Diagnostics.Debug.WriteLine(line);
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "framestats.log"), line + Environment.NewLine); } catch { }
+            Sizes.Clear();
+            _windowStart = nowMs;
+            _lastMs = -1; // 窗口重开，重新校准
+            _allocBase = GC.GetTotalAllocatedBytes(true);
+            _gcBase = GC.CollectionCount(0);
+        }
     }
 }

@@ -57,7 +57,7 @@
                 </ListBox>
             </DockPanel>
 
-            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
+            <GridSplitter Grid.Column="1" Width="1" Background="{DynamicResource BorderColor}"/>
 
             <!-- 右：六分区详情 -->
             <Border Grid.Column="2" Padding="8,0,0,0">
@@ -68,7 +68,7 @@
                         <StackPanel Spacing="6" HorizontalAlignment="Center">
                             <TextBlock Text="版本管理" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center"/>
                             <TextBlock Text="{Binding StatsText}" Classes="sub" FontSize="13" HorizontalAlignment="Center"/>
-                            <TextBlock Text="选个版本看详情、改设置：启动配置 / 加载器 / 模组 / 存档 / 备份导出"
+                            <TextBlock Text="在此处管理你的版本：启动、配置、模组、存档、备份导出。"
                                        Classes="dim" FontSize="12" TextWrapping="Wrap" TextAlignment="Center"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
@@ -132,7 +132,7 @@
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <Button Content="补全下载" Classes="primary" FontSize="11" Padding="14,5"
                                                         Command="{Binding Detail.RepairCommand}"/>
-                                                <Button Content="打开官方下载页" Classes="ghost" FontSize="11" Padding="14,5"
+                                                <Button Content="打开官方下载页" Classes="link"
                                                         Command="{Binding Detail.OpenOfficialDownloadCommand}"/>
                                             </StackPanel>
                                         </StackPanel>
@@ -143,28 +143,30 @@
                             <!-- 2. 启动配置（版本级覆盖） -->
                             <Border Classes="card" Padding="12">
                                 <StackPanel Spacing="8">
-                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                                         <TextBlock Text="启动配置（版本级）" FontSize="13" FontWeight="SemiBold"
                                                    VerticalAlignment="Center"/>
                                         <Button Grid.Column="1" Content="跟随全局" Classes="ghost" FontSize="11" Padding="10,4"
                                                 Command="{Binding Detail.ResetConfigCommand}"
                                                 IsVisible="{Binding Detail.HasConfigOverrides}"/>
+                                        <Path Grid.Column="2" Classes="help-hint"
+                                                   ToolTip.Tip="留空则沿用全局设置。内存、Java、JVM 参数可单独设置"
+                                                   VerticalAlignment="Center"/>
                                     </Grid>
-                                    <TextBlock Text="留空 = 跟随全局设置" Classes="dim" FontSize="10"/>
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="内存 (MB)" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigMemoryText}"
-                                                 Watermark="跟随全局（如 4096）"/>
+                                                 Watermark="跟随全局"/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigJavaText}"
-                                                 Watermark="跟随全局（自动选配）"/>
+                                                 Watermark="跟随全局"/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                                         <TextBox Grid.Column="1" Text="{Binding Detail.ConfigArgsText}"
-                                                 Watermark="跟随全局（如 -Dxxx=1）"/>
+                                                 Watermark="跟随全局"/>
                                     </Grid>
                                     <Button Content="保存本版本配置" Classes="ghost" FontSize="12" Padding="12,5"
                                             HorizontalAlignment="Left" Command="{Binding Detail.SaveConfigCommand}"/>
@@ -181,7 +183,7 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModItemVM">
                                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
-                                                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
                                                                VerticalAlignment="Center"/>
@@ -213,7 +215,7 @@
                                             <DataTemplate x:DataType="vm:SaveItemVM">
                                                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
                                                     <StackPanel Spacing="1">
-                                                        <TextBlock Text="{Binding LevelName}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                                        <TextBlock Text="{Binding LevelName}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                                                                    TextTrimming="CharacterEllipsis"/>
                                                         <TextBlock Text="{Binding LastPlayedText}" Classes="dim" FontSize="10"/>
                                                     </StackPanel>
@@ -236,10 +238,10 @@
                                         <Button Content="备份" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.BackupCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="导出整合包 (mrpack)" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
+                                        <Button Content="导出整合包（.mrpack 格式）" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.ExportMrpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="导出整合包 (ZIP)" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
+                                        <Button Content="导出整合包（.zip 格式）" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.ExportModpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
                                         <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"

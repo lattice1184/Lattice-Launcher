@@ -60,7 +60,11 @@ public static class GameDirectory
         void Add(string dir, GameDirectorySource source)
         {
             if (string.IsNullOrEmpty(dir)) return;
-            if (list.Any(x => string.Equals(x.Dir, dir, StringComparison.OrdinalIgnoreCase))) return;
+            // AL57 双版本根治：按物理路径去重（junction/符号链接解析到真实目录）——
+            // 快照版 PCL 的 .minecraft junction 指向正式版时，两路径字符串不同但物理相同，
+            // 字符串比较会放行 → 同一份版本被扫两次（每版本 ×2 的根因）
+            var phys = ResolvePhysical(dir);
+            if (list.Any(x => string.Equals(ResolvePhysical(x.Dir), phys, StringComparison.OrdinalIgnoreCase))) return;
             if (Directory.Exists(Path.Combine(dir, "versions"))) list.Add((dir, source));
         }
 
@@ -86,6 +90,30 @@ public static class GameDirectory
     /// <summary>由目录反查来源（标签用）</summary>
     public static GameDirectorySource SourceOf(string dir)
         => ScanSourceDirs().FirstOrDefault(x => string.Equals(x.Dir, dir, StringComparison.OrdinalIgnoreCase)).Source;
+
+    /// <summary>
+    /// 目录是否归本启动器管（自建/自配来源 OwnDefault/Custom；PCL/官方扫描源不算）——
+    /// 8-14 误标根因：修复/自动修复以版本实际目录打安装标记，把 .yanla-installed 写进 PCL 目录。
+    /// 找不到的目录按「不归本启动器」处理（防未知路径误判放行）。
+    /// </summary>
+    public static bool IsOwnInstallDir(string dir)
+    {
+        var phys = ResolvePhysical(dir);
+        return ScanSourceDirs().Any(x => string.Equals(ResolvePhysical(x.Dir), phys, StringComparison.OrdinalIgnoreCase)
+            && x.Source is GameDirectorySource.OwnDefault or GameDirectorySource.Custom);
+    }
+
+    /// <summary>解析 junction/符号链接到最终物理路径（尾部斜杠归一化；解析失败回退原路径）</summary>
+    private static string ResolvePhysical(string dir)
+    {
+        try
+        {
+            var fi = new DirectoryInfo(dir);
+            var target = fi.ResolveLinkTarget(returnFinalTarget: true);
+            return (target?.FullName ?? fi.FullName).TrimEnd('\\', '/');
+        }
+        catch { return Path.GetFullPath(dir).TrimEnd('\\', '/'); }
+    }
 
     /// <summary>确保自建目录结构存在（启动时调用一次；空目录也算已创建）</summary>
     public static void EnsureDefault()

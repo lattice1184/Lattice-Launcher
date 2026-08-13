@@ -35,8 +35,51 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>记录任务完成后的跳回目标（null = 不跳回）</summary>
     public void SetReturnNavigation(string? returnTo) => _returnTo = returnTo;
 
+    /// <summary>网络诊断源条目（显示名 + 状态文字）</summary>
+    public sealed record NetworkSourceVM(string Name, string Status)
+    {
+        public string Display => $"{Name}: {Status}";
+    }
+
     [ObservableProperty]
     public partial string Status { get; set; } = "暂无下载任务";
+
+    /// <summary>网络诊断（AL65）：各源连通性 + 响应耗时——卡住时一眼看到哪个源有问题</summary>
+    public ObservableCollection<NetworkSourceVM> NetworkStatus { get; } = [];
+
+    /// <summary>网络诊断进行中标记（B4 修复：并发点击防止新旧结果交错——旧请求用新 token 取消）</summary>
+    private CancellationTokenSource? _networkCheckCts;
+
+    [RelayCommand]
+    private async Task CheckNetworkAsync()
+    {
+        // B4：先取消旧一轮再清列表——连点两下时旧请求不再把过期结果 Add 进新列表
+        _networkCheckCts?.Cancel();
+        _networkCheckCts?.Dispose();
+        var cts = _networkCheckCts = new CancellationTokenSource();
+        NetworkStatus.Clear();
+        var sources = new (string Name, string Url)[]
+        {
+            ("Mojang 官方", "https://piston-meta.mojang.com"),
+            ("BMCLAPI", "https://bmclapi2.bangbang93.com"),
+            ("Fabric", "https://maven.fabricmc.net"),
+            ("Modrinth", "https://api.modrinth.com"),
+            ("GitHub 镜像", "https://gh-proxy.com"),
+            ("GitHub 直连", "https://github.com"),
+        };
+        try
+        {
+            foreach (var (name, url) in sources)
+            {
+                var ms = await NetworkChecker.ProbeHttpAsync(url, TimeSpan.FromSeconds(5), cts.Token);
+                NetworkStatus.Add(new NetworkSourceVM(name, ms >= 0 ? $"通 · {ms}ms" : "断"));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 旧一轮被新点击取消——静默（新轮已清列表重测）
+        }
+    }
 
     /// <summary>导航角标文字（" 2"），ActiveCount > 0 时显示</summary>
     [ObservableProperty]
@@ -93,8 +136,18 @@ public partial class DownloadViewModel : ViewModelBase
         {
             if (e.NewItems is null) return;
             foreach (DownloadTask t in e.NewItems)
+            {
                 t.PropertyChanged += OnTaskPropertyChanged;
+                t.AutoRetryScheduled += OnAutoRetryScheduled;
+            }
         };
+    }
+
+    /// <summary>8-18 自动重试提示：首败转第二轮弹红 Toast（8s，非交互但显眼）——「正在自动重试」而非静默</summary>
+    private void OnAutoRetryScheduled(object? sender, DownloadTask.AutoRetryArgs e)
+    {
+        if (sender is not DownloadTask t) return;
+        NotificationService.Error($"下载失败，正在自动重试第 {e.Attempt}/{e.Total} 次：{t.Name}", durationMs: 8000);
     }
 
     private void OnTaskPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -104,10 +157,11 @@ public partial class DownloadViewModel : ViewModelBase
         if (t.State is not (DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)) return;
         if (!_recorded.Add(t)) return; // 终态只记一次（暂停 Paused 不是终态）
         DownloadHistoryService.Record(t);
-        // 完成/失败弹 Toast（滑入动画由 ToastHost 处理）
+        // 完成/失败弹 Toast（滑入动画由 ToastHost 处理）；8-18 首败将自动重试时抑制「失败」Toast——
+        // 重试提示由 OnAutoRetryScheduled 弹（一条红 Toast，防双弹）；重试耗尽终败照常
         if (t.State == DownloadTaskState.Completed)
             NotificationService.Success($"已完成：{t.Name}");
-        else if (t.State == DownloadTaskState.Failed)
+        else if (t.State == DownloadTaskState.Failed && !t.IsAutoRetryPending)
             NotificationService.Error($"失败：{t.Name}");
 
         // 跳转②：任务完成/失败 → 跳回来源页（只一次；取消不跳——用户主动取消留在记录）
@@ -170,7 +224,11 @@ public partial class DownloadViewModel : ViewModelBase
         IsResourcepackTabSelected = tab == "resourcepack";
         IsShaderTabSelected = tab == "shader";
         IsThirdPartyTabSelected = tab == "thirdparty";
-        if (tab != "queue") ActiveTab = GetOrCreateTab(tab);
+        if (tab != "queue")
+        {
+            ActiveTab = GetOrCreateTab(tab);
+            if (ActiveTab is EcosystemViewModel eco) eco.Activate(); // 首次激活才搜——预加载风暴修复
+        }
     }
 
     /// <summary>懒创建 tab VM：首次激活才 new 并触发加载（异步，列表区转圈）</summary>

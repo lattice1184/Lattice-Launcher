@@ -89,7 +89,7 @@ public partial class VersionManageViewModel : ViewModelBase
         try
         {
             // 后台只收集 List；ObservableCollection 的写入统一在 UI 线程（避免跨线程集合异常）
-            var (mods, saves) = await Task.Run(() => (CollectMods(), CollectSaves()));
+            var (mods, saves) = await Task.Run(async () => (CollectMods(), await CollectSavesAsync()));
             OnPropertyChanged(nameof(ModsCountText));
             OnPropertyChanged(nameof(SavesCountText));
             Mods.Clear();
@@ -178,18 +178,18 @@ public partial class VersionManageViewModel : ViewModelBase
         }
     }
 
-    private List<SaveItemVM> CollectSaves()
+    private async Task<List<SaveItemVM>> CollectSavesAsync()
     {
         var list = new List<SaveItemVM>();
         var savesDir = SavesDir;
         if (!Directory.Exists(savesDir)) return list;
         try
         {
-            foreach (var info in new SaveManager().ScanSaveFoldersAsync(savesDir, CancellationToken.None)
-                         .GetAwaiter().GetResult())
-            {
+            // AL51：存档扫描移出 UI 线程（原来 UI 线程同步 .GetResult() 会卡界面）
+            var infos = await Task.Run(() =>
+                new SaveManager().ScanSaveFoldersAsync(savesDir, CancellationToken.None).GetAwaiter().GetResult());
+            foreach (var info in infos)
                 list.Add(new SaveItemVM(info.LevelName, info.LastPlayedUtc, info.FolderPath));
-            }
         }
         catch { /* level.dat 解析失败不阻塞（有文件夹就显示） */ }
         if (list.Count == 0)
@@ -234,7 +234,7 @@ public partial class VersionManageViewModel : ViewModelBase
                     }
                     catch (Exception mvEx)
                     {
-                        StatusText = $"删除失败：部分文件被占用（{mvEx.Message}）。请先停止该版本，再删除一次。";
+                        StatusText = $"删除失败：部分文件被占用。先停止该版本，再删除一次。{mvEx.Message}";
                         return;
                     }
                     _ = Task.Run(() => CleanupQuarantine(quarantine));

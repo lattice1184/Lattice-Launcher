@@ -120,4 +120,50 @@ public class VersionManifestServiceTests
         var (g, id) = MakeVersionDir(json: false, jar: false);
         Assert.False(VersionManifestService.IsInstalled(g, id));
     }
+
+    // ---------- IsInstanceTarget（8-12：实例 = MOD 安装目标，json-only——26.2 父版本 jar 落加载器子目录） ----------
+
+    [Fact]
+    public void IsInstanceTarget_JsonOnly_True()
+    {
+        // 26.2 场景：Fabric 父版本——versions/26.2/ 只有 json 无 jar（jar 沿 inheritsFrom 落加载器子目录）
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        var dir = Path.Combine(gameDir, "versions", "26.2");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "26.2.json"), "{}");
+        Assert.True(VersionManifestService.IsInstanceTarget(gameDir, "26.2"));
+        Assert.False(VersionManifestService.IsInstalled(gameDir, "26.2")); // 权威口径仍双文件
+    }
+
+    [Fact]
+    public void IsInstanceTarget_PrefetchOnly_False()
+    {
+        // 预取残留（.prefetched 未正式安装）不算实例——半成品目录不进模组安装目标
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        var dir = Path.Combine(gameDir, "versions", "1.21.11");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "1.21.11.json"), "{}");
+        Launcher.Core.Download.InstallMarker.MarkPrefetched(gameDir, "1.21.11");
+        Assert.False(VersionManifestService.IsInstanceTarget(gameDir, "1.21.11"));
+    }
+
+    [Fact]
+    public void IsInstanceTarget_PrefetchButMarked_True()
+    {
+        // .prefetched + .yanla-installed 双标记残留：正式安装过 → 兜底显示（对齐 ShouldShowInPage）
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        var dir = Path.Combine(gameDir, "versions", "1.21.11");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "1.21.11.json"), "{}");
+        Launcher.Core.Download.InstallMarker.MarkPrefetched(gameDir, "1.21.11");
+        Launcher.Core.Download.InstallMarker.Mark(gameDir, "1.21.11");
+        Assert.True(VersionManifestService.IsInstanceTarget(gameDir, "1.21.11"));
+    }
+
+    [Fact]
+    public void IsInstanceTarget_MissingDir_False()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"inst-{Guid.NewGuid():N}");
+        Assert.False(VersionManifestService.IsInstanceTarget(gameDir, "ghost"));
+    }
 }

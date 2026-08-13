@@ -4,16 +4,16 @@
         x:Class="Launcher.App.Views.CrashReportWindow"
         Title="启动器遇到问题" Width="560" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgSurface}">
+        Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="26,22" Spacing="14">
         <StackPanel Spacing="4">
             <TextBlock Text="启动器遇到问题" FontSize="18" FontWeight="Bold"
                        Foreground="{StaticResource Danger}"/>
-            <TextBlock Text="导出错误报告发给开发者，方便定位问题。" Classes="sub" FontSize="12"/>
+            <TextBlock Text="把错误报告导出，发给开发者。方便他们定位问题。" Classes="sub" FontSize="12"/>
         </StackPanel>
 
-        <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="220">
+        <Border Background="{DynamicResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="220">
             <ScrollViewer>
                 <TextBlock x:Name="ErrorText" TextWrapping="Wrap" FontSize="12"
                            Foreground="{StaticResource TextLog}" FontFamily="Consolas"/>
@@ -21,7 +21,7 @@
         </Border>
 
         <TextBlock Text="日志预览" Classes="dim" FontSize="11"/>
-        <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="160">
+        <Border Background="{DynamicResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="160">
             <ScrollViewer>
                 <TextBlock x:Name="LogPreview" TextWrapping="Wrap" FontSize="11"
                            Foreground="{StaticResource TextLog}" FontFamily="Consolas"/>
@@ -31,7 +31,7 @@
         <!-- AL9 诊断区：规则命中的问题列表（可自动修复标绿 / 需手动处理标黄），仅诊断命中时显示 -->
         <StackPanel x:Name="DiagSection" IsVisible="False" Spacing="6">
             <TextBlock Text="诊断结果" Classes="dim" FontSize="11"/>
-            <Border Background="{StaticResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="140">
+            <Border Background="{DynamicResource BgBase}" CornerRadius="6" Padding="12" MaxHeight="140">
                 <ScrollViewer>
                     <ItemsControl x:Name="DiagList">
                         <ItemsControl.ItemTemplate>
@@ -49,7 +49,7 @@
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
-            <Button x:Name="RepairBtn" Content="一键修复" Classes="primary" Click="OnRepair" IsVisible="False"/>
+            <Button x:Name="RepairBtn" Content="修复" Classes="primary" Click="OnRepair" IsVisible="False"/>
             <Button x:Name="CopyBtn" Content="复制错误信息" Classes="ghost" Click="OnCopy"/>
             <Button x:Name="ExportBtn" Content="导出错误报告" Classes="primary" Click="OnExport"/>
             <Button Content="知道了" Classes="ghost" Click="OnClose"/>

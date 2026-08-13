@@ -16,11 +16,17 @@ public sealed class VersionInstaller
     private readonly HttpClient _http;
     private readonly string _gameDirectory;
 
-    public VersionInstaller(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null)
+    /// <summary>8-14 守卫开关：默认只对自建目录打标记（修复路径以版本实际目录——PCL/官方扫描源——
+    /// 构造本类，误标根因）；整合包导入明确要在目标目录预取父版本（allowForeignMarkers: true）。</summary>
+    private readonly bool _allowForeignMarkers;
+
+    public VersionInstaller(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
+        bool allowForeignMarkers = false)
     {
-        _http = http ?? new HttpClient();
+        _http = http ?? new HttpClient(HttpClientPool.SharedHandler);
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+        _allowForeignMarkers = allowForeignMarkers;
     }
 
     /// <summary>优先读磁盘缓存 versions/{id}/{id}.json；缺失时从清单地址拉取并写入（一次性缓存）</summary>
@@ -35,7 +41,10 @@ public sealed class VersionInstaller
             // 不补的话删除加载器版本时清理判定失败，留下幽灵条目（真机 08-09 第 2 轮循环测试发现）。
             // 守卫：已正式安装（.yanla-installed）的版本永不误加——真机 08-09 自动修复流程
             // 读已装版本 json 命中缓存 → 误打 .prefetched → 版本页把它当「预取残留」隐藏（26.2 消失根因）
-            if (!InstallMarker.IsMarked(_gameDirectory, safeId))
+            // 8-14 再守卫：非自建目录（PCL/官方扫描源）不写任何标记——修复路径打标记是误标根因
+            // （整合包导入 allowForeignMarkers 放行——预取父版本是导入流程的有意行为）
+            if ((_allowForeignMarkers || GameDirectory.IsOwnInstallDir(_gameDirectory))
+                && !InstallMarker.IsMarked(_gameDirectory, safeId))
                 InstallMarker.MarkPrefetched(_gameDirectory, safeId);
             try
             {
@@ -53,8 +62,9 @@ public sealed class VersionInstaller
         await File.WriteAllTextAsync(jsonPath, json, ct);
         // AL42：预取 json 打标记——仅供加载器继承用，版本页不显示该条目
         //（下载「1.21.10 + Fabric」后不再出现分开的「1.21.10 缺文件」；正式安装完成时 Mark 会移除）
-        // 守卫同缓存命中分支：json 被删后重拉也不覆盖已安装语义
-        if (!InstallMarker.IsMarked(_gameDirectory, safeId))
+        // 守卫同缓存命中分支：json 被删后重拉也不覆盖已安装语义；非自建目录（PCL 等）不写标记
+        if ((_allowForeignMarkers || GameDirectory.IsOwnInstallDir(_gameDirectory))
+            && !InstallMarker.IsMarked(_gameDirectory, safeId))
             InstallMarker.MarkPrefetched(_gameDirectory, safeId);
         return JsonSerializer.Deserialize<VersionJson>(json)
             ?? throw new InvalidDataException($"版本 JSON 解析失败: {id}");
@@ -76,16 +86,31 @@ public sealed class VersionInstaller
     private async Task InstallCoreAsync(VersionJson version, DownloadGroupContext? ctx,
         DownloadProgressHandler? progress, CancellationToken ct)
     {
+        // BUGS#2 修复：记录下载前 jar 是否存在——修复路径（对已装版本补库）失败时
+        // 只删「本次新建的 jar」，绝不删原本有效的 jar（旧代码无条件删 → 修复把好版本搞坏）
+        var jarPath = Path.Combine(_gameDirectory, "versions", version.Id, $"{version.Id}.jar");
+        var jarExistedBefore = File.Exists(jarPath);
         try
         {
             await _downloads.DownloadVersionAsync(version, ctx, progress, ct);
-            VerifyInstalled(version);
-            InstallMarker.Mark(_gameDirectory, version.Id); // 完整安装后才打标记
+            // AL62 质检员：下载完成后统计 + 哈希校验（本地读取）——通过才打标记；
+            // REVIEW-卡完成：质检进行中（全盘 SHA1 10-20s）先亮「质检中」——旧代码只在完成后
+            // SetStage，质检期间组任务显示兜底「正在完成…」死寂（成功路径最后一段卡点）
+            ctx?.SetStage("正在质检文件完整性…");
+            var report = await VerifyInstalledAsync(version);
+            ctx?.SetStage($"质检：{report.SummaryText}");
+            // 8-14 误标根因：修复/自动修复以版本实际目录（PCL/官方扫描源）构造本类——标记只打
+            // 自建目录（PCL 的版本归 PCL 管，补文件≠本启动器安装；整合包导入 allowForeignMarkers 放行）
+            if (_allowForeignMarkers || GameDirectory.IsOwnInstallDir(_gameDirectory))
+                InstallMarker.Mark(_gameDirectory, version.Id); // 完整安装后才打标记
         }
         catch
         {
-            // 半装清理：本次新建的 client jar 删掉（安装前本不存在，删除幂等安全）
-            try { File.Delete(Path.Combine(_gameDirectory, "versions", version.Id, $"{version.Id}.jar")); } catch { }
+            // 半装清理：只删本次新建的 client jar（安装前本不存在；原本存在的绝不删）
+            if (!jarExistedBefore)
+            {
+                try { File.Delete(jarPath); } catch { }
+            }
             throw;
         }
     }
@@ -93,14 +118,16 @@ public sealed class VersionInstaller
     /// <summary>
     /// AL29 H6：安装后完整性校验——下载完成必须 == 文件完整，不得「虚假成功」
     /// （下载列表曾静默跳过 url 形式库；缺失如实报错，由修复路径补全）。
+    /// AL62 升级为质检：存在性 + SHA1 哈希 + 统计，返回报告（Stage 展示用）。
     /// 父 json 缺失时链保留 → 只校验子版本自身文件。
     /// </summary>
-    private void VerifyInstalled(VersionJson version)
+    private async Task<AutoRepairService.FileIntegrityReport> VerifyInstalledAsync(VersionJson version)
     {
-        var missing = AutoRepairService.VerifyVersion(version, _gameDirectory);
-        if (missing.Count > 0)
+        var report = await AutoRepairService.VerifyVersionAsync(version, _gameDirectory, verifyHashes: true);
+        if (!report.IsComplete)
             throw new InvalidOperationException(
-                $"安装完成但校验失败：缺 {missing.Count} 个文件（首例：{missing[0]}）。可重新下载补全");
+                $"安装完成但校验失败：缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）。可重新下载补全");
+        return report;
     }
 
     /// <summary>路径安全化：拒绝 .. 与分隔符（与启动管道一致）</summary>

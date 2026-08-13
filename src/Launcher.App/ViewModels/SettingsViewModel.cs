@@ -22,6 +22,9 @@ public sealed record DownloadSourceOption(string Name, DownloadSourcePreference 
 /// <summary>性能档位选项（设置页 ComboBox）</summary>
 public sealed record JvmProfileOption(string Name, PerformanceProfile Value);
 
+/// <summary>进程优先级选项（游戏/服务端 JVM 进程；独立设置不随性能档位）</summary>
+public sealed record GamePriorityOption(string Name, GamePriority Value);
+
 /// <summary>
 /// 设置页：游戏目录 / 版本隔离 / 内存预设 / Java 路径 / 额外 JVM 参数 / 下载选项。
 /// 所有改动即时写入 settings.json（LauncherSettings.Save）。
@@ -73,6 +76,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool AutoChineseEnabled { get; set; } = true;
 
+    /// <summary>8-19 生态下载跟随实例查询（关 = 显示全部版本）</summary>
+    [ObservableProperty]
+    public partial bool EcoFollowInstance { get; set; } = true;
+
     /// <summary>性能档位选项与选中项（GC 参数预设；不影响内存）</summary>
     public IReadOnlyList<JvmProfileOption> JvmProfileOptions { get; } =
     [
@@ -82,8 +89,21 @@ public partial class SettingsViewModel : ViewModelBase
         new("极致", PerformanceProfile.Ultra),
     ];
 
+    /// <summary>进程优先级档位（低/正常/高/最高——独立于性能档位）</summary>
+    public IReadOnlyList<GamePriorityOption> GamePriorityOptions { get; } =
+    [
+        new("低", GamePriority.BelowNormal),
+        new("正常", GamePriority.Normal),
+        new("高", GamePriority.AboveNormal),
+        new("最高", GamePriority.High),
+    ];
+
     [ObservableProperty]
     public partial JvmProfileOption? SelectedJvmProfile { get; set; }
+
+    /// <summary>当前进程优先级（游戏/服务端）</summary>
+    [ObservableProperty]
+    public partial GamePriorityOption? SelectedGamePriority { get; set; }
 
     /// <summary>启动随机小提示（彩蛋开关）</summary>
     [ObservableProperty]
@@ -113,43 +133,53 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial int ChunkCount { get; set; } = 8;
 
-    /// <summary>CurseForge API Key（空 = 禁用 CF 源）</summary>
-    [ObservableProperty]
-    public partial string CurseForgeApiKeyText { get; set; } = "";
-
     /// <summary>Key 有效性验证状态（只含 有效/无效/HTTP 码——**永不包含 key 内容**）</summary>
     [ObservableProperty]
     public partial string CurseForgeApiKeyStatus { get; set; } = "";
-
-    /// <summary>验证序列号：key 输入变化即递增，丢弃过期验证结果（防抖 + 防旧结果覆盖新输入状态）</summary>
-    private int _keyValidateSeq;
 
     /// <summary>构造加载阶段：属性赋值会触发 OnXxxChanged → Save，此时未加载字段还是默认值——
     /// 若不拦截，会把空值写回文件覆盖已保存的设置（如 CurseForgeApiKey）。</summary>
     private bool _loading = true;
 
-    /// <summary>CF 服务（构造含 GameDirectory.Detect() 文件扫描——缓存实例避免每次验证重扫）</summary>
+    /// <summary>CF 服务（key 直连：设置 DPAPI 密文落盘；构造含 GameDirectory.Detect() 文件扫描——缓存实例避免每次重扫）</summary>
     private readonly CurseForgeService _curseForge = new();
 
-    /// <summary>失焦/页面打开时验证当前 key（调一次 search API；结果只含状态不含 key）</summary>
+    /// <summary>CF Key 输入框（PasswordBox；不回显内容。留空提交 = 保留现有 key，不覆盖）</summary>
+    [ObservableProperty]
+    public partial string CurseForgeApiKeyInput { get; set; } = "";
+
+    /// <summary>8-13 GitHub API Token 输入框（不回显；留空提交 = 保留现有 token，同 CF key 模式）</summary>
+    [ObservableProperty]
+    public partial string GitHubApiTokenInput { get; set; } = "";
+
+    /// <summary>8-13 微软登录 client_id 输入框（非机密可回显；留空提交 = 保留现有）</summary>
+    [ObservableProperty]
+    public partial string MicrosoftClientIdInput { get; set; } = "";
+
+    /// <summary>「检查」入口：先提交输入框里的新 Key（有输入才覆盖），再直连验证</summary>
+    public async Task SubmitApiKeyAsync()
+    {
+        Save(); // CurseForgeApiKeyInput 非空 → 写入设置（DPAPI 加密落盘）后清空输入框
+        await ValidateApiKeyAsync();
+    }
+
+    /// <summary>直连 CurseForge 验证当前 key（结果只含状态与 HTTP 码，不含 key）</summary>
     public async Task ValidateApiKeyAsync()
     {
-        var seq = ++_keyValidateSeq;
-        if (string.IsNullOrWhiteSpace(CurseForgeApiKeyText))
-        {
-            CurseForgeApiKeyStatus = "未配置 Key（留空 = 禁用 CurseForge 源）";
-            return;
-        }
-        CurseForgeApiKeyStatus = "验证中…";
+        CurseForgeApiKeyStatus = "正在检查 Key…";
         try
         {
-            var (valid, msg) = await _curseForge.ValidateKeyAsync();
-            if (seq != _keyValidateSeq) return; // 输入已变，丢弃过期结果
-            CurseForgeApiKeyStatus = (valid ? "✓ " : "✗ ") + msg;
+            if (!_curseForge.IsEnabled)
+            {
+                CurseForgeApiKeyStatus = "你还没填 Key。填完点检查。";
+                return;
+            }
+            var (valid, message) = await _curseForge.ValidateKeyAsync();
+            CurseForgeApiKeyStatus = valid ? "✓ Key 有效，已经加密存好了" : $"✗ {message}";
         }
-        catch (Exception)
+        catch
         {
-            if (seq == _keyValidateSeq) CurseForgeApiKeyStatus = "✗ 验证异常，稍后再试";
+            CurseForgeApiKeyStatus = "✗ 连不上 CurseForge API";
         }
     }
 
@@ -167,6 +197,18 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string AccentColor { get; set; } = "#2DD4BF";
 
+    /// <summary>背景色（#RRGGBB 或 #AARRGGBB，含 alpha 透明；预览不写盘）</summary>
+    [ObservableProperty]
+    public partial string BackgroundColor { get; set; } = BackgroundPaletteMath.DefaultBackground;
+
+    partial void OnBackgroundColorChanged(string value) => PreviewChanged?.Invoke();
+
+    /// <summary>背景色 Avalonia 值（ColorPicker 双向绑定用；用户改色 → 同步回字符串）</summary>
+    [ObservableProperty]
+    public partial Avalonia.Media.Color BackgroundColorValue { get; set; } = Avalonia.Media.Color.Parse(BackgroundPaletteMath.DefaultBackground);
+
+    partial void OnBackgroundColorValueChanged(Avalonia.Media.Color value) => BackgroundColor = value.ToString(); // #AARRGGBB
+
     /// <summary>界面密度（默认紧凑）</summary>
     [ObservableProperty]
     public partial int DensityIndex { get; set; } = 1; // AL7：默认标准（0=紧凑 1=标准 2=舒适）
@@ -176,6 +218,30 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>外观预览（点击选项即时预览，不写盘；保存才持久化）</summary>
     public event Action? PreviewChanged;
+
+    /// <summary>开源声明（关于页；静态清单见 Models/ThirdPartyLicenses.cs）</summary>
+    public IReadOnlyList<string> ProjectNotices => Models.ThirdPartyLicenses.ProjectNotices;
+
+    /// <summary>最近更新（关于页：改动最大的几条功能与修复，用户视角；随版本更新追加）</summary>
+    public IReadOnlyList<string> ChangelogItems { get; } =
+    [
+        "下载引擎重构：多源竞速、分片、断点续传、自动重试、下载质检",
+        "下载卡死根治：响应头超时、读心跳、线程池死锁修复",
+        "整合包导入导出修复：内容落盘、mrpack 反查、路径安全",
+        "模组中文搜索（MC百科链）",
+        "微软正版登录修复（refresh_token 持久化）",
+        "开服/联机修复：超时、进程死亡检测、一键开服",
+        "网络诊断条 + 下载队列调度",
+    ];
+
+    /// <summary>「存储」分区（存储占用/上限/清理）</summary>
+    public StorageSettingsViewModel Storage { get; } = new();
+
+    /// <summary>第三方依赖清单（关于页折叠区）</summary>
+    public IReadOnlyList<Models.ThirdPartyLicense> ThirdPartyPackages => Models.ThirdPartyLicenses.Packages;
+
+    /// <summary>启动器版本（关于页；读嵌入 PCL.metadata.json）</summary>
+    public string AppVersion => $"v{PCL.Core.App.Basics.VersionName}";
 
     /// <summary>预设强调色（圆点+名字；非预设颜色动态插入「自定义 #HEX」项）</summary>
     public static IReadOnlyList<AccentPresetVM> AccentPresets { get; } =
@@ -215,19 +281,23 @@ public partial class SettingsViewModel : ViewModelBase
         JavaPathText = s.JavaPath ?? "";
         ExtraJvmArgsText = s.ExtraJvmArgs ?? "";
         AutoChineseEnabled = s.AutoChineseEnabled;
+        EcoFollowInstance = s.EcoFollowInstance;
         SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
+        SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
         StartupTipEnabled = s.StartupTipEnabled;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
         ChunkCount = s.ChunkCount > 0 ? s.ChunkCount : (int)s.DownloadTier; // 老用户继承当前档位，新装默认 8
-        CurseForgeApiKeyText = s.CurseForgeApiKey ?? "";
+        // CF key 不回显（PasswordBox 留空）；设置里的值是 DPAPI 密文，状态区显示验证结果
         CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
         WindowOpacity = s.WindowOpacity;
         DensityIndex = (int)s.Density;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
         // 强调色：非预设值（老用户自定义）动态插「自定义 #HEX」项；选中项触发 AccentColor 赋值预览
         AccentColor = s.AccentColor;
+        BackgroundColor = s.BackgroundColor ?? BackgroundPaletteMath.DefaultBackground; // 旧 JSON 缺键防御
+        BackgroundColorValue = Avalonia.Media.Color.Parse(BackgroundColor); // 同步 ColorPicker
         if (AccentPresets.All(p => p.Hex != s.AccentColor))
         {
             AccentPresetItems = AccentPresets
@@ -236,9 +306,7 @@ public partial class SettingsViewModel : ViewModelBase
         }
         SelectedAccent = AccentPresetItems.FirstOrDefault(p => p.Hex == s.AccentColor);
 
-        // 已有 key 的老用户打开设置页即验证一次（结果只含状态，不含 key）
-        if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyText))
-            _ = ValidateApiKeyAsync();
+        _ = ValidateApiKeyAsync(); // 打开设置页即查一次代理状态（只含状态，不含 key）
 
         _loading = false; // 加载完成，之后属性变化才允许落盘
     }
@@ -253,14 +321,33 @@ public partial class SettingsViewModel : ViewModelBase
         s.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
         s.ExtraJvmArgs = string.IsNullOrWhiteSpace(ExtraJvmArgsText) ? null : ExtraJvmArgsText.Trim();
         s.AutoChineseEnabled = AutoChineseEnabled;
+        s.EcoFollowInstance = EcoFollowInstance;
         s.DownloadSource = SelectedDownloadSource?.Value ?? DownloadSourcePreference.OfficialFirst;
         s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
+        s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
         s.StartupTipEnabled = StartupTipEnabled;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.ChunkCount = ChunkCount;
-        s.CurseForgeApiKey = CurseForgeApiKeyText.Trim();
         s.CurseForgeCdnPrefix = CurseForgeCdnPrefixText.Trim();
+        // CF key：仅输入框有非空内容才覆盖（留空 = 保留现有 key，防误清空）；Save 内 DPAPI 加密落盘
+        if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyInput))
+        {
+            s.CurseForgeApiKey = CurseForgeApiKeyInput.Trim();
+            CurseForgeApiKeyInput = ""; // 写入后清空输入（不回显，二次保存不重复写）
+        }
+        // 8-13 GitHub token：同 CF key 模式（留空 = 保留现有——普通用户未认证模式）
+        if (!string.IsNullOrWhiteSpace(GitHubApiTokenInput))
+        {
+            s.GitHubApiToken = GitHubApiTokenInput.Trim();
+            GitHubApiTokenInput = ""; // 写入后清空输入（不回显）
+        }
+        // 8-13 微软 client_id：有输入才覆盖（留空 = 保留现有）
+        if (!string.IsNullOrWhiteSpace(MicrosoftClientIdInput))
+        {
+            s.MicrosoftClientId = MicrosoftClientIdInput.Trim();
+            MicrosoftClientIdInput = "";
+        }
         s.Save();
     }
 
@@ -292,7 +379,11 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnJavaPathTextChanged(string value) => Save();
     partial void OnExtraJvmArgsTextChanged(string value) => Save();
     partial void OnAutoChineseEnabledChanged(bool value) => Save();
+    partial void OnEcoFollowInstanceChanged(bool value) => Save();
     partial void OnSelectedJvmProfileChanged(JvmProfileOption? value) => Save();
+
+    /// <summary>进程优先级改动即时保存</summary>
+    partial void OnSelectedGamePriorityChanged(GamePriorityOption? value) => Save();
     partial void OnStartupTipEnabledChanged(bool value)
     {
         Save();
@@ -305,7 +396,6 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnMaxConcurrentDownloadsChanged(int value) => DebouncedSave();
     partial void OnSpeedLimitKbpsChanged(int value) => DebouncedSave();
     partial void OnChunkCountChanged(int value) => DebouncedSave(); // 滑块拖动防抖写盘
-    partial void OnCurseForgeApiKeyTextChanged(string value) => Save();
     partial void OnCurseForgeCdnPrefixTextChanged(string value) => Save();
 
     // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
@@ -352,6 +442,7 @@ public partial class SettingsViewModel : ViewModelBase
         var s = LauncherSettings.Current;
         s.WindowOpacity = WindowOpacity;
         s.AccentColor = AccentColor;
+        s.BackgroundColor = BackgroundColor;
         s.Density = (DensityMode)DensityIndex;
         s.BackgroundImagePath = string.IsNullOrWhiteSpace(BackgroundImagePathText) ? null : BackgroundImagePathText;
         s.Save();
@@ -371,6 +462,8 @@ public partial class SettingsViewModel : ViewModelBase
         }
         WindowOpacity = 0.9;
         AccentColor = "#2DD4BF";
+        BackgroundColor = BackgroundPaletteMath.DefaultBackground;
+        BackgroundColorValue = Avalonia.Media.Color.Parse(BackgroundColor); // 同步 ColorPicker
         DensityIndex = 1; // 默认标准（AL7：不再默认紧凑缩小 10%）
         BackgroundImagePathText = "";
         PreviewChanged?.Invoke();

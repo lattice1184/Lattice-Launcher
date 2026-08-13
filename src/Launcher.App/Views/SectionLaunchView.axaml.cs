@@ -4,6 +4,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 
+using Launcher.App.Services;
 namespace Launcher.App.Views;
 
 public partial class SectionLaunchView : UserControl
@@ -41,5 +42,7 @@ public partial class SectionLaunchView : UserControl
         if (Vm is null) return;
         var box = this.FindControl<TextBox>("MemoryCustomText");
         Vm.ApplyCustomMemory(box?.Text ?? "");
-    }
+    
+}
+
 }

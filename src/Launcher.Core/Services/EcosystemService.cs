@@ -19,13 +19,44 @@ public sealed class EcosystemService
     private readonly HttpClient _http;
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
+    private readonly McmodSearchService _mcmod;
 
-    public EcosystemService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null)
+    public EcosystemService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
+        McmodSearchService? mcmod = null)
     {
-        _http = http ?? new HttpClient();
+        _http = http ?? HttpClientPool.Create();
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+        _mcmod = mcmod ?? new McmodSearchService();
+    }
+
+    /// <summary>
+    /// 中文搜索（AL63）：MC百科汉化链路——中文 → mcmod 条目 → 解 Modrinth slug → 项目详情 → 搜索结果。
+    /// 无分页（mcmod 搜索不分页；结果上限 10）。中文查询走此路，英文查询走 SearchAsync。
+    /// </summary>
+    public async Task<ModrinthSearchResponse?> SearchChineseAsync(
+        ProjectType type, string query, CancellationToken ct = default)
+    {
+        var slugs = await _mcmod.SearchSlugsAsync(query, maxResults: 10, ct);
+        if (slugs.Count == 0) return new ModrinthSearchResponse([], 0, 0, 10);
+        var hits = new List<ModrinthSearchHit>();
+        var typeName = type.ToString().ToLowerInvariant();
+        foreach (var (slug, _) in slugs)
+        {
+            try
+            {
+                var detail = await GetProjectAsync(slug, ct);
+                if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                hits.Add(new ModrinthSearchHit(detail.Id, detail.ProjectType, detail.Slug,
+                    "", detail.Title, detail.Description, detail.Categories, null, detail.Versions,
+                    detail.IconUrl, detail.Downloads, detail.Follows, detail.DateCreated, detail.DateModified,
+                    null));
+            }
+            catch { /* 单条失败跳过——链路本身有兜底 */ }
+        }
+        return new ModrinthSearchResponse(hits, hits.Count, 0, 10);
     }
 
     /// <summary>搜索（facets 按 类型|游戏版本|加载器|功能分类 过滤，offset 分页）</summary>
@@ -49,7 +80,34 @@ public sealed class EcosystemService
         };
         var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query ?? "")}"
                   + $"&facets={Uri.EscapeDataString(facets)}&index={indexName}&limit={limit}&offset={offset}";
-        return await GetJsonAsync<ModrinthSearchResponse>(url, ct);
+        return await GetJsonAsyncCached<ModrinthSearchResponse>(url, ct);
+    }
+
+    /// <summary>搜索响应磁盘缓存（5 分钟 TTL）：切页/重复搜索不重复打 API——模组页首屏慢的元凶之一</summary>
+    private async Task<T?> GetJsonAsyncCached<T>(string url, CancellationToken ct) where T : class
+    {
+        var cacheDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
+        var key = "eco-" + Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..16];
+        var cachePath = Path.Combine(cacheDir, key + ".json");
+        try
+        {
+            if (File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < TimeSpan.FromMinutes(5))
+                return JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(cachePath, ct));
+        }
+        catch { /* 缓存损坏忽略 */ }
+        var result = await GetJsonAsync<T>(url, ct);
+        if (result is not null)
+        {
+            try
+            {
+                Directory.CreateDirectory(cacheDir);
+                await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(result), ct);
+            }
+            catch { /* 缓存写入失败不影响结果 */ }
+        }
+        return result;
     }
 
     /// <summary>项目详情</summary>
@@ -64,9 +122,19 @@ public sealed class EcosystemService
         return SelectBestVersion(versions);
     }
 
-    /// <summary>版本列表（手动选择用，懒加载）</summary>
+    /// <summary>版本列表（手动选择用，懒加载）。8-19：年份号（26.2）Modrinth versions API 不认（search facet 认、versions 参数不认）
+    /// → 空结果自动去 gameVersion 重查一次（保留 loader；传统 1.x 空结果不降级——真实语义）</summary>
     public async Task<List<ModrinthVersion>> GetVersionsAsync(
         string projectId, string? gameVersion = null, string? loader = null, CancellationToken ct = default)
+    {
+        var list = await GetVersionsCoreAsync(projectId, gameVersion, loader, ct);
+        if (list.Count == 0 && IsYearFormatVersion(gameVersion))
+            list = await GetVersionsCoreAsync(projectId, null, loader, ct);
+        return list;
+    }
+
+    private async Task<List<ModrinthVersion>> GetVersionsCoreAsync(
+        string projectId, string? gameVersion, string? loader, CancellationToken ct)
     {
         var query = new List<string>();
         if (gameVersion is not null)
@@ -140,18 +208,22 @@ public sealed class EcosystemService
 
     /// <summary>
     /// 安装主文件 + 解析并递归安装全部必需依赖（PCL2 式一键安装体验）。
+    /// ctx 非空时主文件与每个依赖各成一个组子任务（下载中心可见、可暂停/重试）；
+    /// 依赖并行安装（门 4，与 CF 侧一致）。
     /// </summary>
     public async Task<DependencyInstallReport> InstallWithDependenciesAsync(
         string projectId, ModrinthVersion version, string instanceId, ProjectType type,
         string? gameVersion, string? loader,
-        DownloadProgressHandler? progress = null, CancellationToken ct = default, string? gameDirOverride = null)
+        DownloadProgressHandler? progress = null, CancellationToken ct = default, string? gameDirOverride = null,
+        DownloadGroupContext? ctx = null)
     {
         var report = new DependencyInstallReport();
 
         // 1. 主文件
         try
         {
-            var mainPath = await InstallAsync(projectId, version, instanceId, type, progress, ct, gameDirOverride);
+            var mainPath = await InstallOneAsync(ctx, $"主文件 {version.Name}", 0,
+                (p, c) => InstallAsync(projectId, version, instanceId, type, p, c, gameDirOverride), ct);
             report.Installed.Add(new InstalledDependency(projectId, version.Id, mainPath));
         }
         catch (Exception ex)
@@ -171,33 +243,54 @@ public sealed class EcosystemService
         };
         var result = resolver.Resolve(request);
 
-        // 3. 逐个安装依赖（依赖均为 MOD 类型，装到实例 mods 目录）
+        // 3. 依赖并行安装（依赖均为 MOD 类型，装到实例 mods 目录；结果收集加锁——多线程写 report）
+        using var gate = new SemaphoreSlim(4);
+        var depTasks = new List<Task>();
         foreach (var dep in result.ToInstall)
         {
             if (ct.IsCancellationRequested) break;
-            try
+            depTasks.Add(Task.Run(async () =>
             {
-                var versions = await GetVersionsAsync(dep.ProjectId, gameVersion, loader, ct);
-                var depVersion = versions.FirstOrDefault(v => v.Id == dep.File.Id);
-                if (depVersion is null)
+                await gate.WaitAsync(ct);
+                try
                 {
-                    report.Failed.Add(new FailedDependency(dep.ProjectId, "依赖版本已不存在"));
-                    continue;
+                    var versions = await GetVersionsAsync(dep.ProjectId, gameVersion, loader, ct);
+                    var depVersion = versions.FirstOrDefault(v => v.Id == dep.File.Id);
+                    if (depVersion is null)
+                    {
+                        lock (report) report.Failed.Add(new FailedDependency(dep.ProjectId, "依赖版本已不存在"));
+                        return;
+                    }
+                    var path = await InstallOneAsync(ctx, $"依赖 {depVersion.Name}", 0,
+                        (p, c) => InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, p, c, gameDirOverride), ct);
+                    lock (report) report.Installed.Add(new InstalledDependency(dep.ProjectId, depVersion.Id, path));
                 }
-                var path = await InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, progress, ct, gameDirOverride);
-                report.Installed.Add(new InstalledDependency(dep.ProjectId, depVersion.Id, path));
-            }
-            catch (Exception ex)
-            {
-                report.Failed.Add(new FailedDependency(dep.ProjectId, ex.Message));
-            }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* 组取消：其余任务一并终止 */ }
+                catch (Exception ex)
+                {
+                    lock (report) report.Failed.Add(new FailedDependency(dep.ProjectId, ex.Message));
+                }
+                finally { gate.Release(); }
+            }, ct));
         }
+        await Task.WhenAll(depTasks);
 
         // 4. 未解析依赖
         foreach (var un in result.Unresolved)
             report.Failed.Add(new FailedDependency(un.ProjectId, un.Reason));
 
         return report;
+    }
+
+    /// <summary>安装单文件：有组上下文 → 子任务（下载中心可见）；否则直接装（测试/叶子调用兼容）</summary>
+    private async Task<string> InstallOneAsync(DownloadGroupContext? ctx, string name, long weight,
+        Func<DownloadProgressHandler, CancellationToken, Task<string>> work, CancellationToken ct)
+    {
+        if (ctx is null) return await work(null!, ct);
+        string? path = null;
+        var child = ctx.AddChild(name, weight, async (p, c) => { path = await work(p, c); });
+        await child.Completion.WaitAsync(ct);
+        return path ?? throw new InvalidOperationException($"{name} 未产生文件");
     }
 
     // ---------- 静态工具（离线可单测） ----------
@@ -252,6 +345,12 @@ public sealed class EcosystemService
         return false;
     }
 
+    /// <summary>8-19：PCL 年份号版本（26.2/26.10/99.1——`^\d{2}\.\d+`，非 1.x 传统格式）。
+    /// 年份号在 CF/Modrinth 文件版本（1.21.6 格式）中永不匹配——空结果必为假阴性 → 允许降级/放宽；
+    /// 传统 1.x 的空结果是真实语义，绝不降级（否则 1.21.6 实例会高亮 1.20.1 版本装崩）。</summary>
+    public static bool IsYearFormatVersion(string? version)
+        => !string.IsNullOrEmpty(version) && Regex.IsMatch(version, @"^\d{2}\.\d+");
+
     /// <summary>从实例名猜测加载器（fabric/forge/neoforge/quilt/iris/optifine），未知返回 null</summary>
     public static string? GuessLoader(string instanceId)
     {
@@ -267,12 +366,49 @@ public sealed class EcosystemService
         return null;
     }
 
-    /// <summary>选最新版本：过滤无文件项，featured 优先，其次 date_published 降序</summary>
+    /// <summary>
+    /// 游戏版本语义比较：点分数字逐段比（26.2 &gt; 1.21.6、1.21.10 &gt; 1.21.6——字符串序会判反）；
+    /// 非数字段回落序号比较。2026 起版本号用 YY.M 新格式，1.x 与 26.x 混排必须走语义序。
+    /// </summary>
+    public static int CompareGameVersions(string? x, string? y)
+    {
+        var xp = (x ?? "").Split('.');
+        var yp = (y ?? "").Split('.');
+        for (var i = 0; i < Math.Min(xp.Length, yp.Length); i++)
+        {
+            if (int.TryParse(xp[i], out var xn) && int.TryParse(yp[i], out var yn))
+            {
+                if (xn != yn) return xn.CompareTo(yn);
+            }
+            else
+            {
+                var c = string.Compare(xp[i], yp[i], StringComparison.Ordinal);
+                if (c != 0) return c;
+            }
+        }
+        return xp.Length.CompareTo(yp.Length);
+    }
+
+    /// <summary>
+    /// 选最新版本：过滤无文件项；release &gt; beta &gt; alpha &gt; null 优先（快照/预发布不抢正式版——
+    /// 8-13 真机：26.2 的 beta 日期最新被选中，用户装正式版却匹配到快照），同级 featured 优先，
+    /// 其次 date_published 降序。null 排最后与依赖解析器 NormalizeReleaseType 一致。
+    /// </summary>
     public static ModrinthVersion? SelectBestVersion(IEnumerable<ModrinthVersion> versions)
         => versions.Where(v => v.Files is { Count: > 0 })
-                   .OrderByDescending(v => v.Featured ?? false)
+                   .OrderBy(v => ReleaseRank(v.VersionType))
+                   .ThenByDescending(v => v.Featured ?? false)
                    .ThenByDescending(v => v.DatePublished)
                    .FirstOrDefault();
+
+    /// <summary>Modrinth version_type 排名（release=0 beta=1 alpha=2 null=3——未知信任度最低）</summary>
+    public static int ReleaseRank(string? type) => type switch
+    {
+        "release" => 0,
+        "beta" => 1,
+        "alpha" => 2,
+        _ => 3,
+    };
 
     /// <summary>选主文件：Primary 优先，否则第一个</summary>
     public static ModrinthVersionFile? PickPrimaryFile(List<ModrinthVersionFile>? files)

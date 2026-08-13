@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Launcher.App.Views;
+using Launcher.Core.Model.Modrinth;
 
 namespace Launcher.App.Services;
 
@@ -18,6 +19,10 @@ public static class DialogService
     /// <summary>信息对话框（仅确定）</summary>
     public static Task<bool> Info(Window? owner, string message, string title = "提示")
         => MessageDialogWindow.Confirm(owner, message, title, "知道了", "");
+
+    /// <summary>8-22 安装前路径确认（可编辑安装目录 + 实时预览完整落点）：null = 取消中止安装，否则用户确认的目录</summary>
+    public static Task<string?> ConfirmInstallPath(Window? owner, string gameDir, string instanceId, ProjectType type)
+        => MessageDialogWindow.ConfirmInstallPathAsync(owner, gameDir, instanceId, type);
 
     /// <summary>
     /// 警告对话框：红字加粗原因 + 普通色说明（前提不满足弹窗化——替代无着重色的状态栏小字）。

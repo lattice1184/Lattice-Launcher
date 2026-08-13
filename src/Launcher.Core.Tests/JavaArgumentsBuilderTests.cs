@@ -34,6 +34,17 @@ public class JavaArgumentsBuilderTests
     }
 
     [Fact]
+    public void MsaAccount_UserTypeArgIsMsa()
+    {
+        // 8-13：正版账号 user_type 必须 msa（游戏读它决定在线认证；legacy = 离线模式）
+        var p = new JavaArgumentsBuilder().Build(Load("1.21.1"), @"C:\mc", @"C:\java\bin\java.exe",
+            "YanKa", "069a79f4-44e9-4726-a5be-fca90e38aaf5", "mc-token", 4096, userType: "msa");
+        Assert.Contains("--userType", p.GameArgs);
+        Assert.Contains("msa", p.GameArgs);
+        Assert.DoesNotContain("legacy", p.GameArgs);
+    }
+
+    [Fact]
     public void Legacy_1_8_9_Unchanged_ClasspathAppended()
     {
         var p = Build(Load("1.8.9"));
@@ -266,5 +277,33 @@ public class JavaArgumentsBuilderTests
 
         Assert.Contains(@"org\lwjgl\lwjgl\3.4.1\lwjgl-3.4.1.jar", p.ClassPath);
         Assert.Contains(@"net\fabricmc\fabric-loader\0.19.3\fabric-loader-0.19.3.jar", p.ClassPath);
+    }
+
+    // ---------- 8-13 启动命令日志脱敏（token 打码） ----------
+
+    [Fact]
+    public void RedactTokens_SeparateValueForm()
+    {
+        // --auth_access_token xxx（两独立参数）→ 值打码；参数名保留（诊断不受影响）；其他参数不受影响
+        var redacted = LaunchProcess.RedactTokens(
+            ["--auth_access_token", "eyJhbGciOi.real.token", "--uuid", "abc"]).ToList();
+        Assert.Equal(["--auth_access_token", "***", "--uuid", "abc"], redacted);
+    }
+
+    [Fact]
+    public void RedactTokens_EqualsForm()
+    {
+        // --accessToken=xxx（单参数等号形态，老版本 minecraftArguments 模板）→ 值打码
+        var redacted = LaunchProcess.RedactTokens(["--accessToken=abc123", "--auth_session=xyz"]).ToList();
+        Assert.Equal("--accessToken=***", redacted[0]);
+        Assert.Equal("--auth_session=***", redacted[1]);
+    }
+
+    [Fact]
+    public void RedactTokens_OfflineLiteralToken_RedactedToo()
+    {
+        // 离线模式的字面量 "token" 也被打码（语义一致——日志里永远不出现 accessToken 值）
+        var redacted = LaunchProcess.RedactTokens(["--accessToken", "token"]).ToList();
+        Assert.Equal("***", redacted[1]);
     }
 }

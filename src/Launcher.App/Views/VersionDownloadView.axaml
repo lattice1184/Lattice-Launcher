@@ -35,7 +35,7 @@
                 </ItemsControl>
             </DockPanel>
 
-            <GridSplitter Grid.Column="1" Width="1" Background="{StaticResource BorderColor}"/>
+            <GridSplitter Grid.Column="1" Width="1" Background="{DynamicResource BorderColor}"/>
 
             <!-- 中：版本列表 + 分页 -->
             <DockPanel Grid.Column="2" Opacity="{Binding Sidebar.ListOpacity}">
@@ -70,22 +70,26 @@
                 </StackPanel>
             </DockPanel>
 
-            <GridSplitter Grid.Column="3" Width="1" Background="{StaticResource BorderColor}"/>
+            <GridSplitter Grid.Column="3" Width="1" Background="{DynamicResource BorderColor}"/>
 
             <!-- 右：下载详情（简化：信息 + 下载/修复 + 进度） -->
             <Border Grid.Column="4" Padding="4,0,0,0">
                 <Grid>
                     <StackPanel IsVisible="{Binding !Detail.HasSelection}" Spacing="6"
                                 VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="点击版本下载" Classes="sub" FontSize="13"/>
+                        <TextBlock Text="选一个版本，点它下载。" Classes="sub" FontSize="13"/>
                     </StackPanel>
 
                     <StackPanel Spacing="12" IsVisible="{Binding Detail.HasSelection}">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                             <StackPanel Spacing="4">
                                 <!-- 长版本名（fabric-loader-0.19.3-26.3-snapshot-6）会超出窄右列：修剪 + ToolTip 看全 -->
-                                <TextBlock Text="{Binding Detail.Id}" FontSize="24" FontWeight="Bold"
-                                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail.Id}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="{Binding Detail.Id}" FontSize="24" FontWeight="Bold"
+                                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail.Id}"/>
+                                    <Border Classes="help-hint"
+                                               ToolTip.Tip="你在这里下原版游戏。Fabric/Forge 那些加载器去【版本】页装"><Path/></Border>
+                                </StackPanel>
                                 <TextBlock Text="{Binding Detail.ReleaseDate}" Classes="dim" FontSize="12"/>
                                 <TextBlock Text="{Binding Detail.SizeText}" Classes="sub" FontSize="12"/>
                             </StackPanel>
@@ -112,8 +116,6 @@
                                     IsVisible="{Binding Detail.ShowRepairButton}"/>
                         </Grid>
 
-                        <TextBlock Text="加载器（Fabric/Forge 等）在【版本】页安装"
-                                   Classes="dim" FontSize="11" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Grid>
             </Border>

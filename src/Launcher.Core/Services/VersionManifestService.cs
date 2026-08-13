@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
+using Launcher.Core.Download;
 
 namespace Launcher.Core.Services;
 
@@ -45,11 +46,11 @@ public sealed class VersionManifestService
     public IReadOnlyList<GameVersionEntry> Entries => _entries;
     private List<GameVersionEntry> _entries = [];
 
-    public VersionManifestService(HttpClient? http = null, string? gameDirectory = null)
+    public VersionManifestService(HttpClient? http = null, string? gameDirectory = null, string? cacheDirectory = null)
     {
         // 清单是元数据小请求：15s 总超时（国内直连官方清单慢/失败时快速失败，不卡修复/刷新）
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        _cacheDirectory = Path.Combine(
+        _http = http ?? new HttpClient(HttpClientPool.SharedHandler) { Timeout = TimeSpan.FromSeconds(15) };
+        _cacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
     }
 
@@ -57,6 +58,13 @@ public sealed class VersionManifestService
     /// 拉取并合并版本清单。force=true 时忽略磁盘缓存强制刷新。
     /// 已安装判定跨所有扫描源（自建目录 + PCL/官方等已有环境），条目记录版本所在目录。
     /// </summary>
+    /// <summary>按版本 id 查清单 URL（复用 24h 缓存清单；查不到返回 null）——整合包导入预取父版本 json 用</summary>
+    public async Task<string?> GetVersionJsonUrlAsync(string versionId, CancellationToken ct = default)
+    {
+        var manifest = await LoadManifestAsync(false, ct);
+        return manifest.Versions.FirstOrDefault(v => v.Id == versionId)?.Url;
+    }
+
     public async Task RefreshAsync(bool force = false, CancellationToken ct = default)
     {
         var manifest = await LoadManifestAsync(force, ct);
@@ -116,6 +124,13 @@ public sealed class VersionManifestService
             foreach (var d in Directory.EnumerateDirectories(versionsDir))
             {
                 var id = Path.GetFileName(d);
+                // 8-14 误标清理：非自建目录（PCL/官方扫描源）的标记文件是历史误打
+                // （修复/自动修复路径写入）——顺带移除，防止「本启动器」标签显示在别人装的版本上
+                if (!GameDirectory.IsOwnInstallDir(dir))
+                {
+                    InstallMarker.Unmark(dir, id);
+                    InstallMarker.UnmarkPrefetched(dir, id);
+                }
                 if (IsInstalled(dir, id)) installed.TryAdd(id, dir);
             }
         }
@@ -131,6 +146,16 @@ public sealed class VersionManifestService
         => File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.json"))
         && File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.jar"));
 
+    /// <summary>
+    /// 实例判定（MOD 安装目标）：json 存在即可——26.2 这类 Fabric 父版本的 client jar 沿
+    /// inheritsFrom 链落加载器子目录，双文件同目录判定会漏掉（版本页已是 json-only 口径）。
+    /// 预取残留（.prefetched 且未正式安装）排除——半成品目录不算实例。
+    /// 注意：IsInstalled（json+jar）保持不动——仍是版本页 Installed 标记的权威口径。
+    /// </summary>
+    public static bool IsInstanceTarget(string gameDir, string id)
+        => File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.json"))
+        && InstallMarker.ShouldShowInPage(gameDir, id);
+
     /// <summary>合并后的条目（含已安装标记 + 所在目录，未安装为 ""）</summary>
     public sealed record GameVersionEntry(
         string Id,
@@ -139,4 +164,16 @@ public sealed class VersionManifestService
         DateTime ReleaseTime,
         string? ManifestUrl,
         string GameDirectory);
+
+    /// <summary>
+    /// 生态页版本筛选候选：release（非愚人节）且 &gt;= minVersion，语义降序（26.2 排最上、1.21.10 &gt; 1.21.6）。
+    /// 下限 1.16：更老版本的 mod 生态早已沉寂，全列只会让下拉臃肿。纯离线（测试友好）。
+    /// </summary>
+    public static List<string> FilterGameVersionOptions(IEnumerable<GameVersionEntry> entries, string minVersion = "1.16")
+        => entries.Where(e => e.Type == "release" && !VersionClassifier.IsAprilFools(e))
+                  .Select(e => e.Id)
+                  .Where(id => EcosystemService.CompareGameVersions(id, minVersion) >= 0)
+                  .Distinct(StringComparer.OrdinalIgnoreCase)
+                  .OrderByDescending(id => id, Comparer<string>.Create(EcosystemService.CompareGameVersions))
+                  .ToList();
 }

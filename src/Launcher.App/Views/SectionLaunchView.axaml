@@ -6,11 +6,12 @@
 
     <!-- 启动 -->
     <Border Classes="setting-group">
-        <StackPanel Spacing="8">
+        <StackPanel Spacing="10">
             <TextBlock Text="启动" Classes="group-header"/>
+            <TextBlock Text="内存与 Java" Classes="group-sub"/>
 
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="内存分配" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="内存分配" Classes="setting-label" VerticalAlignment="Center"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding MemoryPresets}"
                           SelectedItem="{Binding SelectedMemoryPreset}" HorizontalAlignment="Left">
                     <ComboBox.ItemTemplate>
@@ -28,22 +29,38 @@
             </Grid>
 
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                <TextBox Grid.Column="1" Text="{Binding JavaPathText}" Watermark="自动选配（PCL 运行库 / PATH）"/>
+                <TextBlock Text="Java 路径" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding JavaPathText}" Watermark="自动选配"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
                     <Button Content="浏览…" Classes="ghost" Click="OnBrowseJava"/>
                     <Button Content="自动" Classes="ghost" Click="OnResetJava"/>
                 </StackPanel>
             </Grid>
 
-            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
-                <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"
-                         Watermark="-Dxxx=1 -Xss2m（空格分隔）"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="进程优先级" Classes="setting-label" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding GamePriorityOptions}"
+                          SelectedItem="{Binding SelectedGamePriority}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GamePriorityOption">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="游戏和服务端都按这个跑。调高游戏更顺，其他程序可能卡。调低适合挂着。改完下次启动才生效。"
+                           VerticalAlignment="Center"/>
             </Grid>
 
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="额外 JVM 参数" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding ExtraJvmArgsText}"
+                         Watermark="-Dxxx=1 -Xss2m"/>
+            </Grid>
+
+            <TextBlock Text="性能" Classes="group-sub"/>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="性能档位" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="性能档位" Classes="setting-label" VerticalAlignment="Center"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding JvmProfileOptions}"
                           SelectedItem="{Binding SelectedJvmProfile}" HorizontalAlignment="Left">
                     <ComboBox.ItemTemplate>
@@ -52,14 +69,23 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <TextBlock Grid.Column="2" Text="GC 优化参数，不影响内存" Classes="dim" FontSize="11"
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="四档 GC 预设，只管内存回收，不碰内存大小。改完下次启动才生效。"
                            VerticalAlignment="Center"/>
             </Grid>
 
             <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="启动时自动写入中文语言" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Text="启动时自动把游戏设为中文" Classes="setting-label" VerticalAlignment="Center"/>
                 <ToggleSwitch IsChecked="{Binding AutoChineseEnabled}"/>
             </StackPanel>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="微软登录 Client ID" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding MicrosoftClientIdInput}"
+                         PlaceholderText="留空 = 用内置默认" Margin="0,0,8,0"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="正版登录用的 Azure 应用 ID。内置值失效时报「找不到应用」就填一个新的（其他启动器/社区流传的可用 ID 均可）。留空 = 保持现有设置" VerticalAlignment="Center"/>
+            </Grid>
         </StackPanel>
     </Border>
 </UserControl>

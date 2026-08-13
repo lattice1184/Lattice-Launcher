@@ -3,7 +3,7 @@
         x:Class="Launcher.App.Views.ExportDialogWindow"
         Width="460" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgSurface}">
+        Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock Text="导出整合包" FontSize="17" FontWeight="Bold"/>
@@ -16,7 +16,7 @@
             <CheckBox x:Name="IncludeConfig" Content="配置" IsChecked="True"/>
             <CheckBox x:Name="IncludeResourcepacks" Content="资源包" IsChecked="True"/>
             <CheckBox x:Name="IncludeShaders" Content="光影包" IsChecked="True"/>
-            <CheckBox x:Name="IncludeOptions" Content="选项文件 (options.txt)" IsChecked="True"/>
+            <CheckBox x:Name="IncludeOptions" Content="options.txt 选项文件" IsChecked="True"/>
         </StackPanel>
 
         <!-- 包信息 -->

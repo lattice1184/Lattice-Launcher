@@ -157,13 +157,13 @@ public class TerracottaLobbyServiceTests : IDisposable
         handler.StateQueue.Enqueue(State("host-ok", "ABCD-1234",
             P("m1", "Alice", "HOST"), P("m2", "Bob", "LOCAL"), P("m3", "Carol", "GUEST")));
         var factory = new FakeProcessFactory();
-        var events = new List<TerracottaSnapshot>();
+        var events = new List<MultiplayerSnapshot>();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
         svc.SnapshotChanged += events.Add;
 
         var snap = await svc.CreateHostAsync("Alice", CancellationToken.None);
 
-        Assert.Equal(TerracottaSessionState.Active, snap.State);
+        Assert.Equal(MultiplayerSessionState.Active, snap.State);
         Assert.Equal("ABCD-1234", snap.RoomCode);
         Assert.Equal(3, snap.Players.Count);
         Assert.True(snap.Players[0].IsHost && snap.Players[0].IsLocal); // host-ok 下 HOST 也算本地
@@ -171,7 +171,7 @@ public class TerracottaLobbyServiceTests : IDisposable
         Assert.False(snap.Players[2].IsHost);
         Assert.Equal(12, snap.Players[2].LatencyMs);
         Assert.Single(events); // 就绪时发布一次
-        Assert.Equal(TerracottaSessionState.Active, events[0].State);
+        Assert.Equal(MultiplayerSessionState.Active, events[0].State);
         Assert.Equal(1, factory.Called);
         Assert.NotNull(factory.LastHandoffPath);
         Assert.False(File.Exists(factory.LastHandoffPath)); // handoff 用完已清理
@@ -216,26 +216,26 @@ public class TerracottaLobbyServiceTests : IDisposable
         var handler = new StubHandler();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.ProtocolFailed, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.ProtocolFailed, ex.Failure);
         Assert.Empty(handler.Requests); // handoff 阶段失败 → 尚无 HTTP 交互
         Assert.Single(factory.Process!.Killed); // 进程存活且端口未知 → 直接 Kill 防僵尸
         Assert.True(factory.Process.Disposed);
     }
 
     [Fact]
-    public async Task CreateHost_ProcessExitsEarly_TerracottaBusy()
+    public async Task CreateHost_ProcessExitsEarly_BackendBusy()
     {
         var factory = new FakeProcessFactory { Process = new FakeProcess { HasExited = true } };
         var handler = new StubHandler();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.TerracottaBusy, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.BackendBusy, ex.Failure);
         Assert.Empty(factory.Process.Killed); // 未拥有进程，不收尾
     }
 
@@ -246,23 +246,23 @@ public class TerracottaLobbyServiceTests : IDisposable
         handler.StateQueue.Enqueue(State("exception", type: 3));
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.StartupFailed, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.StartupFailed, ex.Failure);
     }
 
     [Fact]
-    public async Task CreateHost_ExceptionType4_MinecraftWorldUnavailable()
+    public async Task CreateHost_ExceptionType4_WorldUnavailable()
     {
         var handler = new StubHandler();
         handler.StateQueue.Enqueue(State("exception", type: 4));
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.MinecraftWorldUnavailable, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.WorldUnavailable, ex.Failure);
     }
 
     [Fact]
@@ -272,35 +272,35 @@ public class TerracottaLobbyServiceTests : IDisposable
         handler.StateQueue.Enqueue(State("waiting")); // host 侧 waiting = 协议错误
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.ProtocolFailed, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.ProtocolFailed, ex.Failure);
     }
 
     [Fact]
-    public async Task CreateHost_ScanTimeout_MinecraftWorldUnavailable()
+    public async Task CreateHost_ScanTimeout_WorldUnavailable()
     {
         // 20 秒轮询（500ms × 40 次）后仍停在扫描 = 没开局域网世界
         var handler = new StubHandler { DefaultState = State("host-scanning") };
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.MinecraftWorldUnavailable, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.WorldUnavailable, ex.Failure);
     }
 
     [Fact]
-    public async Task CreateHost_MetaIncompatible_TerracottaBusy()
+    public async Task CreateHost_MetaIncompatible_BackendBusy()
     {
         var handler = new StubHandler { MetaJson = """{"version":"9.9.9","target_os":"windows","target_arch":"x86_64"}""" };
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.CreateHostAsync("Alice", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.TerracottaBusy, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.BackendBusy, ex.Failure);
     }
 
     // ---------- 加入房间 ----------
@@ -314,7 +314,7 @@ public class TerracottaLobbyServiceTests : IDisposable
 
         var snap = await svc.JoinAsync("ABCD-1234", "Bob", CancellationToken.None);
 
-        Assert.Equal(TerracottaSessionState.Active, snap.State);
+        Assert.Equal(MultiplayerSessionState.Active, snap.State);
         Assert.Equal("ABCD-1234", snap.RoomCode);
         Assert.Equal(2, snap.Players.Count);
         Assert.False(snap.Players[0].IsLocal); // guest-ok 下 HOST 不算本地
@@ -328,10 +328,10 @@ public class TerracottaLobbyServiceTests : IDisposable
         var factory = new FakeProcessFactory();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.JoinAsync("BAD-CODE", "Bob", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.InvalidRoomCode, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.InvalidRoomCode, ex.Failure);
         Assert.Contains(handler.Requests, r => r.StartsWith("/panic")); // 失败 → 收尾
         Assert.Single(factory.Process!.Killed);
     }
@@ -343,10 +343,10 @@ public class TerracottaLobbyServiceTests : IDisposable
         handler.StateQueue.Enqueue(State("exception", type: 0));
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
 
-        var ex = await Assert.ThrowsAsync<TerracottaLobbyException>(
+        var ex = await Assert.ThrowsAsync<MultiplayerLobbyException>(
             () => svc.JoinAsync("ABCD-1234", "Bob", CancellationToken.None));
 
-        Assert.Equal(TerracottaLobbyFailure.RoomConnectionFailed, ex.Failure);
+        Assert.Equal(MultiplayerLobbyFailure.RoomConnectionFailed, ex.Failure);
     }
 
     [Fact]
@@ -355,7 +355,7 @@ public class TerracottaLobbyServiceTests : IDisposable
         var handler = new StubHandler();
         handler.StateQueue.Enqueue(State("guest-connecting", "ABCD-1234", P("m1", "Host", "HOST")));
         handler.StateQueue.Enqueue(State("guest-ok", "ABCD-1234", P("m1", "Host", "HOST"), P("m2", "Bob", "LOCAL")));
-        var events = new List<TerracottaSnapshot>();
+        var events = new List<MultiplayerSnapshot>();
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
         svc.SnapshotChanged += events.Add;
 
@@ -363,9 +363,9 @@ public class TerracottaLobbyServiceTests : IDisposable
 
         Assert.Equal("ABCD-1234", snap.RoomCode); // 以服务端回填为准
         Assert.Equal(2, events.Count);
-        Assert.Equal(TerracottaSessionState.Joining, events[0].State);
+        Assert.Equal(MultiplayerSessionState.Joining, events[0].State);
         Assert.Equal("ABCD-1234", events[0].RoomCode); // 连接中提前展示房间码
-        Assert.Equal(TerracottaSessionState.Active, events[1].State);
+        Assert.Equal(MultiplayerSessionState.Active, events[1].State);
     }
 
     [Fact]
@@ -411,7 +411,7 @@ public class TerracottaLobbyServiceTests : IDisposable
         // 队列里多塞几个 host-ok：给 monitor 兜底，防「停在前就打 /state」竞态
         for (var i = 0; i < 20; i++) handler.StateQueue.Enqueue(State("host-ok", "ABCD-1234", P("m1", "Alice", "HOST")));
         var factory = new FakeProcessFactory();
-        var stopped = new List<TerracottaStopReason>();
+        var stopped = new List<MultiplayerStopReason>();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
         svc.Stopped += r => stopped.Add(r);
 
@@ -426,36 +426,36 @@ public class TerracottaLobbyServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Monitor_ProcessExits_TerracottaExited()
+    public async Task Monitor_ProcessExits_BackendExited()
     {
         var handler = new StubHandler();
         handler.StateQueue.Enqueue(State("host-ok", "ABCD-1234", P("m1", "Alice", "HOST")));
         var factory = new FakeProcessFactory();
         using var svc = new TerracottaLobbyService(Module(), factory.Create, handler);
-        var tcs = new TaskCompletionSource<TerracottaStopReason>();
+        var tcs = new TaskCompletionSource<MultiplayerStopReason>();
         svc.Stopped += r => tcs.TrySetResult(r);
 
         await svc.CreateHostAsync("Alice", CancellationToken.None);
         factory.Process!.HasExited = true; // 进程退出 → monitor 1s 内发现
         var reason = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(8));
 
-        Assert.Equal(TerracottaStopReason.TerracottaExited, reason);
+        Assert.Equal(MultiplayerStopReason.BackendExited, reason);
         Assert.Empty(factory.Process.Killed); // 进程已退，无需 Kill
     }
 
     [Fact]
-    public async Task Monitor_ExceptionType4_MinecraftWorldClosed()
+    public async Task Monitor_ExceptionType4_WorldClosed()
     {
         var handler = new StubHandler();
         handler.StateQueue.Enqueue(State("host-ok", "ABCD-1234", P("m1", "Alice", "HOST")));
         handler.StateQueue.Enqueue(State("exception", type: 4));
         using var svc = new TerracottaLobbyService(Module(), new FakeProcessFactory().Create, handler);
-        var tcs = new TaskCompletionSource<TerracottaStopReason>();
+        var tcs = new TaskCompletionSource<MultiplayerStopReason>();
         svc.Stopped += r => tcs.TrySetResult(r);
 
         await svc.CreateHostAsync("Alice", CancellationToken.None);
         var reason = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(8));
 
-        Assert.Equal(TerracottaStopReason.MinecraftWorldClosed, reason);
+        Assert.Equal(MultiplayerStopReason.WorldClosed, reason);
     }
 }

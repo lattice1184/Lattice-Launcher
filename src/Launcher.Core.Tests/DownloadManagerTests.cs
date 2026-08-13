@@ -9,7 +9,7 @@ public class DownloadManagerTests
     private static DownloadManager CreateManager()
     {
         SynchronizationContext.SetSynchronizationContext(null);
-        return new DownloadManager();
+        return new DownloadManager(null, 0);
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public class DownloadManagerTests
     [Fact]
     public async Task Suspend_ThenResume_ReplaysWork()
     {
-        var manager = new DownloadManager(null);
+        var manager = new DownloadManager(null, 0);
         var runs = 0;
         var task = manager.Enqueue("t", async (p, ct) =>
         {
@@ -152,6 +152,8 @@ public class DownloadManagerTests
             catch (OperationCanceledException) { throw; }
         });
 
+        // 等 work 实际启动（Gated 异步调度后 Suspend 可能抢在 runs++ 前——runs 仍 0）
+        for (var i = 0; i < 200 && runs == 0; i++) await Task.Delay(10);
         task.Suspend();
         // Paused 不是终态——Completion 不完成（稳定 TCS），轮询状态
         for (var i = 0; i < 200 && task.State != DownloadTaskState.Paused; i++)
@@ -169,7 +171,7 @@ public class DownloadManagerTests
     [Fact]
     public async Task SuspendAll_ThenResumeAll_AllTasksContinue()
     {
-        var manager = new DownloadManager(null);
+        var manager = new DownloadManager(null, 0);
         var t1 = manager.Enqueue("a", async (p, ct) => await Task.Delay(100, ct));
         var t2 = manager.Enqueue("b", async (p, ct) => await Task.Delay(100, ct));
 

@@ -198,7 +198,10 @@ public partial class VersionBrowseViewModel : ViewModelBase
             {
                 var id = Path.GetFileName(d);
                 // json-only 判定（同 LoadAsync 目录补漏）：残件版本必须可见可修
-                if (File.Exists(Path.Combine(d, $"{id}.json")) && InstallMarker.ShouldShowInPage(dir, id))
+                // AL57 防御：同 (Id, 目录) 不重复加（ScanSourceDirs 已按物理路径去重，此处兜底）
+                if (File.Exists(Path.Combine(d, $"{id}.json")) && InstallMarker.ShouldShowInPage(dir, id)
+                    && !_all.Any(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase)
+                                      && string.Equals(r.GameDir, dir, StringComparison.OrdinalIgnoreCase)))
                     _all.Add(MakeRow(id, dir));
             }
         }
@@ -591,6 +594,8 @@ public partial class InstalledVersionDetailVM : ViewModelBase
             {
                 NotificationService.Success($"{targetId} 修复完成");
                 RefreshJarMissing(); // 补全完成 → 红字/「缺文件」徽章立即消失（秒同步）
+                // AL57 模组缺失自愈：读游戏日志，缺失前置 → 确认 → 自动补全
+                await ModRepairFlow.TryRepairAsync(GameDir, targetId, owner);
             }
             else if (task.Error is { } failed) ErrorText = failed;
         }
@@ -632,15 +637,16 @@ public partial class InstalledVersionDetailVM : ViewModelBase
                 NotificationService.Error($"{Id} 版本 JSON 解析失败，无法检查");
                 return;
             }
-            var missing = AutoRepairService.VerifyVersion(version, GameDir);
-            if (missing.Count == 0)
+            // AL62 质检：存在性 + SHA1 哈希 + 统计（用户主动检查 → 哈希全验）
+            var report = await AutoRepairService.VerifyVersionAsync(version, GameDir, verifyHashes: true);
+            if (report.IsComplete)
             {
-                NotificationService.Success($"{Id} 文件完整，无需修复");
+                NotificationService.Success($"{Id} {report.SummaryText}");
             }
             else
             {
-                ErrorText = $"文件不完整：缺 {missing.Count} 个（首例：{Path.GetFileName(missing[0])}）。可点「重新下载」补全";
-                NotificationService.Error($"{Id} 文件不完整：缺 {missing.Count} 个");
+                ErrorText = $"文件不完整：缺 {report.Missing} 个（首例：{Path.GetFileName(report.MissingFiles[0])}）。可点「重新下载」补全";
+                NotificationService.Error($"{Id} 文件不完整：缺 {report.Missing} 个");
             }
         }
         catch (Exception ex)

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Launch;
 
@@ -17,7 +18,27 @@ public sealed class LaunchProcess
 
     /// <summary>通用重载（服务端等无 LaunchProfile 的场景）</summary>
     public static string DescribeCommandLine(string exe, IEnumerable<string> args)
-        => string.Join(' ', new[] { exe }.Concat(args).Select(QuoteArg));
+        => string.Join(' ', new[] { exe }.Concat(RedactTokens(args)).Select(QuoteArg));
+
+    /// <summary>8-13 日志脱敏：launch-*.log 的「启动命令」行打码 token——
+    /// 正版启动会写真实 accessToken（--auth_access_token/--auth_session/--accessToken），
+    /// 拷走日志即可冒名进号。--x 与 --x= 两种形态都覆盖；值替换为 ***，参数名保留（根因诊断不受影响）。</summary>
+    internal static IEnumerable<string> RedactTokens(IEnumerable<string> args)
+    {
+        var list = args.ToList();
+        for (var i = 0; i < list.Count; i++)
+        {
+            var a = list[i];
+            var eq = a.IndexOf('=');
+            var name = eq >= 0 ? a[..eq] : a;
+            if (name is "--auth_access_token" or "--auth_session" or "--accessToken" or "--authAccessToken")
+            {
+                if (eq >= 0) list[i] = name + "=***";
+                else if (i + 1 < list.Count) list[i + 1] = "***";
+            }
+        }
+        return list;
+    }
 
     private static string QuoteArg(string arg)
         => arg.Contains(' ') || arg.Contains('"')
@@ -27,7 +48,8 @@ public sealed class LaunchProcess
     /// <summary>启动游戏进程。日志行通过 onLog 回调实时输出。</summary>
     public static LaunchResult Start(
         JavaArgumentsBuilder.LaunchProfile profile,
-        Action<string>? onLog = null, CancellationToken ct = default)
+        Action<string>? onLog = null, CancellationToken ct = default,
+        GamePriority priority = GamePriority.Normal)
     {
         var psi = new ProcessStartInfo
         {
@@ -50,6 +72,7 @@ public sealed class LaunchProcess
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) onLog?.Invoke(e.Data); };
 
         process.Start();
+        ApplyPriority(process, priority, onLog);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
@@ -82,5 +105,23 @@ public sealed class LaunchProcess
         catch { }
         var fileCode = ReadExitStatus(result.ExitStatusFilePath);
         return fileCode > 0 ? fileCode : 0; // 缺失/解析失败/为 0 → 正常退出
+    }
+
+    /// <summary>GamePriority → Windows 进程优先级类（服务端进程复用同一映射）</summary>
+    public static ProcessPriorityClass ToPriorityClass(GamePriority p) => p switch
+    {
+        GamePriority.BelowNormal => ProcessPriorityClass.BelowNormal,
+        GamePriority.AboveNormal => ProcessPriorityClass.AboveNormal,
+        GamePriority.High => ProcessPriorityClass.High,
+        GamePriority.RealTime => ProcessPriorityClass.RealTime,
+        _ => ProcessPriorityClass.Normal,
+    };
+
+    /// <summary>启动后设置进程优先级（Normal 跳过零开销；失败仅记日志——非管理员设 RealTime 可能无权限）</summary>
+    private static void ApplyPriority(Process process, GamePriority priority, Action<string>? onLog)
+    {
+        if (priority == GamePriority.Normal) return;
+        try { process.PriorityClass = ToPriorityClass(priority); }
+        catch (Exception ex) { onLog?.Invoke($"§ 设置进程优先级失败：{ex.Message}"); }
     }
 }

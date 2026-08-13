@@ -361,12 +361,15 @@ public partial class HomeViewModel : ViewModelBase
     private async Task LaunchCoreAsync(VersionInstanceVM? overrideVersion, string overrideGameDir, string[]? extraGameArgs)
     {
         if (IsLaunching || IsRunning) return;
+        // REVIEW-A1：_userStopped 每次启动入口重置——旧代码置 true 后永不复位，
+        // 本会话停过一次游戏，之后任何崩溃都被误判「已停止」（不弹崩溃窗/不自动修复/历史记 Stopped）
+        _userStopped = false;
         var version = overrideVersion ?? SelectedVersion;
         if (version is null)
         {
-            LaunchStatus = "请先选择版本";
-            await DialogService.Warn(DialogService.MainWindow(), "请先选择版本",
-                "请选择要启动的已安装版本。", "无法启动游戏", "知道了", "");
+            LaunchStatus = "你还没选版本";
+            await DialogService.Warn(DialogService.MainWindow(), "你还没选版本",
+                "选一个已安装的版本，再点启动。", "无法启动游戏", "知道了", "");
             return;
         }
         _lastLaunchVersionId = version.Name;
@@ -374,9 +377,9 @@ public partial class HomeViewModel : ViewModelBase
         var account = _accounts.Current;
         if (account is null)
         {
-            LaunchStatus = "请先登录账号";
-            await DialogService.Warn(DialogService.MainWindow(), "未登录账号",
-                "启动游戏需要登录账号。可通过头像菜单离线登录或使用正版账号。", "无法启动游戏", "知道了", "");
+            LaunchStatus = "你还没登录账号";
+            await DialogService.Warn(DialogService.MainWindow(), "你还没登录账号",
+                "启动游戏要登录账号。点头像菜单离线登录，或用正版账号。", "无法启动游戏", "知道了", "");
             return;
         }
 
@@ -409,14 +412,24 @@ public partial class HomeViewModel : ViewModelBase
             var extraArgs = gcArgs.Concat(argsCfg?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []).ToArray();
             if (!string.IsNullOrEmpty(javaCfg))
                 s.JavaPath = javaCfg; // 版本级 Java 优先（GameLaunchService 读 LauncherSettings）
-            // 正版账号：启动前静默刷新 access token（过期自动换新，用户无感；刷新失败提示重新登录）
+            // 正版账号：Minecraft token 未过期直接用缓存（跳过 5 连网络刷新——启动变慢根因）；
+            // 过期才静默刷新（过期自动换新，用户无感；刷新失败提示重新登录）
             var accessToken = "token";
             if (account.Type == "microsoft")
             {
                 try
                 {
-                    var session = await Task.Run(() => _accounts.RefreshMicrosoftAsync());
-                    accessToken = session.AccessToken;
+                    if (_accounts.MicrosoftSession is { } ms
+                        && ms.AccessToken.Length > 0
+                        && ms.ExpiresAtUtc > DateTime.UtcNow)
+                    {
+                        accessToken = ms.AccessToken;
+                    }
+                    else
+                    {
+                        var session = await Task.Run(() => _accounts.RefreshMicrosoftAsync());
+                        accessToken = session.AccessToken;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -430,14 +443,15 @@ public partial class HomeViewModel : ViewModelBase
                 version.Name, gameDir, account.Name, account.Uuid, accessToken,
                 memoryMb: memMb, extraJvmArgs: extraArgs,
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
-                ct: CancellationToken.None, extraGameArgs: extraGameArgs));
+                ct: CancellationToken.None, extraGameArgs: extraGameArgs,
+                userType: account.Type == "microsoft" ? "msa" : "legacy"));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;
             IsRunning = true;
             LaunchState = "运行中";
             LaunchProgress = 100;
-            LaunchStatus = $"游戏运行中（{account.Name}）· 点停止结束";
+            LaunchStatus = $"游戏运行中，账号 {account.Name}。点停止结束";
             SetStage("运行中");
             NotificationService.Success("游戏窗口已拉起");
 
@@ -495,7 +509,7 @@ public partial class HomeViewModel : ViewModelBase
             // 客户端文件缺失（残件版本）：显示修复入口按钮
             ShowRepairGuide = ex is FileNotFoundException;
             LaunchStatus = ShowRepairGuide
-                ? "客户端文件缺失，无法启动。可补全下载或前往官方页面下载。"
+                ? "你的客户端文件缺失，启动不了。可以补全下载，或去官方页面下载。"
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
             LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
@@ -559,6 +573,9 @@ public partial class HomeViewModel : ViewModelBase
                 ? AutoRepairService.FixNatives(version.Name, gameDir)
                 : await AutoRepairService.FixRedownloadAsync(version.Name, gameDir);
             AppendLog($"§ 自动修复完成：{result}");
+            // AL57.1 模组缺失自愈（自动路径）：无人值守直接补全，不弹确认框（弹框与崩溃窗模态冲突 + 破坏全自动语义）
+            var hadMissing = await ModRepairFlow.TryRepairAsync(gameDir, version.Name, null, requireConfirm: false);
+            if (hadMissing) AppendLog("§ 已检查缺失前置模组并自动补全（详见下载中心）");
             return true;
         }
         catch (Exception ex)

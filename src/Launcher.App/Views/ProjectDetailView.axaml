@@ -11,14 +11,14 @@
 
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="16">
                 <Border Width="72" Height="72" CornerRadius="{StaticResource RadiusLarge}" ClipToBounds="True"
-                        Background="{StaticResource BgRaised}">
+                        Background="{DynamicResource BgRaised}">
                     <Image Source="{Binding Icon}" Width="72" Height="72" Stretch="Uniform"/>
                 </Border>
                 <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="White"/>
                     <TextBlock Text="{Binding Author}" Foreground="#7E8BA0"/>
                     <TextBlock Text="{Binding Stats}" Foreground="#5A6577" FontSize="12"/>
-                    <Button Content="打开主页 ↗" Classes="ghost" FontSize="11" Padding="10,2"
+                    <Button Content="打开主页 ↗" Classes="link"
                             HorizontalAlignment="Left" IsVisible="{Binding ProjectPageUrl.Length}"
                             Click="OnOpenPage"/>
                 </StackPanel>
@@ -45,30 +45,33 @@
                 <StackPanel Spacing="10">
                     <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
 
-                    <!-- 手动版本选择（懒加载） -->
-                    <Expander Header="手动选择版本" IsExpanded="False">
-                        <StackPanel Spacing="8">
-                            <ComboBox ItemsSource="{Binding AllVersions}" SelectedItem="{Binding SelectedVersion}"
-                                      PlaceholderText="选择版本" HorizontalAlignment="Stretch">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:VersionOptionVM">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="{Binding Display}"/>
+                    <!-- 版本列表（PCL 式：打开即直显最新 10 条，每行独立安装；命中自动匹配的行带推荐标记） -->
+                    <TextBlock Text="版本列表" Classes="sub" FontSize="12" IsVisible="{Binding HasVersions}"/>
+                    <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding HasVersions}" Margin="0,0,0,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:VersionOptionVM">
+                                <Border Classes="modcard" Padding="8,6" Margin="0,1" CornerRadius="6">
+                                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12">
+                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Display}" FontSize="12" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             <Border CornerRadius="3" Padding="5,1" Background="#12332F"
                                                     VerticalAlignment="Center" IsVisible="{Binding IsRecommended}">
                                                 <TextBlock Text="推荐" FontSize="10" Foreground="#B5F4E9"/>
                                             </Border>
-                                            <TextBlock Text="{Binding PublishedText}" Classes="dim" FontSize="11"
-                                                       VerticalAlignment="Center"/>
                                         </StackPanel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <Button Content="加载版本列表" Classes="ghost" Command="{Binding LoadVersionsCommand}"
-                                    HorizontalAlignment="Left" Padding="10,4"
-                                    IsVisible="{Binding AllVersions.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
-                        </StackPanel>
-                    </Expander>
+                                        <TextBlock Grid.Column="1" Text="{Binding PublishedText}" Classes="dim" FontSize="11"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding SizeText}" Classes="dim" FontSize="11"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Grid.Column="3" Content="安装" Classes="primary" FontSize="12" Padding="16,5"
+                                                Command="{Binding $parent[UserControl].((vm:ProjectDetailViewModel)DataContext).InstallVersionCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
                     <!-- 文件列表（当前所选版本的安装文件） -->
                     <Expander Header="{Binding FilesHeaderText}" IsExpanded="True"
@@ -77,7 +80,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:VersionFileVM">
                                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="0,2">
-                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{StaticResource TextSecondary}"
+                                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                                                    TextTrimming="CharacterEllipsis"/>
                                         <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="11"/>
                                     </Grid>

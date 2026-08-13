@@ -5,7 +5,7 @@
         x:DataType="vm:TerracottaAgreementDialogViewModel"
         Title="联机功能使用须知" Width="500" SizeToContent="Height" CanResize="False"
         WindowStartupLocation="CenterOwner"
-        Background="{StaticResource BgSurface}">
+        Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
         <TextBlock Text="联机功能使用须知" FontSize="17" FontWeight="Bold"/>
@@ -13,7 +13,7 @@
         <!-- 许可证声明 + 项目链接 -->
         <StackPanel Spacing="8">
             <TextBlock Classes="dim" FontSize="12" TextWrapping="Wrap">
-                联机功能由 <Run FontWeight="SemiBold" Foreground="White">Terracotta | 陶瓦联机</Run> 提供，底层基于 EasyTier 联机引擎。
+                联机功能由 <Run FontWeight="SemiBold" Foreground="White">Terracotta | 陶瓦联机</Run> 提供，底层用 EasyTier 引擎。
                 使用时须遵守中国大陆相关法律法规，不得用于违法用途。
             </TextBlock>
             <Button Content="Terracotta | 陶瓦联机项目" Classes="ghost" FontSize="11"

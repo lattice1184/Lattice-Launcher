@@ -128,8 +128,8 @@ public sealed class TerracottaProvisioningService
                     lastError = ex.Message;
                 }
             }
-            throw new TerracottaLobbyException(
-                TerracottaLobbyFailure.TerracottaUnavailable,
+            throw new MultiplayerLobbyException(
+                MultiplayerLobbyFailure.BackendUnavailable,
                 $"陶瓦模块下载失败：{lastError ?? "未知错误"}（已尝试 Gitee 与 GitHub）");
         }
         finally

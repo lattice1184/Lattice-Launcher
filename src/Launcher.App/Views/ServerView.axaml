@@ -14,7 +14,7 @@
                        VerticalAlignment="Center" TextAlignment="Right" TextTrimming="CharacterEllipsis"/>
             <Button Grid.Column="2" Content="在新窗口打开" Classes="ghost" FontSize="12" Padding="10,4"
                     Margin="10,0,0,0" Click="OnOpenWindow"
-                    ToolTip.Tip="把开服页弹成独立窗口，日志/状态实时同步"/>
+                    ToolTip.Tip="你可以把开服页弹成独立窗口。日志和状态实时同步"/>
         </Grid>
 
         <!-- 操作条：版本选择 + 下载/启动 单行（不再堆叠卡片） -->
@@ -30,7 +30,7 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button Content="一键开服" Classes="primary" Padding="20,8"
+                    <Button Content="开服" Classes="primary" Padding="20,8"
                             Command="{Binding OneClickStartCommand}" IsVisible="{Binding !IsRunning}"/>
                     <Button Content="刷新" Classes="ghost" Padding="12,8"
                             Command="{Binding RefreshVersionsCommand}"/>
@@ -116,9 +116,9 @@
                                 </Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Content="测试低配" Classes="ghost" FontSize="12" Padding="12,5"
-                                            Click="OnPresetClick" CommandParameter="0" ToolTip.Tip="内存 1G · 视距 4 · 玩家 5，适合老机器测试"/>
+                                            Click="OnPresetClick" CommandParameter="0" ToolTip.Tip="内存 1G · 视距 4 · 玩家 5。适合老机器测试"/>
                                     <Button Content="推荐（按机器）" Classes="ghost" FontSize="12" Padding="12,5"
-                                            Click="OnPresetClick" CommandParameter="1" ToolTip.Tip="按当前 CPU 核数与可用内存计算"/>
+                                            Click="OnPresetClick" CommandParameter="1" ToolTip.Tip="按你机器当前的 CPU 核数和可用内存算"/>
                                     <Button Content="高配" Classes="ghost" FontSize="12" Padding="12,5"
                                             Click="OnPresetClick" CommandParameter="2" ToolTip.Tip="内存 8G · 视距 16 · 玩家 40"/>
                                 </StackPanel>
@@ -145,7 +145,7 @@
                                     <DataTemplate x:DataType="vm:ServerPlayerVM">
                                         <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,2">
                                             <TextBlock Text="{Binding Name}" FontSize="12"
-                                                       Foreground="{StaticResource TextSecondary}"
+                                                       Foreground="{DynamicResource TextSecondary}"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             <Button Grid.Column="1" Content="踢出" Classes="ghost" FontSize="10" Padding="8,2"
                                                     Command="{Binding $parent[Border].((vm:ServerViewModel)DataContext).KickPlayerCommand}"
@@ -178,7 +178,7 @@
                                     <DataTemplate x:DataType="core:ServerOpEntry">
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
                                             <TextBlock Text="{Binding Name}" FontSize="13"
-                                                       Foreground="{StaticResource TextSecondary}"
+                                                       Foreground="{DynamicResource TextSecondary}"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="1" Text="OP" Classes="dim" FontSize="11"
                                                        VerticalAlignment="Center"/>
@@ -207,7 +207,7 @@
                                     <DataTemplate x:DataType="core:ServerBannedEntry">
                                         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" Margin="0,2">
                                             <TextBlock Text="{Binding Name}" FontSize="13"
-                                                       Foreground="{StaticResource TextSecondary}"
+                                                       Foreground="{DynamicResource TextSecondary}"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="1" Text="已封禁" Classes="dim" FontSize="11"
                                                        VerticalAlignment="Center"/>
@@ -260,14 +260,14 @@
             </ScrollViewer>
 
             <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch"
-                          Background="{StaticResource BorderColor}" ResizeDirection="Columns"/>
+                          Background="{DynamicResource BorderColor}" ResizeDirection="Columns"/>
 
             <!-- 右：控制台（占满） -->
             <Border Grid.Column="2" Classes="card" Padding="0" MinWidth="280">
                 <DockPanel>
                     <Border DockPanel.Dock="Top" Padding="12,8"
-                            Background="{StaticResource BgSurface}"
-                            BorderBrush="{StaticResource BorderColor}" BorderThickness="0,0,0,1">
+                            Background="{DynamicResource BgSurface}"
+                            BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
                         <Grid ColumnDefinitions="*,Auto,Auto">
                             <TextBlock Text="控制台" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
                             <Button Grid.Column="1" Content="复制" Classes="ghost" FontSize="11" Padding="10,3"
@@ -295,7 +295,7 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <TextBlock Text="启动服务端后日志显示在此" Foreground="{StaticResource TextDim}"
+                        <TextBlock Text="你启动服务端后，日志会显示在这" Foreground="{DynamicResource TextDim}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                    IsVisible="{Binding Logs.Count, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}"/>
                     </Grid>

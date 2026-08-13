@@ -60,6 +60,7 @@ public class LauncherSettingsTests
         Assert.Null(s.JavaPath);
         Assert.Null(s.ExtraJvmArgs);
         Assert.True(s.AutoChineseEnabled);
+        Assert.True(s.EcoFollowInstance); // 8-19：默认跟随实例（老用户无感）
         Assert.Equal(DownloadSourcePreference.OfficialFirst, s.DownloadSource);
         Assert.Equal(0, s.MaxConcurrentDownloads);
     }
@@ -77,6 +78,7 @@ public class LauncherSettingsTests
                 JavaPath = @"C:\Program Files\Java\jdk-21in\java.exe",
                 ExtraJvmArgs = "-Dxxx=1 -Xss2m",
                 AutoChineseEnabled = false,
+                EcoFollowInstance = false,
                 DownloadSource = DownloadSourcePreference.MirrorOnly,
                 MaxConcurrentDownloads = 12,
             };
@@ -88,8 +90,31 @@ public class LauncherSettingsTests
             Assert.Equal(@"C:\Program Files\Java\jdk-21in\java.exe", loaded.JavaPath);
             Assert.Equal("-Dxxx=1 -Xss2m", loaded.ExtraJvmArgs);
             Assert.False(loaded.AutoChineseEnabled);
+            Assert.False(loaded.EcoFollowInstance);
             Assert.Equal(DownloadSourcePreference.MirrorOnly, loaded.DownloadSource);
             Assert.Equal(12, loaded.MaxConcurrentDownloads);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public void Defaults_GamePriority_Normal()
+    {
+        var s = new LauncherSettings();
+        Assert.Equal(GamePriority.Normal, s.GamePriority);
+    }
+
+    [Fact]
+    public void SaveAndLoad_GamePriority_RoundTrip()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"settings-{Guid.NewGuid():N}.json");
+        try
+        {
+            var s = new LauncherSettings { GamePriority = GamePriority.High };
+            s.Save(path);
+
+            var loaded = LauncherSettings.Load(path);
+            Assert.Equal(GamePriority.High, loaded.GamePriority);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
@@ -98,7 +123,7 @@ public class LauncherSettingsTests
     public void Defaults_DownloadTierFields()
     {
         var s = new LauncherSettings();
-        Assert.Equal(DownloadTier.Low, s.DownloadTier);
+        Assert.Equal(DownloadTier.Medium, s.DownloadTier); // 默认中档（分片/库并发 16）
         Assert.Equal(0, s.ChunkCount);
         Assert.Equal(0, s.BufferSize);
         Assert.Equal("", s.CurseForgeApiKey);
@@ -153,4 +178,5 @@ public class LauncherSettingsTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
 }

@@ -16,7 +16,7 @@ public sealed class GameLaunchService
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs, string? javaPathOverride = null,
         Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default,
-        string[]? extraGameArgs = null)
+        string[]? extraGameArgs = null, string userType = "legacy")
     {
         // 1. 读版本 JSON
         onStage?.Invoke("解析版本");
@@ -31,10 +31,10 @@ public sealed class GameLaunchService
         // 缺失在启动前报错（HomeViewModel 既有 catch 走修复指引 + AutoFix），不再 JVM 启动后
         // ClassNotFoundException/ZipException 崩溃。父 json 缺失时链保留 → 只查子自身 → 落到 Build 抛
         // ParentVersionMissingException（C2 路径）。
-        var missing = AutoRepairService.VerifyVersion(version, gameDirectory);
-        if (missing.Count > 0)
+        var report = await AutoRepairService.VerifyVersionAsync(version, gameDirectory);
+        if (!report.IsComplete)
             throw new FileNotFoundException(
-                $"版本 {versionId} 文件不完整：缺 {missing.Count} 个文件（首例：{missing[0]}）。可点重新下载补全");
+                $"版本 {versionId} 文件不完整：缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）。可点重新下载补全");
 
         // 2. 版本隔离：game_directory 指向 versions/{id}，启动前建 saves/mods 等子目录（Minecraft 不会自建）；
         //    自动中文写隔离后的目录（options.txt 各版本独立，不串门）
@@ -73,7 +73,7 @@ public sealed class GameLaunchService
         var builder = new JavaArgumentsBuilder();
         var profile = builder.Build(version, gameDirectory, java,
             accountName, accountUuid, accessToken, memoryMb, extraJvmArgs,
-            versionIsolation: null, extraGameArgs);
+            versionIsolation: null, extraGameArgs, userType);
 
         // AL8：启动命令写入日志（onLog → launch-*.log 首行）——崩溃/启动失败时未替换的占位符等根因一眼可见
         onLog?.Invoke("§ 启动命令：" + LaunchProcess.DescribeCommandLine(profile));
@@ -84,7 +84,7 @@ public sealed class GameLaunchService
         ExtractNatives(profile.NativeJars, profile.NativesDirectory, onLog);
 
         onStage?.Invoke("启动 JVM");
-        return LaunchProcess.Start(profile, onLog, ct);
+        return LaunchProcess.Start(profile, onLog, ct, LauncherSettings.Current.GamePriority);
     }
 
     /// <summary>解压 natives：只提取原生库文件（.dll/.so/.dylib）平铺到 natives 根目录（忽略 jar 内目录结构）。
