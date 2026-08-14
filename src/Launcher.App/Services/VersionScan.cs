@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Launcher.Core.Launch;
+using Launcher.Core.Services;
 
 namespace Launcher.App.Services;
 
@@ -46,19 +47,11 @@ public static class VersionScan
     /// ① 自身目录 {id}.jar（原版单独下载/补全后）；② 父版本目录 {parent}.jar（官方 Forge 安装器落父目录）；
     /// ③ 引用我的已装子版本目录有 jar（Lattice 下载 H6 落子目录——原版条目目录无 jar 但游戏能跑，非缺失）。
     /// children = 已装父版本 id → (子 id, 子目录)。任一满足 = 不缺失；否则才是真残件（json-only）。
+    /// 8-14：实现委托 Core（VersionManifestService.HasUsableClientJar）——「已装集合」与行徽章同口径，勿各写一份。
     /// </summary>
     public static bool HasUsableClientJar(string gameDir, string id, string? parent,
         IReadOnlyDictionary<string, List<(string ChildId, string ChildDir)>> childrenByParent)
-    {
-        if (File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.jar"))) return true;
-        if (!string.IsNullOrEmpty(parent)
-            && File.Exists(Path.Combine(gameDir, "versions", parent, $"{parent}.jar")))
-            return true;
-        if (childrenByParent.TryGetValue(id, out var kids)
-            && kids.Any(k => File.Exists(Path.Combine(k.ChildDir, "versions", k.ChildId, $"{k.ChildId}.jar"))))
-            return true;
-        return false;
-    }
+        => VersionManifestService.HasUsableClientJar(gameDir, id, parent, childrenByParent);
 
     private static string Cap(string s) => s.Length > 0 ? char.ToUpperInvariant(s[0]) + s[1..] : s;
 }

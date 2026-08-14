@@ -68,7 +68,7 @@ public sealed class VersionManifestService
     public async Task RefreshAsync(bool force = false, CancellationToken ct = default)
     {
         var manifest = await LoadManifestAsync(force, ct);
-        var installed = ScanInstalledVersions();
+        var installed = ScanUsableInstances(GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true);
         _entries = manifest.Versions
             .Select(v => new GameVersionEntry(
                 v.Id, v.Type, installed.TryGetValue(v.Id, out var dir), v.ReleaseTime, v.Url,
@@ -105,7 +105,7 @@ public sealed class VersionManifestService
     /// <summary>磁盘重扫，就地更新 Installed 标记与所在目录（版本/加载器安装完成后调用）</summary>
     public void RescanInstalled()
     {
-        var installed = ScanInstalledVersions();
+        var installed = ScanUsableInstances(GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true);
         _entries = _entries.Select(e => e with
         {
             Installed = installed.TryGetValue(e.Id, out var dir),
@@ -113,34 +113,91 @@ public sealed class VersionManifestService
         }).ToList();
     }
 
-    /// <summary>跨所有扫描源枚举已安装版本（id → 所在目录）</summary>
-    private Dictionary<string, string> ScanInstalledVersions()
+    /// <summary>
+    /// 8-14 可用实例扫描（id → 所在目录；json 存在 + client jar 三路可用）：
+    /// ① 自身目录 jar；② inheritsFrom 父版本目录 jar；③ 引用本版本的已装子版本目录 jar。
+    /// 与版本页行徽章（VersionScan.HasUsableClientJar）同口径。此前用严格 json+jar 判定，
+    /// 原版 26.2（jar 落 fabric 子目录）被漏标——真机：下载 26.2+fabric 后版本页侧栏 26.2 不亮。
+    /// 只有 json 且无任何可用 jar 的预取残件不计入（AL29 C1 的防谎报语义保留）。
+    /// cleanForeignMarkers：非自建目录（PCL/官方扫描源）的标记是历史误打，顺带移除。
+    /// </summary>
+    public static Dictionary<string, string> ScanUsableInstances(IEnumerable<string> dirs, bool cleanForeignMarkers)
     {
-        var installed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
+        var candidates = new List<(string Dir, string Id)>();
+        foreach (var dir in dirs)
         {
             var versionsDir = Path.Combine(dir, "versions");
             if (!Directory.Exists(versionsDir)) continue;
             foreach (var d in Directory.EnumerateDirectories(versionsDir))
             {
                 var id = Path.GetFileName(d);
-                // 8-14 误标清理：非自建目录（PCL/官方扫描源）的标记文件是历史误打
-                // （修复/自动修复路径写入）——顺带移除，防止「本启动器」标签显示在别人装的版本上
-                if (!GameDirectory.IsOwnInstallDir(dir))
+                if (cleanForeignMarkers && !GameDirectory.IsOwnInstallDir(dir))
                 {
                     InstallMarker.Unmark(dir, id);
                     InstallMarker.UnmarkPrefetched(dir, id);
                 }
-                if (IsInstalled(dir, id)) installed.TryAdd(id, dir);
+                if (File.Exists(Path.Combine(d, $"{id}.json")))
+                    candidates.Add((dir, id));
             }
         }
+        var children = BuildChildrenMap(candidates);
+        var installed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (dir, id) in candidates)
+            if (HasUsableClientJar(dir, id, ParentOf(dir, id), children))
+                installed.TryAdd(id, dir);
         return installed;
     }
 
+    /// <summary>读版本 json 的 inheritsFrom（父版本 id；缺失/损坏 → null）</summary>
+    private static string? ParentOf(string gameDir, string id)
+    {
+        try
+        {
+            var json = Path.Combine(gameDir, "versions", id, $"{id}.json");
+            if (!File.Exists(json)) return null;
+            using var doc = JsonDocument.Parse(File.ReadAllText(json));
+            return doc.RootElement.TryGetProperty("inheritsFrom", out var p) ? p.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>父版本 id → 引用它的子版本清单（跨目录；全量扫描一次，各处复用）</summary>
+    public static Dictionary<string, List<(string ChildId, string ChildDir)>> BuildChildrenMap(
+        IEnumerable<(string Dir, string Id)> candidates)
+    {
+        var map = new Dictionary<string, List<(string, string)>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (dir, id) in candidates)
+        {
+            var parent = ParentOf(dir, id);
+            if (parent is null) continue;
+            if (!map.TryGetValue(parent, out var list))
+                map[parent] = list = [];
+            list.Add((id, dir));
+        }
+        return map;
+    }
+
     /// <summary>
-    /// 「已安装」权威判定：json 与 client jar 都存在（AL29 C1——原先只看 json，预取 json 的
-    /// 残件版本谎报已装，启动时才报「客户端文件缺失」）。完整加载器版本（fabric 等）的
-    /// client jar 沿 inheritsFrom 链落子版本目录，不受影响；只有 json 的残件在版本页仍可见可修。
+    /// client jar 三路可用判定（与 VersionScan.HasUsableClientJar 同口径——App 侧委托本方法，勿各写一份）：
+    /// ① 自身目录 {id}.jar；② inheritsFrom 父版本目录 jar（官方 Forge 安装器落父目录）；
+    /// ③ 引用本版本的已装子版本目录 jar（Lattice 下载 jar 落加载器子目录）。
+    /// </summary>
+    public static bool HasUsableClientJar(string gameDir, string id, string? parent,
+        IReadOnlyDictionary<string, List<(string ChildId, string ChildDir)>> childrenByParent)
+    {
+        if (File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.jar"))) return true;
+        if (!string.IsNullOrEmpty(parent)
+            && File.Exists(Path.Combine(gameDir, "versions", parent, $"{parent}.jar")))
+            return true;
+        if (childrenByParent.TryGetValue(id, out var kids)
+            && kids.Any(k => File.Exists(Path.Combine(k.ChildDir, "versions", k.ChildId, $"{k.ChildId}.jar"))))
+            return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 严格双文件判定（json + 同目录 jar）：低层谓词保留——上层「已装集合」已改用
+    /// ScanUsableInstances 的三路口径，本方法不再充当权威判定。
     /// </summary>
     public static bool IsInstalled(string gameDir, string id)
         => File.Exists(Path.Combine(gameDir, "versions", id, $"{id}.json"))

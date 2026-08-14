@@ -1,14 +1,16 @@
 # Lattice 启动器（晶格）
 
+> **English TL;DR** — Lattice is a self-written Minecraft launcher for Windows (PCL-style UX) that puts its effort into download speed and login simplicity. A GitHub file is fetched from **6 sources simultaneously** (official direct link + 2 mirrors + CDN signed link + mirrors of the signed link) — first to finish wins, ranked by per-source speed history. Measured: a 159.8 MB installer in **19.9 s**. Microsoft device-code login (pairing code auto-copied), Littleskin one-click auth, and offline skins visible in-game via an auto-injected resource pack (no mods needed). Single-file portable build (~84 MB), double-click to run, no .NET required. Built with Avalonia on .NET 10, Apache-2.0. Issues welcome — Chinese or English.
+
 自己写的 Minecraft 启动器。操作逻辑参考 PCL，下载和登录是花力气最多的两块。
 
 - 单文件 84MB，双击即用，不用装 .NET
 - 双击秒开，没有启动动画拖时间
 - Windows 10/11
 
-## 下载（最狠的一块）
+## 下载
 
-### 一个文件，六个源同时抢
+### 六源竞速：一个文件同时从六个源下载
 
 GitHub 上的文件，启动器会同时从这些源起跑：
 
@@ -17,7 +19,7 @@ GitHub 上的文件，启动器会同时从这些源起跑：
 - GitHub API 换链出的 CDN 签名直链（国内可达）
 - 签名直链再套两个镜像
 
-谁先下完用谁，其余直接取消。按历史速度自动排序，越用越知道哪个源快。
+谁先下完用谁，其余取消。候选顺序按各源历史速度自动排列。
 
 **实测数据**（OBS 32.2.1 安装包，159.8MB）：
 
@@ -29,11 +31,11 @@ GitHub 上的文件，启动器会同时从这些源起跑：
 | 4 | CDN 签名直链 | 19.9s | 8.0MB/s |
 | 5 | CDN 签名直链 | 21.9s | 7.3MB/s |
 
-### 下到一半也不慌
+### 中断与卡死处理
 
-- 分片断点续传：中断、换源、重试，已下的分片全部复用，不从头来
-- 卡死自救：低速自动换路（30 秒低于 100KB/s 判死）、静默断流换路、幸存源停滞兜底
-- 下完自动清理，不留临时文件
+- 分片断点续传：中断、换源、重试时已下分片复用，不从头下
+- 卡死处理：低速自动换路（30 秒低于 100KB/s）、静默断流换路、唯一幸存源停滞兜底
+- 完成后自动清理竞速临时文件
 
 ## 登录
 
