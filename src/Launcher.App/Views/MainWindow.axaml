@@ -1,0 +1,215 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.App.ViewModels"
+        xmlns:svc="using:Launcher.App.Services"
+        xmlns:behaviors="using:Launcher.App.Animations"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+        x:Class="Launcher.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Lattice Launcher" Width="150" Height="150" MinWidth="120" MinHeight="120"
+        WindowStartupLocation="CenterScreen" SystemDecorations="None"
+        TransparencyLevelHint="AcrylicBlur,Blur,None"
+        Background="Transparent"
+        TransparencyBackgroundFallback="#FF14181F">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <!-- 根：液态玻璃层（splash 阶段隐藏）与透明 splash 层同层叠放 -->
+    <Grid>
+    <!-- 液态玻璃背景层（毛玻璃：滚动内容透过可见模糊） -->
+    <Border x:Name="WindowRoot" CornerRadius="12" BorderBrush="#4D2F3745" BorderThickness="1" ClipToBounds="True">
+        <ExperimentalAcrylicBorder x:Name="RootSurface" CornerRadius="12">
+            <ExperimentalAcrylicBorder.Material>
+                <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                             TintColor="#14181F"
+                                             TintOpacity="0.40"
+                                             FallbackColor="#FF14181F"/>
+            </ExperimentalAcrylicBorder.Material>
+            <Grid>
+            <!-- 8-13 批次 34 终局：无启动动画——内容与背景随窗口直接全量显示 -->
+            <DockPanel x:Name="AppContent">
+                <!-- 左侧导航（液态玻璃，整列一种色、全高；空白处可拖拽窗口，双击最大化） -->
+                <ExperimentalAcrylicBorder x:Name="NavSurface" DockPanel.Dock="Left" Width="160" CornerRadius="0"
+                                           PointerPressed="TitleBar_PointerPressed">
+                    <ExperimentalAcrylicBorder.Material>
+                        <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                                     TintColor="#14181F"
+                                                     TintOpacity="0.92"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性 -->
+                    </ExperimentalAcrylicBorder.Material>
+                    <Grid>
+                        <!-- 激活指示条：独立滑动元素（位置由 ApplyNavVisuals 动画控制），替代按钮左侧描边 -->
+                        <Border x:Name="NavIndicator" Width="3" CornerRadius="2" IsHitTestVisible="False"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                    <StackPanel Margin="10">
+                        <TextBlock Text="Lattice Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
+                                   Margin="6,10,6,20"/>
+                        <!-- 导航项视觉（hover/active/按下）由 MainWindow.axaml.cs 本地值驱动——样式伪类在 Avalonia 12 下不可靠（历史多轮修复失败） -->
+                        <Button x:Name="NavHome"
+                                Command="{Binding NavigateCommand}" CommandParameter="home"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="主页" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="NavVersions"
+                                Command="{Binding NavigateCommand}" CommandParameter="version"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE9D2;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="版本" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="NavDownloads"
+                                Command="{Binding NavigateCommand}" CommandParameter="download"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="下载" Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Border Classes="badge" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
+                                        VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
+                                    <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{DynamicResource Accent}" FontSize="10"/>
+                                </Border>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="NavServer"
+                                Command="{Binding NavigateCommand}" CommandParameter="server"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE7C3;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="开服" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="NavMultiplayer"
+                                Command="{Binding NavigateCommand}" CommandParameter="multiplayer"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="NavSettings"
+                                Command="{Binding NavigateCommand}" CommandParameter="settings"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="设置" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    </Grid>
+                </ExperimentalAcrylicBorder>
+
+                <!-- 右侧内容区（页面切换动画；密度缩放；背板 72% 半透明——玻璃透出）。
+                     顶部标题条与内容同色：左导航一色、右内容一色，顶部不再有第三条颜色 -->
+                <Border x:Name="ContentSurface" Background="{DynamicResource BackgroundColor}">
+                    <Border.RenderTransform>
+                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                    </Border.RenderTransform>
+                    <Grid>
+                        <!-- 自定义背景：图片层（ApplyBackgroundImage 设置画刷）+ 65% 黑压暗（保文字可读）。
+                             页面根无背景 → 图片透出；Border.card/glass-card 实色保持不透明 -->
+                        <Border x:Name="BgDim" Background="#A6000000" IsVisible="False" IsHitTestVisible="False"/>
+                        <DockPanel>
+                        <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="36" Background="{DynamicResource BackgroundColor}"
+                                PointerPressed="TitleBar_PointerPressed">
+                            <!-- 窗口按钮：纯 Border+字形、手动 hover 变色，绝无缩放/位移/模板行为（错位根治）。
+                                 只做最小化+关闭（去掉最大化）；双击标题条空白处可最大化/还原 -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Border x:Name="BtnMin" Width="44" Height="36" Background="Transparent"
+                                        PointerEntered="TitleBtn_PointerEntered" PointerExited="TitleBtn_PointerExited"
+                                        PointerPressed="TitleBtn_PointerPressed" PointerReleased="TitleBtn_PointerReleased">
+                                    <TextBlock x:Name="BtnMinGlyph" Text="─" FontSize="12" Foreground="#8A93A6"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                </Border>
+                                <Border x:Name="BtnClose" Width="44" Height="36" Background="Transparent"
+                                        PointerEntered="TitleBtn_PointerEntered" PointerExited="TitleBtn_PointerExited"
+                                        PointerPressed="TitleBtn_PointerPressed" PointerReleased="TitleBtn_PointerReleased">
+                                    <TextBlock x:Name="BtnCloseGlyph" Text="✕" FontSize="12" Foreground="#8A93A6"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="12">
+                            <TransitioningContentControl x:Name="PageHost" Content="{Binding CurrentPage}"/>
+                        </Border>
+                        </DockPanel>
+                    </Grid>
+                </Border>
+            </DockPanel>
+
+            <!-- Toast 覆盖层（右上角堆叠；不拦截点击；容器 realize 时右侧滑入） -->
+            <ItemsControl x:Name="ToastsHost" ItemsSource="{Binding Source={x:Static svc:NotificationService.Toasts}}"
+                          IsHitTestVisible="False"
+                          HorizontalAlignment="Right" VerticalAlignment="Top"
+                          Margin="0,10,14,0">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Vertical" Spacing="8"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="svc:ToastItem">
+                        <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
+                                CornerRadius="10" Padding="14,9" Opacity="{Binding Opacity}">
+                            <Border.Transitions>
+                                <Transitions>
+                                    <DoubleTransition Property="Opacity" Duration="0:0:0.24"/>
+                                </Transitions>
+                            </Border.Transitions>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Ellipse Width="8" Height="8" Fill="{Binding Dot}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Message}" Foreground="{Binding MessageBrush}"
+                                           FontSize="12" TextWrapping="Wrap" MaxWidth="360"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            </Grid>
+        </ExperimentalAcrylicBorder>
+    </Border>
+    </Grid>
+</Window>

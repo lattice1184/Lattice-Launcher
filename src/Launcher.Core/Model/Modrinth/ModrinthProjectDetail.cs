@@ -1,0 +1,30 @@
+using System.Text.Json.Serialization;
+
+namespace Launcher.Core.Model.Modrinth;
+
+/// <summary>项目详情（GET /v2/project/{id}），详情页数据源</summary>
+public sealed record ModrinthProjectDetail(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("slug")] string Slug,
+    [property: JsonPropertyName("project_type")] string ProjectType,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("body")] string? Body,
+    [property: JsonPropertyName("categories")] List<string>? Categories,
+    [property: JsonPropertyName("versions")] List<string>? Versions,
+    [property: JsonPropertyName("downloads")] long Downloads,
+    [property: JsonPropertyName("follows")] long Follows,
+    [property: JsonPropertyName("icon_url")] string? IconUrl,
+    [property: JsonPropertyName("gallery")] List<string>? Gallery,
+    [property: JsonPropertyName("source_url")] string? SourceUrl,
+    [property: JsonPropertyName("client_side")] string? ClientSide,
+    [property: JsonPropertyName("server_side")] string? ServerSide,
+    [property: JsonPropertyName("date_created")] DateTime DateCreated,
+    [property: JsonPropertyName("date_modified")] DateTime DateModified,
+    [property: JsonPropertyName("license")] ModrinthLicenseInfo? License);
+
+/// <summary>许可证信息</summary>
+public sealed record ModrinthLicenseInfo(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("url")] string? Url);

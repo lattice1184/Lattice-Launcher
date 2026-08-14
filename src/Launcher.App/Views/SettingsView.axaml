@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:behaviors="using:Launcher.App.Animations"
+             x:Class="Launcher.App.Views.SettingsView">
+
+    <DockPanel>
+        <!-- 顶部：汉堡菜单按钮（打开分类下拉）+ 标题 -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,12">
+            <Button x:Name="SettingsMenuButton" Grid.Column="0" Content="☰" FontSize="18"
+                    Width="34" Height="34" Padding="0" CornerRadius="8" Background="Transparent"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Click="OnToggleMenu"
+                    behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                    behaviors:HoverBrushBehavior.Enabled="False"
+                    PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                    PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+            <StackPanel Grid.Column="1" Spacing="2" Margin="10,0,0,0">
+                <TextBlock Text="设置" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="游戏目录 / 启动参数 / 下载选项" Classes="sub" FontSize="12"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- 分类菜单：☰ 点开的下拉（激活项高亮；选完自动收起） -->
+        <Popup x:Name="SettingsMenu" Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False"
+               Opened="OnSettingsMenuOpened">
+            <Border Classes="glass-card" Padding="6">
+                <StackPanel MinWidth="150" Spacing="2">
+                    <Button x:Name="SettingsNavGameDir" Content="游戏目录" CommandParameter="0"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavLaunch" Content="启动" CommandParameter="1"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavAppearance" Content="外观" CommandParameter="2"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavDownload" Content="下载" CommandParameter="3"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavModules" Content="存储" CommandParameter="5"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                    <Button x:Name="SettingsNavAbout" Content="关于" CommandParameter="4"
+                            Click="OnSettingsNavClick" HorizontalAlignment="Stretch" Background="Transparent"
+                            behaviors:SpringScaleBehavior.Enabled="False" behaviors:RippleBehavior.Enabled="False"
+                            behaviors:HoverBrushBehavior.Enabled="False"
+                            PointerEntered="SettingsNavEnter" PointerExited="SettingsNavExit"
+                            PointerPressed="SettingsNavPress" PointerReleased="SettingsNavRelease"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- 分区内容：每分类一个独立 UserControl，code-behind 按索引切换
+             （覆盖式布局——直接替换 + 新分区淡入上移，无需旧分区淡出防跳位） -->
+        <ScrollViewer>
+            <ContentControl x:Name="ContentHost"/>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

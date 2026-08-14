@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Launcher.App.Views.ExportDialogWindow"
+        Width="460" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgSurface}">
+
+    <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
+        <TextBlock Text="导出整合包" FontSize="17" FontWeight="Bold"/>
+
+        <!-- 内容勾选（PCL 式） -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="包含内容" Classes="sub" FontSize="12"/>
+            <CheckBox x:Name="IncludeMods" Content="模组" IsChecked="True"/>
+            <CheckBox x:Name="IncludeSaves" Content="存档" IsChecked="True"/>
+            <CheckBox x:Name="IncludeConfig" Content="配置" IsChecked="True"/>
+            <CheckBox x:Name="IncludeResourcepacks" Content="资源包" IsChecked="True"/>
+            <CheckBox x:Name="IncludeShaders" Content="光影包" IsChecked="True"/>
+            <CheckBox x:Name="IncludeOptions" Content="options.txt 选项文件" IsChecked="True"/>
+        </StackPanel>
+
+        <!-- 包信息 -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="包信息" Classes="sub" FontSize="12"/>
+            <Grid ColumnDefinitions="70,*" ColumnSpacing="10">
+                <TextBlock Text="包名" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" x:Name="NameBox"/>
+            </Grid>
+            <Grid ColumnDefinitions="70,*" ColumnSpacing="10">
+                <TextBlock Text="描述" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" x:Name="DescBox" Watermark="可选"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- 输出位置 -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="输出位置" Classes="sub" FontSize="12"/>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Grid.Column="0" x:Name="PathBox"/>
+                <Button Grid.Column="1" Content="浏览…" Classes="ghost" Click="OnBrowse"/>
+            </Grid>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button x:Name="CancelBtn" Content="取消" Classes="ghost" Click="OnCancel"/>
+            <Button x:Name="ExportBtn" Content="开始导出" Classes="primary" Click="OnExport"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

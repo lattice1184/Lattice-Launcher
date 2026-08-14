@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Launcher.App.Views.LoaderChoiceDialog"
+        Title="选择加载器" Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgSurface}">
+
+    <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
+        <TextBlock x:Name="VersionTitle" FontSize="17" FontWeight="Bold"/>
+
+        <!-- 加载器选择 -->
+        <StackPanel Spacing="8">
+            <TextBlock Text="加载器" Classes="sub" FontSize="12"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button x:Name="VanillaBtn" Content="纯净原版" Classes="tab" Classes.active="True"
+                        Click="OnLoaderClick" Tag=""/>
+                <Button x:Name="FabricBtn" Content="Fabric" Classes="tab" Click="OnLoaderClick" Tag="Fabric"/>
+                <Button x:Name="ForgeBtn" Content="Forge" Classes="tab" Click="OnLoaderClick" Tag="Forge"/>
+                <Button x:Name="NeoForgeBtn" Content="NeoForge" Classes="tab" Click="OnLoaderClick" Tag="NeoForge"/>
+                <Button x:Name="QuiltBtn" Content="Quilt" Classes="tab" Click="OnLoaderClick" Tag="Quilt"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- 加载器版本 -->
+        <StackPanel x:Name="VersionPanel" Spacing="8" IsVisible="False">
+            <TextBlock Text="加载器版本" Classes="sub" FontSize="12"/>
+            <ComboBox x:Name="VersionBox" Width="260" HorizontalAlignment="Left" PlaceholderText="加载版本…"/>
+            <TextBlock x:Name="VersionStatus" Classes="dim" FontSize="11"/>
+            <CheckBox x:Name="FabricApiCheck" FontSize="11">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="同时安装 Fabric API"/>
+                    <Border Classes="help-hint"
+                               ToolTip.Tip="多数 Fabric 模组都靠它，勾上省得你以后再补"><Path/></Border>
+                </StackPanel>
+            </CheckBox>
+        </StackPanel>
+
+        <TextBlock Text="下载原版 + 所选加载器" Classes="dim" FontSize="11"/>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <Button Content="取消" Classes="ghost" Click="OnCancel"/>
+            <Button x:Name="StartBtn" Content="开始下载" Classes="primary" Click="OnStart"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

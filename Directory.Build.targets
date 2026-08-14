@@ -1,0 +1,6 @@
+<Project>
+  <!-- 构建后自动签名输出 DLL（解决 Defender 行为监视拦截未签名 R2R 模块） -->
+  <Target Name="SignOutputs" AfterTargets="Build">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\sign-output.ps1&quot; -TargetDir &quot;$(TargetDir)&quot;" />
+  </Target>
+</Project>

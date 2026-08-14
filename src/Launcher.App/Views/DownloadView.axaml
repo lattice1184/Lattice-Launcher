@@ -1,0 +1,191 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:core="using:Launcher.Core.Download"
+             xmlns:app="using:Launcher.App.Converters"
+             xmlns:views="using:Launcher.App.Views"
+             xmlns:svc="using:Launcher.App.Services"
+             x:Class="Launcher.App.Views.DownloadView"
+             x:DataType="vm:DownloadViewModel">
+
+    <UserControl.Resources>
+        <!-- 任务行内容（组任务的 Expander Header 与叶子任务共用） -->
+        <DataTemplate x:Key="TaskRow" x:DataType="core:DownloadTask">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" TextTrimming="CharacterEllipsis"/>
+                <Border Grid.Column="1" CornerRadius="{StaticResource RadiusSmall}" Padding="7,2"
+                        Background="{Binding State, Converter={x:Static app:StateBadgeConverter.Background}}"
+                        VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StateText}" FontSize="11"
+                               Foreground="{Binding State, Converter={x:Static app:StateBadgeConverter.Foreground}}"/>
+                </Border>
+                <TextBlock Grid.Column="2" Text="{Binding Error}" Foreground="{StaticResource Danger}" FontSize="11"
+                           TextTrimming="CharacterEllipsis" IsVisible="{Binding HasError}"/>
+                <TextBlock Grid.Column="2" Text="{Binding Diagnosis.Explanation}" Foreground="#E8B45A" FontSize="10"
+                           TextTrimming="CharacterEllipsis" IsVisible="{Binding Diagnosis}"
+                           ToolTip.Tip="{Binding Diagnosis.Explanation}"/>
+                <Button Grid.Column="3" Content="重试" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding RetryCommand}" IsVisible="{Binding IsFailed}"/>
+                <Button Grid.Column="3" Content="继续" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding ResumeCommand}" IsVisible="{Binding IsPaused}"/>
+                <Button Grid.Column="4" Content="暂停" Classes="ghost" Padding="8,3" FontSize="11"
+                        Command="{Binding PauseCommand}" IsVisible="{Binding IsActive}"/>
+                <Button Grid.Column="5" Content="取消" Classes="ghost" Padding="8,3" FontSize="12"
+                        Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}"/>
+            </Grid>
+        </DataTemplate>
+
+        <!-- 下载队列（tab 内容） -->
+        <DataTemplate x:Key="QueuePanel" x:DataType="vm:DownloadViewModel">
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="继续" Classes="ghost" Padding="10,4"
+                            Command="{Binding ResumeAllCommand}" IsVisible="{Binding HasPaused}"/>
+                    <Button Grid.Column="2" Content="暂停全部" Classes="ghost" Padding="10,4"
+                            Command="{Binding SuspendAllCommand}" IsVisible="{Binding HasActive}"/>
+                    <Button Grid.Column="3" Content="清除已完成" Classes="ghost" Padding="10,4"
+                            Command="{Binding ClearFinishedCommand}"/>
+                </Grid>
+
+                <!-- 网络诊断（AL65）：各源通断 + 响应耗时——卡住时一眼看到问题源 -->
+                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="网络：" Classes="dim" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ItemsControl ItemsSource="{Binding NetworkStatus}" VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DownloadViewModel+NetworkSourceVM">
+                                <TextBlock Text="{Binding Display}" Classes="dim" FontSize="11" Margin="0,0,10,0"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="测速" Classes="ghost" FontSize="10" Padding="8,2"
+                            Command="{Binding CheckNetworkCommand}" VerticalAlignment="Center"/>
+                </WrapPanel>
+
+                <ScrollViewer>
+                    <StackPanel>
+                    <!-- 历史（终态任务，跨会话） -->
+                    <Expander Header="下载历史" IsExpanded="False" Margin="0,4,0,8">
+                        <StackPanel Spacing="6">
+                            <Button Content="清除历史" Classes="danger" Padding="8,3" FontSize="11"
+                                    HorizontalAlignment="Left" Command="{Binding ClearHistoryCommand}"/>
+                            <ItemsControl ItemsSource="{Binding History}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="svc:DownloadHistoryEntry">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="10" Margin="0,2">
+                                            <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis"/>
+                                            <Button Grid.Column="2" Content="重下" Classes="ghost" FontSize="10" Padding="6,1"
+                                                    IsVisible="{Binding SourceUrl, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).RedownloadCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="用原链接重新下载，还放到同一个文件夹"/>
+                                            <Button Grid.Column="3" Content="位置" Classes="ghost" FontSize="10" Padding="6,1"
+                                                    IsVisible="{Binding TargetPath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:DownloadViewModel)DataContext).OpenHistoryLocationCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    ToolTip.Tip="在资源管理器里帮你定位到这个文件"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding State}" FontSize="11"
+                                                       Foreground="{Binding State, Converter={x:Static app:HistoryStateBrushConverter.Instance}}"/>
+                                            <TextBlock Grid.Column="5" Text="{Binding Error}" FontSize="11"
+                                                       Foreground="{StaticResource Danger}" TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Expander>
+                    <ItemsControl ItemsSource="{Binding Tasks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="core:DownloadTask">
+                                <Border Classes="row taskRow" Classes.active="{Binding IsActive}"
+                                        Classes.failed="{Binding IsFailed}" Padding="12,8" Margin="0,0,0,1">
+                                    <Grid>
+                                        <!-- 组任务：展开显示文件级子任务 -->
+                                        <Expander IsVisible="{Binding HasChildren}" HorizontalAlignment="Stretch" Padding="0">
+                                            <Expander.Header>
+                                                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                                                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
+                                                    <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                                        <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Expander.Header>
+                                            <ItemsControl ItemsSource="{Binding Children}" Margin="2,6,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="core:DownloadTask">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="0,2">
+                                                            <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource TextSecondary}"/>
+                                                            <ProgressBar Grid.Column="1" Value="{Binding ProgressPercent}" Maximum="100"
+                                                                         Width="64" Height="4" VerticalAlignment="Center"
+                                                                         IsIndeterminate="{Binding !HasProgress}"/>
+                                                            <TextBlock Grid.Column="2" Text="{Binding ChildProgressText}" FontSize="11"
+                                                                       Foreground="{DynamicResource TextDim}" Width="34" TextAlignment="Right"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+
+                                        <!-- 叶子任务：整行直出 -->
+                                        <StackPanel IsVisible="{Binding !HasChildren}" Spacing="4">
+                                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
+                                            <TextBlock Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="5"
+                                                         IsIndeterminate="{Binding !HasProgress}"/>
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                                <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- 板块 tab 栏：下载游戏 / MOD / 整合包 / 材质包 / 光影包 / 第三方文件 / 下载记录（WrapPanel 窄窗口自动换行不重叠） -->
+        <WrapPanel DockPanel.Dock="Top" ItemSpacing="8" Margin="0,0,0,12">
+            <Button Content="下载游戏" Classes="tab" Classes.active="{Binding IsGameTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="game"/>
+            <Button Content="MOD" Classes="tab" Classes.active="{Binding IsModTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="mod"/>
+            <Button Content="整合包" Classes="tab" Classes.active="{Binding IsModpackTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="modpack"/>
+            <Button Content="材质包" Classes="tab" Classes.active="{Binding IsResourcepackTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
+            <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+            <Button Content="第三方文件" Classes="tab" Classes.active="{Binding IsThirdPartyTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="thirdparty"/>
+            <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="queue"/>
+        </WrapPanel>
+
+        <Grid>
+            <!-- 下载记录（队列常驻，轻量无网络） -->
+            <ContentControl x:Name="QueuePanelHost" Content="{Binding}" ContentTemplate="{StaticResource QueuePanel}"
+                            IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsQueueTabSelected}"/>
+            <!-- 其余 tab：懒实例化（ActiveTab 首次激活才创建 → ViewLocator 解析视图，秒切） -->
+            <ContentControl x:Name="ActiveTabHost" Content="{Binding ActiveTab}"
+                            IsVisible="{Binding $parent[Grid].((vm:DownloadViewModel)DataContext).IsNotQueueTabSelected}"/>
+        </Grid>
+    </DockPanel>
+</UserControl>

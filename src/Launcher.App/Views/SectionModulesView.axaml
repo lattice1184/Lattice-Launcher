@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SectionModulesView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 存储 -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="10">
+            <TextBlock Text="存储占用" Classes="group-header"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="重新扫描" Classes="ghost" FontSize="12" Padding="12,5"
+                        Command="{Binding Storage.ReloadStatsCommand}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="每个分组的上限，单位是 MB。0 是不限。超了标红字。"
+                           VerticalAlignment="Center"><Path/></Border>
+            </StackPanel>
+            <ItemsControl ItemsSource="{Binding Storage.StorageGroups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:StorageGroupVM">
+                        <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                            <TextBlock Text="{Binding Name}" Classes="setting-label" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="11"
+                                       TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="2" Text="超限" Classes="status-error" FontSize="11"
+                                       VerticalAlignment="Center" Margin="0,0,8,0" IsVisible="{Binding IsOverLimit}"/>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                <TextBox Width="56" FontSize="12" Padding="6,3"
+                                         Text="{Binding CapText}"/>
+                                <TextBlock Text="MB" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button Grid.Column="4" Content="清理" Classes="ghost" FontSize="12" Padding="10,4"
+                                    Command="{Binding CleanCommand}" IsVisible="{Binding CanDelete}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.App.ViewModels"
+        x:Class="Launcher.App.Views.TerracottaAgreementDialog"
+        x:DataType="vm:TerracottaAgreementDialogViewModel"
+        Title="联机功能使用须知" Width="500" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BgSurface}">
+
+    <StackPanel x:Name="Root" Margin="24,20" Spacing="14">
+        <TextBlock Text="联机功能使用须知" FontSize="17" FontWeight="Bold"/>
+
+        <!-- 许可证声明 + 项目链接 -->
+        <StackPanel Spacing="8">
+            <TextBlock Classes="dim" FontSize="12" TextWrapping="Wrap">
+                联机功能由 <Run FontWeight="SemiBold" Foreground="White">Terracotta | 陶瓦联机</Run> 提供，底层用 EasyTier 引擎。
+                使用时须遵守中国大陆相关法律法规，不得用于违法用途。
+            </TextBlock>
+            <Button Content="Terracotta | 陶瓦联机项目" Classes="ghost" FontSize="11"
+                    Padding="10,3" HorizontalAlignment="Left"
+                    Command="{Binding OpenProjectCommand}"/>
+        </StackPanel>
+
+        <!-- 同意前说明 -->
+        <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap">
+            首次使用需下载联机模块（约 15 MB，来自 Gitee / GitHub），下载完成后即可使用。
+        </TextBlock>
+
+        <!-- 下载进度（状态 + 百分比 + 进度条，与下载页同模式） -->
+        <StackPanel Spacing="6" IsVisible="{Binding IsBusy}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBlock Text="{Binding StatusText}" Classes="dim" FontSize="11"/>
+                <TextBlock Grid.Column="1" Text="{Binding PercentText}" FontSize="11"
+                           Foreground="{DynamicResource Accent}"/>
+            </Grid>
+            <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent}"
+                         IsIndeterminate="{Binding IsIndeterminate}" Height="6"/>
+        </StackPanel>
+
+        <!-- 下载失败 -->
+        <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
+                   IsVisible="{Binding IsFailed}" Foreground="#E05A5A"
+                   Text="{Binding StatusText}"/>
+
+        <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+            <!-- 同意前：不同意 / 同意 -->
+            <Button Content="不同意" Classes="ghost" IsVisible="{Binding IsInitialChoice}"
+                    Command="{Binding DeclineCommand}"/>
+            <Button Content="同意" Classes="primary" IsVisible="{Binding IsInitialChoice}"
+                    Command="{Binding AgreeCommand}"/>
+            <!-- 失败后：暂不启用 / 重试 -->
+            <Button Content="暂不启用" Classes="ghost" IsVisible="{Binding IsFailed}"
+                    Command="{Binding DeclineCommand}"/>
+            <Button Content="重试" Classes="primary" IsVisible="{Binding IsFailed}"
+                    Command="{Binding RetryCommand}"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,94 @@
+﻿# ============================================================
+#  Lattice Launcher 一键发布
+#  产物（发布\）：
+#    Lattice启动器.exe        —— 单文件自包含（约 84MB，压缩：体积锁 100MB 内——8-13 批次 34；启动动画独立线程覆盖解压等待），双击即用，无需安装 .NET
+#    Lattice启动器-轻量版.exe —— 框架依赖（约 23MB），需装 .NET 10 Desktop Runtime
+#  用法：右键 → 使用 PowerShell 运行（或 powershell -ExecutionPolicy Bypass -File 发布.ps1）
+# ============================================================
+$ErrorActionPreference = "Stop"
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$out  = Join-Path $root "发布"
+
+Write-Host ""
+Write-Host "=== Lattice Launcher 发布 ===" -ForegroundColor Cyan
+
+# 0) 自动关闭运行中的启动器（两个版本进程名都匹配；用户不在时自动处理，无需手动关）
+$running = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like "Lattice启动器*" }
+if ($running) {
+    Write-Host "检测到启动器正在运行，自动关闭..." -ForegroundColor Yellow
+    $running | Stop-Process -Force
+    Start-Sleep -Milliseconds 800
+}
+
+# 1) 清空旧产物
+if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $out -Force | Out-Null
+
+# 2) 发布函数：publish → 取 exe → 移动到 发布\ 对应名字（跑两遍：自包含 + 轻量版）
+function Publish-One([string]$finalName, [switch]$SelfContained) {
+    $stage = Join-Path $out "stage"
+    & dotnet publish (Join-Path $root "src/Launcher.App") `
+        -c Release -r win-x64 --self-contained $SelfContained `
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+        -p:EnableCompressionInSingleFile=$SelfContained `
+        -p:RollForward=LatestMajor `
+        -p:DebugType=None -p:DebugSymbols=false `
+        -o $stage | Out-Null
+    # 注：EnableCompressionInSingleFile 单文件压缩仅支持 self-contained（fdep 会报 NETSDK1176）；
+    # 反引号续行内严禁插入注释行（会打断续行链，-p: 被当独立命令）；
+    # | Out-Null 必须：dotnet publish 的 stdout 会进函数管道，泄漏到返回值（$finalSelf 变数组导致 Get-Item 报错）。
+    if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
+
+    $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
+    if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
+    $final = Join-Path $out $finalName
+    # 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
+    if (Test-Path $final) {
+        try {
+            $fs = [System.IO.File]::Open($final, 'Open', 'Read', 'None')
+            $fs.Close()
+        } catch {
+            Write-Host "[错误] $finalName 被占用（启动器正在运行）——请先关闭再运行本脚本" -ForegroundColor Red
+            exit 1
+        }
+    }
+    Move-Item $exe.FullName $final -Force
+    Remove-Item $stage -Recurse -Force
+    return $final
+}
+
+Write-Host "[1/5] dotnet publish 自包含版（单文件压缩，约 2-4 分钟）..."
+$finalSelf = Publish-One "Lattice启动器.exe" -SelfContained
+
+Write-Host "[2/5] dotnet publish 轻量版（框架依赖，约 1-2 分钟）..."
+$finalLite = Publish-One "Lattice启动器-轻量版.exe"
+
+# 3) 签名（复用 LauncherDev 自签名证书；无证书时自动创建）
+Write-Host "[3/4] 签名..."
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts/sign-output.ps1") $out
+
+# 4) 使用说明
+$sizeSelf = [Math]::Round((Get-Item $finalSelf).Length / 1MB)
+$sizeLite = [Math]::Round((Get-Item $finalLite).Length / 1MB)
+@"
+Lattice Launcher（晶格启动器）
+=============================
+两个版本，任选其一：
+
+[Lattice启动器.exe]（约 $sizeSelf MB）—— 自包含版，双击即用，无需安装任何东西。
+  首次启动会解压运行库到临时目录，需几秒到十几秒，属正常现象。
+
+[Lattice启动器-轻量版.exe]（约 $sizeLite MB）—— 轻量版，体积小，但需要先装
+  .NET 10 Desktop Runtime（https://dotnet.microsoft.com/download/dotnet/10.0）。
+  没装运行时会弹窗引导下载，装一次即可；以后更新只需下载小包。
+
+[如果被 Windows 阻止]
+1. SmartScreen（"Windows 已保护你的电脑"）→ 点「更多信息」→「仍要运行」（自签名发布者，属正常）
+2. 智能应用控制（SAC，仅 Win11 新装机器）会无提示阻止——需在 设置→隐私和安全性→Windows 安全中心→应用和浏览器控制→智能应用控制 中关闭（关闭后不可轻易重开，属系统设计）
+"@ | Out-File (Join-Path $out "使用说明.txt") -Encoding UTF8
+
+Write-Host "[4/4] 完成！" -ForegroundColor Green
+# 注：无 KeyProxy——AL50 已砍本地代理，CF key 并入主进程（DPAPI 加密存设置）
+Write-Host "  -> $finalSelf"
+Write-Host "  -> $finalLite"
+Write-Host "  -> $(Join-Path $out '使用说明.txt')"
