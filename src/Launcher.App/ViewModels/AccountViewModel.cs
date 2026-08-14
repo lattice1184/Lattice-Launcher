@@ -33,6 +33,10 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsLoggedIn { get; set; }
 
+    /// <summary>8-13 当前账号是正版（显示「正版账号管理」入口用）</summary>
+    [ObservableProperty]
+    public partial bool IsMicrosoftAccount { get; set; }
+
     [ObservableProperty]
     public partial string Status { get; set; } = "";
 
@@ -56,15 +60,18 @@ public partial class AccountViewModel : ViewModelBase
     {
         var acc = _accounts.Current;
         IsLoggedIn = acc is not null;
+        IsMicrosoftAccount = acc?.Type == "microsoft";
         CurrentName = acc?.Name ?? "未登录";
         CurrentUuid = acc?.Uuid ?? "";
-        AccountType = acc?.Type == "microsoft" ? "正版账号" : acc?.Type == "offline" ? "离线账号" : "";
+        AccountType = TypeTextOf(acc);
         if (acc is not null) NameInput = acc.Name;
+        // 8-13 账号页改版：无账号时登录表单直接展开；有账号默认收起（点「添加账号」再展开）
+        if (acc is null) IsLoginFormVisible = true;
 
         Accounts.Clear();
         foreach (var a in _accounts.Accounts)
             Accounts.Add(new AccountRowVM(a.Name,
-                a.Type == "microsoft" ? "正版" : "离线",
+                a.Type == "microsoft" ? "正版" : a.Type == "littleskin" ? "Littleskin" : "离线",
                 a.Name == acc?.Name));
 
         // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）。
@@ -75,12 +82,19 @@ public partial class AccountViewModel : ViewModelBase
                 bmp => Avatar = bmp);
     }
 
+    /// <summary>8-13 账号类型文本（微软正版 / Littleskin / 离线 / 空）</summary>
+    private static string TypeTextOf(AccountService.AccountInfo? acc)
+        => acc?.Type == "microsoft" ? "正版账号"
+            : acc?.Type == "littleskin" ? "Littleskin"
+            : acc?.Type == "offline" ? "离线账号" : "";
+
     [RelayCommand]
     private void LoginOffline()
     {
         var name = NameInput.Trim();
         if (string.IsNullOrEmpty(name)) { Status = "你还没填用户名"; return; }
         _accounts.LoginOffline(name);
+        IsLoginFormVisible = false; // 登录成功收起表单
         Status = $"已登录 {name}";
         Refresh();
     }
@@ -148,6 +162,123 @@ public partial class AccountViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool IsDeviceCodeMode { get; set; }
 
+    // ---------- 8-13 账号页改版：登录方式分割（PCL 式）+ Littleskin 登录 + 正版管理入口 ----------
+
+    /// <summary>登录方式（正版 / 离线 / Littleskin 三态分割）</summary>
+    public enum LoginModeKind { Microsoft, Offline, Littleskin }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMicrosoftMode))]
+    [NotifyPropertyChangedFor(nameof(IsOfflineMode))]
+    [NotifyPropertyChangedFor(nameof(IsLittleskinMode))]
+    public partial LoginModeKind LoginMode { get; set; } = LoginModeKind.Microsoft;
+
+    public bool IsMicrosoftMode => LoginMode == LoginModeKind.Microsoft;
+    public bool IsOfflineMode => LoginMode == LoginModeKind.Offline;
+    public bool IsLittleskinMode => LoginMode == LoginModeKind.Littleskin;
+
+    /// <summary>登录表单区是否展开（未登录默认展开；登录成功后收起；「添加账号」再展开）</summary>
+    [ObservableProperty]
+    public partial bool IsLoginFormVisible { get; set; } = true;
+
+    /// <summary>8-13 添加账号按钮：展开/收起登录表单（按钮永不禁用——「点不到」修复）</summary>
+    [RelayCommand]
+    private void ToggleLoginForm() => IsLoginFormVisible = !IsLoginFormVisible;
+
+    /// <summary>切换登录方式（按钮 CommandParameter 传 offline/littleskin/microsoft）</summary>
+    [RelayCommand]
+    private void SetLoginMode(string mode) =>
+        LoginMode = mode switch
+        {
+            "offline" => LoginModeKind.Offline,
+            "littleskin" => LoginModeKind.Littleskin,
+            _ => LoginModeKind.Microsoft,
+        };
+
+    /// <summary>Littleskin 邮箱（表单 PasswordChar 不回显密码）</summary>
+    [ObservableProperty]
+    public partial string LittleskinEmail { get; set; } = "";
+
+    [ObservableProperty]
+    public partial string LittleskinPassword { get; set; } = "";
+
+    /// <summary>8-13 Littleskin 第三方登录：Yggdrasil 认证 → 皮肤下载本地 → 账号落座。
+    /// 密码只在内存经 https 传输，不落盘不写日志；皮肤下载失败仍完成登录（头像 minotar 兜底）。</summary>
+    [RelayCommand]
+    private async Task LoginLittleskin()
+    {
+        if (IsMsAuthBusy) return;
+        var email = LittleskinEmail.Trim();
+        var password = LittleskinPassword;
+        if (email.Length == 0 || password.Length == 0) { Status = "填上 Littleskin 邮箱和密码"; return; }
+        IsMsAuthBusy = true;
+        Status = "";
+        try
+        {
+            using var http = new HttpClient();
+            http.Timeout = TimeSpan.FromSeconds(30);
+            var session = await Launcher.Core.Account.LittleskinAuth.AuthenticateAsync(
+                http, email, password, CancellationToken.None);
+            if (session.SkinUrl is { } skinUrl)
+            {
+                try
+                {
+                    var bytes = await http.GetByteArrayAsync(skinUrl, CancellationToken.None);
+                    var dir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "skins");
+                    Directory.CreateDirectory(dir);
+                    await File.WriteAllBytesAsync(Path.Combine(dir, $"{session.Name}.png"), bytes);
+                }
+                catch { /* 皮肤下载失败不阻塞登录 */ }
+            }
+            _accounts.LoginLittleskin(session.Name, session.Uuid);
+            LittleskinPassword = "";
+            IsLoginFormVisible = false;
+            Status = $"已登录 Littleskin {session.Name}";
+            NotificationService.Success($"Littleskin 账号 {session.Name} 登录成功，皮肤已同步");
+            Refresh();
+        }
+        catch (Exception ex)
+        {
+            Status = ex.Message; // 异常消息已含完整原因（不带前缀——避免「登录失败: 登录失败:」双前缀）
+            NotificationService.Error(ex.Message);
+            // 8-13 一条龙：账号没角色 → 自动打开角色管理页引导创建（创建后回来重试即可）
+            if (ex.Message.Contains("角色"))
+            {
+                try { Process.Start(new ProcessStartInfo("https://littleskin.cn/user/player") { UseShellExecute = true }); }
+                catch { /* 打不开则用户手动访问 */ }
+            }
+        }
+        finally
+        {
+            IsMsAuthBusy = false;
+        }
+    }
+
+    /// <summary>8-13 注册 Littleskin 账号（没账号的一条龙入口）</summary>
+    [RelayCommand]
+    private void OpenLittleskinRegister()
+    {
+        try { Process.Start(new ProcessStartInfo("https://littleskin.cn/auth/register") { UseShellExecute = true }); }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/auth/register"); }
+    }
+
+    /// <summary>8-13 Littleskin 皮肤库（无公开 API——网页浏览，下载 PNG 拖进启动器即换肤，不需要 littleskin 账号）</summary>
+    [RelayCommand]
+    private void OpenLittleskinSkinlib()
+    {
+        try { Process.Start(new ProcessStartInfo("https://littleskin.cn/skinlib") { UseShellExecute = true }); }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/skinlib"); }
+    }
+
+    /// <summary>8-13 正版账号管理：跳 Minecraft 官网（皮肤/披风/用户名——Mojang 不开放 API，只能官网改）</summary>
+    [RelayCommand]
+    private void OpenMojangProfile()
+    {
+        try { Process.Start(new ProcessStartInfo("https://www.minecraft.net/msaprofile") { UseShellExecute = true }); }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问 minecraft.net/msaprofile"); }
+    }
+
     /// <summary>取消设备码登录（用户在浏览器里输码期间可随时取消）</summary>
     private CancellationTokenSource? _msCts;
 
@@ -160,7 +291,8 @@ public partial class AccountViewModel : ViewModelBase
         Status = "";
         try
         {
-            using var http = new HttpClient();
+            // 8-13 连接复用：SharedHandler 池化 TCP/TLS（每次登录新建 HttpClient 会白付握手 ~几百 ms）
+            using var http = new HttpClient(Launcher.Core.Download.HttpClientPool.SharedHandler);
             http.Timeout = TimeSpan.FromSeconds(30);
 
             // 0. 解析 clientId（远程下发/缓存/兜底三层）——登录前保证生效值就绪
@@ -171,20 +303,23 @@ public partial class AccountViewModel : ViewModelBase
             DeviceCodeText = session.UserCode;
             DeviceCodeVerifyUri = session.VerificationUri.Length > 0 ? session.VerificationUri : "https://www.microsoft.com/link";
             IsDeviceCodeMode = true;
-            MsAuthStatus = "在打开的网页里输入配对码并登录";
+            // 8-13：配对码由视图层监听 DeviceCodeText 自动复制到剪贴板（浏览器弹太快来不及看/复制）
+            MsAuthStatus = "在打开的网页里输入配对码并登录（配对码已自动复制）";
             try { Process.Start(new ProcessStartInfo(DeviceCodeVerifyUri) { UseShellExecute = true }); }
             catch { /* 无法自动打开则手动访问 microsoft.com/link */ }
 
-            // 2. 轮询等授权（可取消）→ 认证链
+            // 2. 轮询等授权（可取消）→ 认证链（分步状态反馈，缓解同步慢的体感）
             _msCts = new CancellationTokenSource();
             var (oauthToken, refreshToken) = await MicrosoftAuth.PollDeviceCodeAsync(
                 http, session, status => MsAuthStatus = status, _msCts.Token);
-            MsAuthStatus = "正在认证 Minecraft…";
-            var msSession = await MicrosoftAuth.AuthenticateMinecraftAsync(http, oauthToken, refreshToken, _msCts.Token);
+            var msSession = await MicrosoftAuth.AuthenticateMinecraftAsync(
+                http, oauthToken, refreshToken, _msCts.Token,
+                stage => MsAuthStatus = stage);
             _accounts.LoginMicrosoft(msSession);
             MsAuthStatus = "";
             IsDeviceCodeMode = false;
             DeviceCodeText = "";
+            IsLoginFormVisible = false; // 登录成功收起表单
             Status = $"已以正版账号 {msSession.MinecraftName} 登录";
             NotificationService.Success($"正版账号 {msSession.MinecraftName} 登录成功");
             Refresh();

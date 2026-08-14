@@ -158,6 +158,12 @@ public partial class MainWindow : Window
         name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
         || name.EndsWith(".mrpack", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>8-13 皮肤图片拖入换肤（png/jpg/jpeg——littleskin 皮肤库下载的 PNG 直接拖进来用）</summary>
+    private static bool IsSkinFile(string name) =>
+        name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+        || name.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>从拖拽项取文件路径（TryGetRaw 返回 IStorageItem 或原始路径字符串，兼容两种平台实现）</summary>
     private static string? TryGetFilePath(IDataTransferItem item)
     {
@@ -174,20 +180,32 @@ public partial class MainWindow : Window
     private static void OnWindowDragOver(object? sender, DragEventArgs e)
     {
         var hasPack = (e.DataTransfer.Items ?? []).Any(i => TryGetFilePath(i) is { } p && IsPackFile(p));
-        e.DragEffects = hasPack ? DragDropEffects.Copy : DragDropEffects.None;
+        var hasSkin = (e.DataTransfer.Items ?? []).Any(i => TryGetFilePath(i) is { } p && IsSkinFile(p));
+        e.DragEffects = hasPack || hasSkin ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void OnWindowDrop(object? sender, DragEventArgs e)
     {
-        var packs = (e.DataTransfer.Items ?? [])
+        var files = (e.DataTransfer.Items ?? [])
             .Select(TryGetFilePath)
-            .Where(p => p is not null && IsPackFile(p))
+            .Where(p => p is not null)
             .Cast<string>()
             .ToList();
+
+        // 8-13 皮肤图片拖入 → 直接换肤（littleskin 皮肤库下载的 PNG 一条龙：拖进来就生效）
+        var skin = files.FirstOrDefault(IsSkinFile);
+        if (skin is not null)
+        {
+            if (DataContext is MainViewModel main && main.Home is { } home)
+                home.ApplyLocalSkin(skin);
+            return;
+        }
+
+        var packs = files.Where(IsPackFile).ToList();
         if (packs.Count == 0)
         {
-            NotificationService.Info("仅支持拖入 .zip / .mrpack 整合包文件");
+            NotificationService.Info("支持拖入 .png/.jpg 皮肤图片（自动换肤）或 .zip/.mrpack 整合包");
             return;
         }
         if (packs.Count > 1)

@@ -1,4 +1,5 @@
 using System.Collections.Specialized;
+using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -16,8 +17,27 @@ public partial class HomeView : UserControl
         DataContextChanged += (_, _) =>
         {
             if (DataContext is HomeViewModel vm)
+            {
                 vm.GameLogs.CollectionChanged += OnLogsChanged;
+                // 8-13 设备码自动复制：配对码一出现就进剪贴板（浏览器弹太快来不及手动复制）
+                vm.Account.PropertyChanged += OnAccountPropertyChanged;
+            }
         };
+    }
+
+    /// <summary>配对码生成即自动复制到剪贴板（DeviceCodeText 非空触发一次）</summary>
+    private async void OnAccountPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AccountViewModel.DeviceCodeText)
+            || sender is not AccountViewModel acc
+            || acc.DeviceCodeText.Length == 0)
+        {
+            return;
+        }
+        var top = TopLevel.GetTopLevel(this);
+        if (top?.Clipboard is not { } cb) return;
+        await cb.SetTextAsync(acc.DeviceCodeText);
+        NotificationService.Success($"配对码 {acc.DeviceCodeText} 已复制，在浏览器粘贴即可");
     }
 
     /// <summary>新日志到达时控制台自动滚动到底部</summary>
@@ -116,7 +136,13 @@ public partial class HomeView : UserControl
         });
         if (files.Count > 0 && files[0].Path.IsAbsoluteUri)
             vm.ApplyLocalSkin(files[0].Path.LocalPath);
-    
+
 }
+
+    /// <summary>8-13 重置皮肤（正版→官方皮肤；离线/Littleskin→随机默认）</summary>
+    private void OnResetSkin(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is HomeViewModel vm) vm.ResetSkin();
+    }
 
 }

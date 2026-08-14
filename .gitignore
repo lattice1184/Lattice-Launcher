@@ -4,3 +4,13 @@ bin/
 obj/
 .testtools/
 *.log
+.vs/
+
+# 安全红线（8-14 发布前审计）：测试崩溃转储是内存快照，可能含 DPAPI 密文/令牌——绝不入库
+src/Launcher.Core.Tests/TestResults/
+*.dmp
+
+# 内部工作文档（含本机路径与操作记录，仅本地留存）
+SESSION_NOTES.md
+REVIEW-E.md
+宣传/

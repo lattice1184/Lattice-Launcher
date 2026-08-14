@@ -137,6 +137,12 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string CurseForgeApiKeyStatus { get; set; } = "";
 
+    /// <summary>8-13 验证状态图形（Cloudflare 风图标块动画驱动：绿块弹对勾 / 红块叉）</summary>
+    public enum CfStatusKind { None, Checking, Valid, Invalid }
+
+    [ObservableProperty]
+    public partial CfStatusKind CfStatus { get; set; } = CfStatusKind.None;
+
     /// <summary>构造加载阶段：属性赋值会触发 OnXxxChanged → Save，此时未加载字段还是默认值——
     /// 若不拦截，会把空值写回文件覆盖已保存的设置（如 CurseForgeApiKey）。</summary>
     private bool _loading = true;
@@ -152,10 +158,6 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string GitHubApiTokenInput { get; set; } = "";
 
-    /// <summary>8-13 微软登录 client_id 输入框（非机密可回显；留空提交 = 保留现有）</summary>
-    [ObservableProperty]
-    public partial string MicrosoftClientIdInput { get; set; } = "";
-
     /// <summary>「检查」入口：先提交输入框里的新 Key（有输入才覆盖），再直连验证</summary>
     public async Task SubmitApiKeyAsync()
     {
@@ -166,20 +168,32 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>直连 CurseForge 验证当前 key（结果只含状态与 HTTP 码，不含 key）</summary>
     public async Task ValidateApiKeyAsync()
     {
-        CurseForgeApiKeyStatus = "正在检查 Key…";
+        CfStatus = CfStatusKind.Checking;
+        CurseForgeApiKeyStatus = "正在检查…";
         try
         {
             if (!_curseForge.IsEnabled)
             {
-                CurseForgeApiKeyStatus = "你还没填 Key。填完点检查。";
+                CfStatus = CfStatusKind.None;
+                CurseForgeApiKeyStatus = "请先填写 API Key";
                 return;
             }
             var (valid, message) = await _curseForge.ValidateKeyAsync();
-            CurseForgeApiKeyStatus = valid ? "✓ Key 有效，已经加密存好了" : $"✗ {message}";
+            if (valid)
+            {
+                CfStatus = CfStatusKind.Valid;
+                CurseForgeApiKeyStatus = "你的 API 有效，并已被 DPAPI 加密保护";
+            }
+            else
+            {
+                CfStatus = CfStatusKind.Invalid;
+                CurseForgeApiKeyStatus = message;
+            }
         }
         catch
         {
-            CurseForgeApiKeyStatus = "✗ 连不上 CurseForge API";
+            CfStatus = CfStatusKind.Invalid;
+            CurseForgeApiKeyStatus = "连不上 CurseForge API，稍后再试";
         }
     }
 
@@ -313,6 +327,21 @@ public partial class SettingsViewModel : ViewModelBase
 
     // ---------- 写入 ----------
 
+    /// <summary>8-14 GitHub token 输入框失焦即保存（此前「改其他设置才顺带落盘」——填完就关设置页会丢 token）</summary>
+    public void SaveGitHubApiToken()
+    {
+        if (_loading) return;
+        if (!string.IsNullOrWhiteSpace(GitHubApiTokenInput))
+        {
+            Save();
+            NotificationService.Success("GitHub API Token 已加密保存");
+        }
+        else
+        {
+            NotificationService.Info("先粘贴 Token 再点别处保存");
+        }
+    }
+
     private void Save()
     {
         if (_loading) return; // 构造加载阶段不落盘（防未加载字段的空值覆盖）
@@ -342,12 +371,8 @@ public partial class SettingsViewModel : ViewModelBase
             s.GitHubApiToken = GitHubApiTokenInput.Trim();
             GitHubApiTokenInput = ""; // 写入后清空输入（不回显）
         }
-        // 8-13 微软 client_id：有输入才覆盖（留空 = 保留现有）
-        if (!string.IsNullOrWhiteSpace(MicrosoftClientIdInput))
-        {
-            s.MicrosoftClientId = MicrosoftClientIdInput.Trim();
-            MicrosoftClientIdInput = "";
-        }
+        // 8-13 微软 client_id：设置页已移除（登录有远程下发/缓存/内置三层兜底，无需用户填；
+        // LauncherSettings.MicrosoftClientId 字段保留——高级用户可手动编辑 settings.json 覆盖）
         s.Save();
     }
 

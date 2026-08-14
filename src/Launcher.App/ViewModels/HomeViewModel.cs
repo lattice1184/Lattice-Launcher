@@ -275,7 +275,9 @@ public partial class HomeViewModel : ViewModelBase
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
         PlayerAvatarFallback = acc is null ? "" : acc.Name[..1].ToUpperInvariant();
-        AccountTypeText = acc?.Type == "microsoft" ? "正版" : acc?.Type == "offline" ? "离线" : "未登录";
+        AccountTypeText = acc?.Type == "microsoft" ? "正版"
+            : acc?.Type == "littleskin" ? "Littleskin"
+            : acc?.Type == "offline" ? "离线" : "未登录";
         // 8-13：不置空——网络头像加载期间保留旧头像（首字母块兜底由视图层做），避免每次刷新闪空白
         if (acc is null) return;
 
@@ -295,21 +297,62 @@ public partial class HomeViewModel : ViewModelBase
         => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "Launcher", "skins", $"{name}.png");
 
-    /// <summary>更换皮肤：复制本地图片为头像（离线模式皮肤仅启动器显示，游戏内不生效——Minecraft 限制）</summary>
+    /// <summary>8-13 更换皮肤：复制本地图片为头像 + 启动器头像。游戏内下次启动生效
+    /// （SkinPack 资源包在启动前自动写入——此前「游戏内不生效」的限制已解除）。
+    /// 尺寸校验：只认 64×64 / 64×32 皮肤格式（图标/截图等杂图拒绝）。</summary>
     public void ApplyLocalSkin(string sourcePath)
     {
         var acc = _accounts.Current;
         if (acc is null) return;
         try
         {
+            using var probe = new Avalonia.Media.Imaging.Bitmap(sourcePath);
+            if (!Launcher.Core.Launch.SkinPack.IsSupportedSize(probe.PixelSize.Width, probe.PixelSize.Height))
+            {
+                NotificationService.Error(
+                    $"不是皮肤图片：需要 64×64 或 64×32 的 PNG（这张是 {probe.PixelSize.Width}×{probe.PixelSize.Height}）");
+                return;
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(LocalSkinPath(acc.Name))!);
             File.Copy(sourcePath, LocalSkinPath(acc.Name), overwrite: true);
             RefreshPlayer();
-            NotificationService.Success("已更换皮肤（游戏内不生效，离线模式限制）");
+            NotificationService.Success("已更换皮肤，下次启动游戏生效");
         }
         catch (Exception ex)
         {
             NotificationService.Error($"换肤失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>8-13 重置皮肤：正版 = 删本地皮肤（游戏内恢复 Mojang 官方皮肤）；
+    /// 离线/Littleskin = 随机 Steve/Alex 默认皮肤（内置资源，游戏内同样生效）</summary>
+    public void ResetSkin()
+    {
+        var acc = _accounts.Current;
+        if (acc is null) return;
+        try
+        {
+            var dest = LocalSkinPath(acc.Name);
+            if (acc.Type == "microsoft")
+            {
+                if (File.Exists(dest)) File.Delete(dest);
+                NotificationService.Success("已重置，游戏内恢复官方正版皮肤");
+            }
+            else
+            {
+                var asset = Random.Shared.Next(2) == 0 ? "steve.png" : "alex.png";
+                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+                using var stream = Avalonia.Platform.AssetLoader.Open(
+                    new Uri($"avares://Launcher.App/Assets/{asset}"));
+                using var fs = File.Create(dest);
+                stream.CopyTo(fs);
+                NotificationService.Success("已重置为默认皮肤，下次启动游戏生效");
+            }
+            RefreshPlayer();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"重置失败: {ex.Message}");
         }
     }
 
@@ -404,6 +447,18 @@ public partial class HomeViewModel : ViewModelBase
             var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
                 : version.GameDir.Length > 0 ? version.GameDir : GameDirectory.Detect();
             var s = LauncherSettings.Current;
+            // 8-13 离线皮肤游戏内生效（SkinPack 资源包）：非正版账号有本地皮肤 → 启动前写入资源包 + options.txt 注入
+            if (account.Type != "microsoft")
+            {
+                var skinPath = LocalSkinPath(account.Name);
+                if (File.Exists(skinPath))
+                {
+                    var applyDir = s.VersionIsolation
+                        ? Path.Combine(gameDir, "versions", version.Name) : gameDir;
+                    Launcher.Core.Launch.SkinPack.Apply(
+                        applyDir, skinPath, Launcher.Core.Launch.SkinPack.PackFormatFor(version.Name));
+                }
+            }
             var (memCfg, javaCfg, argsCfg) = VersionConfigService.Merge(gameDir, version.Name, s);
             var memMb = memCfg switch
             {

@@ -229,6 +229,7 @@ public sealed class DownloadService
         Exception? last = null;
         // 网络检查用 host 集合（每轮累积；ghapi 占位非 http URL 不参与 host 检查）
         var hosts = new HashSet<string>();
+        var abandonedKeys = new HashSet<string>(); // 8-14 watchdog 摘除的源（URL 哈希）——后续轮跳过
         var swDl = System.Diagnostics.Stopwatch.StartNew(); // 8-19 下载日志：总耗时
 
         for (var attempt = 0; attempt < _options.MaxSourceAttempts; attempt++)
@@ -262,6 +263,10 @@ public sealed class DownloadService
             foreach (var c in candidates)
                 if (!c.StartsWith(GitHubApiDirect.Scheme) && Uri.TryCreate(c, UriKind.Absolute, out var cu))
                     hosts.Add(cu.Host);
+            // 8-14 watchdog 摘除的源本轮直接剔除：挂死任务可能无视取消、仍锁着 .race/.tmp 文件
+            // （复用会撞 FileShare.None 抛 IOException），跳过避免整轮再次被它拖死
+            candidates = candidates.Where(c => !abandonedKeys.Contains(RaceKey(c))).ToList();
+            if (candidates.Count == 0) continue; // 全部被摘除 → 无源可试，直接下一轮（不等待退避）
             // 8-19 下载日志：每轮候选源（分析「哪个源赢/为什么慢」用——HTTP 层看不到竞速业务语义）
             LogWrapper.Debug($"[下载] 第{attempt + 1}轮 {url} 候选({candidates.Count}): {string.Join(" | ", candidates.Select(ShortUrl))}");
             if (candidates.Count == 1)
@@ -323,6 +328,7 @@ public sealed class DownloadService
             var evalSw = System.Diagnostics.Stopwatch.StartNew();
             var evalInterval = _options.RaceEliminateInterval;
             var lastEvalBytes = new long[candidates.Count]; // 8-13 速度外推评估：上次评估各源字节
+            var noProgressSince = new long[candidates.Count]; // 8-14 watchdog：各源连续零增量起始 tick（0=有进度）
             while (pending.Count > 0)
             {
                 var remaining = evalInterval - evalSw.Elapsed;
@@ -330,7 +336,7 @@ public sealed class DownloadService
                 var done = await Task.WhenAny(pending.Select(p => p.Task).Cast<Task>().Append(evalDelay));
                 if (done == evalDelay)
                 {
-                    if (pending.Count > 1 && perSourceProgress is not null)
+                    if (perSourceProgress is not null && pending.Count > 0)
                     {
                         // 8-13 淘汰评估改「预计剩余时间」（速度外推）：总量评估错杀稳定镜像——
                         // CDN 直连开局快（首字节毫秒级）总量领先 → ghproxy 镜像（握手慢但全程 2MB/s）
@@ -340,11 +346,40 @@ public sealed class DownloadService
                         var cur = pending.Select(p => perSourceProgress.GetBytes(p.Index)).ToArray();
                         var prev = pending.Select(p => lastEvalBytes[p.Index]).ToArray();
                         var leadPos = PickRaceLeader(cur, prev, total, evalInterval.TotalSeconds);
-                        foreach (var p in pending)
-                            lastEvalBytes[p.Index] = perSourceProgress.GetBytes(p.Index);
-                        var leadIndex = pending[leadPos].Index;
-                        foreach (var p in pending.Where(p => p.Index != leadIndex))
-                            p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                        for (var i = 0; i < pending.Count; i++)
+                        {
+                            var p = pending[i];
+                            lastEvalBytes[p.Index] = cur[i];
+                            if (cur[i] <= prev[i])
+                            {
+                                if (noProgressSince[p.Index] == 0) noProgressSince[p.Index] = Environment.TickCount64;
+                            }
+                            else noProgressSince[p.Index] = 0;
+                        }
+                        if (pending.Count > 1)
+                        {
+                            var leadIndex = pending[leadPos].Index;
+                            foreach (var p in pending.Where(p => p.Index != leadIndex))
+                                p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                        }
+                        else if ((total <= 0 || cur[0] < total)
+                                 && noProgressSince[pending[0].Index] > 0
+                                 && Environment.TickCount64 - noProgressSince[pending[0].Index] >= _options.RaceWatchdogStallMs)
+                        {
+                            // 8-14 幸存源 watchdog：唯一源连续墙钟 {RaceWatchdogStallMs}ms 零增量且未收尾
+                            // → 摘除出本轮（不等待任务结束——挂死任务可能无视取消 token，等它 = 无限等），
+                            // 本轮结束进下一轮重赛（其余源片集跨轮复用，不丢进度）。
+                            // 实机（OBS 128MB）：赢家 ghproxy.net 静默断流后源内判死/读心跳未触发
+                            // （流读 token 失效的洞），整轮无限挂起、日志死寂 8 分钟——外层兜底必须存在。
+                            // 墙钟而非 tick 数：进度上报是 250ms 精细粒度，健康源（≥判死阈值）必有增量；
+                            // tick 数随评估间隔缩放，测试加速间隔会误杀慢启动源
+                            var doomed = pending[0];
+                            pending.RemoveAt(0);
+                            abandonedKeys.Add(RaceKey(doomed.Src)); // 后续轮跳过（其 .race 文件可能被挂死任务锁着）
+                            doomed.Cts.Cancel(); // 能取消就取消（省连接/句柄），不能也无所谓——任务后台自生自灭
+                            var stalledMs = Environment.TickCount64 - noProgressSince[doomed.Index];
+                            LogWrapper.Warn($"[下载] watchdog 摘除 {ShortUrl(doomed.Src)} 零增量{stalledMs / 1000}s——进下一轮（已弃用该源）");
+                        }
                     }
                     evalSw.Restart();
                     continue;
@@ -368,6 +403,10 @@ public sealed class DownloadService
                             foreach (var p in stragglers) { try { p.Task.Wait(); } catch { } }
                             foreach (var p in stragglers) CleanupRaceFiles(destPath, RaceKey(p.Src));
                         });
+                    // 8-14 同步清扫已完成输家片集：eval 淘汰的源早已离开 pending（任务结束、文件解锁），
+                    // 旧实现只清 stragglers → 桌面残留 .race*.parts（真机 OBS 下完留 3 个目录 10MB）。
+                    // 跳过 stragglers 的键（仍在后台写）；watchdog 摘除源尝试删（锁着则静默失败）
+                    CleanupRaceSweep(destPath, stragglers.Select(p => RaceKey(p.Src)));
                     won = true;
                     break;
                 }
@@ -434,6 +473,38 @@ public sealed class DownloadService
         try { File.Delete(raceDest + ".tmp"); } catch { }
         try { Directory.Delete(raceDest + ".parts", true); } catch { }
         try { File.Delete(raceDest); } catch { }
+    }
+
+    /// <summary>
+    /// 8-14 成功路径竞速残留清扫：赢家出现后同步删全部 .race* 残留（本体/.tmp/.parts），
+    /// 跳过 skipKeys（仍在后台写的 stragglers）；删不动（watchdog 摘除源锁着文件）静默失败。
+    /// 不动 destPath 本身（赢家刚 rename 落盘）——只动 .race* 前缀与 destPath+".tmp" 旧残留。
+    /// </summary>
+    private static void CleanupRaceSweep(string destPath, IEnumerable<string> skipKeys)
+    {
+        var skip = new HashSet<string>(skipKeys, StringComparer.OrdinalIgnoreCase);
+        var dir = Path.GetDirectoryName(destPath);
+        var name = Path.GetFileName(destPath);
+        if (dir is null || name.Length == 0) return;
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(dir, name + ".race*"))
+                if (!skip.Contains(RaceKeyOfPath(f))) { try { File.Delete(f); } catch { } }
+            foreach (var d in Directory.EnumerateDirectories(dir, name + ".race*.parts"))
+                if (!skip.Contains(RaceKeyOfPath(d))) { try { Directory.Delete(d, true); } catch { } }
+            foreach (var f in Directory.EnumerateFiles(dir, name + ".race*.tmp"))
+                if (!skip.Contains(RaceKeyOfPath(f))) { try { File.Delete(f); } catch { } }
+            File.Delete(destPath + ".tmp"); // 直接路径旧残留（成功路径 destPath 已是成品，.tmp 必为垃圾）
+        }
+        catch { }
+    }
+
+    /// <summary>从 .race{KEY}[.parts|.tmp] 文件名提取 8 位键（解析失败返回空串，不会误跳）</summary>
+    private static string RaceKeyOfPath(string fullPath)
+    {
+        var fn = Path.GetFileName(fullPath);
+        var i = fn.IndexOf(".race", StringComparison.Ordinal);
+        return i >= 0 && fn.Length >= i + 5 + 8 ? fn.Substring(i + 5, 8) : "";
     }
 
     /// <summary>8-13 竞速片集键：URL 的 SHA1 前 8 位 hex——同 URL 跨轮复用（键与 URL 绑定，候选顺序无关）</summary>
