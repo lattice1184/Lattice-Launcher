@@ -82,9 +82,6 @@ Lattice Launcher（晶格启动器）
   .NET 10 Desktop Runtime（https://dotnet.microsoft.com/download/dotnet/10.0）。
   没装运行时会弹窗引导下载，装一次即可；以后更新只需下载小包。
 
-构建时间：$(Get-Date -Format "yyyy-MM-dd HH:mm")
-位置：$out
-
 [如果被 Windows 阻止]
 1. SmartScreen（"Windows 已保护你的电脑"）→ 点「更多信息」→「仍要运行」（自签名发布者，属正常）
 2. 智能应用控制（SAC，仅 Win11 新装机器）会无提示阻止——需在 设置→隐私和安全性→Windows 安全中心→应用和浏览器控制→智能应用控制 中关闭（关闭后不可轻易重开，属系统设计）

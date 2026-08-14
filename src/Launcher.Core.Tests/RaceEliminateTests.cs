@@ -32,6 +32,10 @@ public class RaceEliminateTests
             Assert.Contains("slow.com", handler.Cancelled);                  // 慢源被淘汰取消
             Assert.True(sw.Elapsed < TimeSpan.FromSeconds(3),               // 10s 慢源没拖死任务
                 $"总耗时 {sw.Elapsed.TotalSeconds:F1}s 超过 3s——慢源未被淘汰");
+            // 8-14 成功路径清扫：被淘汰源的 .race 片集目录不残留（真机 OBS 下完桌面留 3 个目录）
+            var residue = Directory.EnumerateFileSystemEntries(Path.GetTempPath(),
+                Path.GetFileName(dest) + ".race*").ToList();
+            Assert.Empty(residue);
         }
         finally
         {
@@ -91,6 +95,101 @@ public class RaceEliminateTests
                 lock (Cancelled) Cancelled.Add(host);
                 throw;
             }
+        }
+    }
+
+    [Fact]
+    public async Task WatchdogAbandoned_HungSurvivor_DownloadCompletesViaNextRound()
+    {
+        // 8-14 实机复现（OBS 128MB）：竞速赢家静默断流后，源内判死/读心跳全未触发（流读
+        // token 失效的洞——hung.com 的流无视一切取消），任务无限挂起、日志死寂。
+        // watchdog 应摘除挂死源并弃用其 URL → 下一轮只剩 good.com → 直接路径完成下载。
+        var handler = new HungHandler();
+        var http = new HttpClient(handler);
+        var resolver = new FixedResolver(["http://hung.com/f.bin", "http://good.com/f.bin"]);
+        var svc = new DownloadService(http, resolver, new DownloadOptions
+        {
+            MaxSourceAttempts = 2,
+            RaceEliminateInterval = TimeSpan.FromMilliseconds(100),
+            RaceWatchdogStallMs = 300,
+            BackoffProvider = _ => TimeSpan.Zero,
+        }, Path.GetTempPath(), (_, _) => Task.FromResult(true));
+        var dest = Path.Combine(Path.GetTempPath(), $"wdog-{Guid.NewGuid():N}.bin");
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            await svc.DownloadFileAsync("http://hung.com/f.bin", dest, null, 6, _ => { }, CancellationToken.None);
+            sw.Stop();
+
+            Assert.Equal("SLOWOK", await File.ReadAllTextAsync(dest)); // good.com 完成
+            Assert.Equal(1, handler.HungCalls);                        // 挂死源只被碰过 1 次（下轮被弃用）
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),          // 不被挂死源无限拖住
+                $"总耗时 {sw.Elapsed.TotalSeconds:F1}s 超过 5s——watchdog 未摘除挂死源");
+        }
+        finally
+        {
+            File.Delete(dest);
+        }
+    }
+
+    private sealed class HungHandler : HttpMessageHandler
+    {
+        public int HungCalls;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (request.Headers.Range is not null) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            if (request.RequestUri!.Host == "hung.com")
+            {
+                if (Interlocked.Increment(ref HungCalls) >= 2)
+                    throw new HttpRequestException("挂死源第二次请求直接失败");
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new HungContent() });
+            }
+            return GoodAsync(ct);
+        }
+
+        private static async Task<HttpResponseMessage> GoodAsync(CancellationToken ct)
+        {
+            await Task.Delay(300, ct);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("SLOWOK"u8.ToArray()) };
+        }
+    }
+
+    /// <summary>发了 3 字节后永久挂起的 body（无视取消 token——模拟 .NET 流读 token 失效的洞）</summary>
+    private sealed class HungContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => Task.CompletedTask;
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken cancellationToken)
+            => Task.FromResult<Stream>(new HungStream());
+    }
+
+    private sealed class HungStream : Stream
+    {
+        private static readonly byte[] Head = "ABC"u8.ToArray();
+        private bool _sent;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+        {
+            if (!_sent)
+            {
+                Head.CopyTo(buffer);
+                _sent = true;
+                return Head.Length;
+            }
+            await Task.Delay(Timeout.Infinite, CancellationToken.None); // 永远挂起，无视任何取消
+            return 0;
         }
     }
 

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
              x:Class="Launcher.App.Views.SectionDownloadView"
              x:DataType="vm:SettingsViewModel">
 
@@ -55,9 +56,10 @@
                 <TextBlock Text="GitHub API Token" Classes="setting-label" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding GitHubApiTokenInput}"
                          PasswordChar="●" RevealPassword="False"
-                         PlaceholderText="留空 = 普通模式（可填 token 解除下载限流）" Margin="0,0,8,0"/>
+                         PlaceholderText="填入你申请的 API 加速 GitHub 文件下载，没有就留空" Margin="0,0,8,0"
+                         LostFocus="OnGitHubTokenLostFocus"/>
                 <Path Grid.Column="2" Classes="help-hint"
-                           ToolTip.Tip="可选。GitHub 官方 API 不填 token 每小时限 60 次（够偶尔用）；填了就 5000 次，下载很多 GitHub 文件时不会被限流。申请：github.com 右上头像 → Settings → Developer settings → Personal access tokens → 生成一个。留空 = 保持现有设置" VerticalAlignment="Center"/>
+                           ToolTip.Tip="GitHub 官方 API 不填 token 每小时限 60 次（够偶尔用）；填了 5000 次，下载很多 GitHub 文件不会被限流。申请：github.com 右上头像 → Settings → Developer settings → Personal access tokens → 生成一个" VerticalAlignment="Center"/>
             </Grid>
 
             <TextBlock Text="CurseForge" Classes="group-sub"/>
@@ -65,23 +67,37 @@
                 <TextBlock Text="CurseForge API Key" Classes="setting-label" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding CurseForgeApiKeyInput}"
                          PasswordChar="●" RevealPassword="False"
-                         PlaceholderText="留空 = 保持现有 Key" Margin="0,0,8,0"/>
+                         PlaceholderText="API Key" Margin="0,0,8,0"/>
                 <Button Grid.Column="2" Content="检查" Classes="ghost" Padding="10,4"
                         Click="OnCheckProxy"/>
                 <Button Grid.Column="3" Content="获取 API" Classes="ghost" Padding="10,4"
                         Click="OnOpenCfConsole" ToolTip.Tip="要 Google 账号登录 console.curseforge.com 申请。表单里要填网站地址和 Git 地址"/>
                 <Path Grid.Column="4" Classes="help-hint"
-                           ToolTip.Tip="填 Key 才能用 CurseForge 源。留空就不动现在的 Key。Key 用系统加密存，不落明文"
+                           ToolTip.Tip="填 Key 才能用 CurseForge 源。Key 用系统加密存，不落明文"
                            VerticalAlignment="Center"/>
             </Grid>
-            <TextBlock Text="{Binding CurseForgeApiKeyStatus}" Classes="dim" FontSize="11"
-                       TextWrapping="Wrap" Margin="0,0,0,4"/>
+            <!-- 8-13 Cloudflare 风验证状态：绿块弹对勾 / 红块叉 + 状态文字 -->
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding CurseForgeApiKeyStatus, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                <Border x:Name="CfValidIcon" Width="30" Height="30" CornerRadius="7" Background="#22C55E"
+                        IsVisible="False" RenderTransformOrigin="50%,50%">
+                    <Path x:Name="CfCheckPath" Data="M7,15.5 L12.5,21 L23,9" Stroke="White" StrokeThickness="3"
+                          StrokeLineCap="Round"/>
+                </Border>
+                <Border x:Name="CfInvalidIcon" Width="30" Height="30" CornerRadius="7" Background="#EF4444"
+                        IsVisible="False" RenderTransformOrigin="50%,50%">
+                    <Path Data="M10,10 L20,20 M20,10 L10,20" Stroke="White" StrokeThickness="3"
+                          StrokeLineCap="Round"/>
+                </Border>
+                <TextBlock Text="{Binding CurseForgeApiKeyStatus}" FontSize="11"
+                           Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
                 <TextBlock Text="CF 文件加速前缀" Classes="setting-label" VerticalAlignment="Center"/>
                 <TextBox Grid.Column="1" Text="{Binding CurseForgeCdnPrefixText}"
-                         Watermark="留空 = 官方 CDN"/>
+                         Watermark="如 https://mirror.example.com"/>
                 <Path Grid.Column="2" Classes="help-hint"
-                           ToolTip.Tip="留空走官方。填了镜像地址就替换官方前缀"
+                           ToolTip.Tip="填镜像地址替换官方下载前缀。留空走官方 CDN"
                            VerticalAlignment="Center"/>
             </Grid>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">

@@ -50,6 +50,20 @@ public sealed class AccountService
         return acc;
     }
 
+    /// <summary>8-13 Littleskin 第三方登录：按皮肤站角色保存（type=littleskin；
+    /// 无 token 落盘——皮肤站 token 本启动器无用途，皮肤 PNG 已本地化到 skins/{name}.png）</summary>
+    public AccountInfo LoginLittleskin(string name, string uuid)
+    {
+        var acc = new AccountInfo(name, FormatUuid(uuid), "littleskin");
+        var existing = _accounts.FindIndex(a => a.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (existing >= 0) _accounts[existing] = acc;
+        else _accounts.Add(acc);
+        Current = acc;
+        Save();
+        Changed?.Invoke();
+        return acc;
+    }
+
     /// <summary>正版登录：保存微软会话为当前账号（type=microsoft；refresh token 持久化供静默刷新）</summary>
     public AccountInfo LoginMicrosoft(MicrosoftAuth.MicrosoftSession session)
     {

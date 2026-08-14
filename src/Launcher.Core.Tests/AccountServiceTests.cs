@@ -136,6 +136,27 @@ public class AccountServiceTests
     // ---------- 8-13 正版 UUID 横线 + token 过期时间持久化 ----------
 
     [Fact]
+    public void LoginLittleskin_Persisted_WithDashedUuid()
+    {
+        // 8-13 Littleskin 第三方登录：类型 + UUID 横线落盘，重载还原
+        var path = TempStore();
+        try
+        {
+            var svc = new AccountService(path);
+            var acc = svc.LoginLittleskin("Steve", "069a79f444e94726a5befca90e38aaf5");
+            Assert.Equal("littleskin", acc.Type);
+            Assert.Equal("069a79f4-44e9-4726-a5be-fca90e38aaf5", acc.Uuid);
+
+            var reloaded = new AccountService(path);
+            reloaded.Load();
+            var loaded = reloaded.Accounts.Single();
+            Assert.Equal("littleskin", loaded.Type);
+            Assert.Equal("Steve", loaded.Name);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
     public void FormatUuid_32To36_Idempotent()
     {
         Assert.Equal("069a79f4-44e9-4726-a5be-fca90e38aaf5",

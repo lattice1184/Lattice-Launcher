@@ -52,6 +52,15 @@ public sealed class DownloadOptions
     /// </summary>
     public long ReadStallTimeoutMs { get; init; } = 30000;
 
+    /// <summary>
+    /// 竞速幸存源 watchdog 停滞阈值（毫秒，8-14）：唯一幸存源（其余已被淘汰）连续零进度
+    /// 超过此值且未收尾 → 摘除弃用进下一轮重赛（不等待任务——挂死任务可能无视取消）。
+    /// 兜底源内三道防线（AL61/AL64/AL66）未覆盖的洞
+    /// （实机：OBS 128MB ghproxy.net 赢家静默断流，任务无限挂起 8 分钟无任何日志）。
+    /// 进度上报 250ms 精细粒度，健康源（≥判死阈值）必有增量，30s 阈值不误杀。
+    /// </summary>
+    public long RaceWatchdogStallMs { get; init; } = 30000;
+
     /// <summary>源死亡判定：采样间隔（毫秒）</summary>
     public long SlowProbeMs { get; init; } = 5000;
 

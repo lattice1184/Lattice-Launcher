@@ -143,10 +143,13 @@ public static class MicrosoftAuth
         throw new TimeoutException("登录码已过期，请重新发起登录");
     }
 
-    /// <summary>OAuth token（MBI_SSL）→ 完整正版会话（uuid + 用户名）</summary>
+    /// <summary>OAuth token（MBI_SSL）→ 完整正版会话（uuid + 用户名）。
+    /// onStage：认证链分步状态回调（登录 UI「正在认证…」实时反馈——缓解同步慢的体感）</summary>
     public static async Task<MicrosoftSession> AuthenticateMinecraftAsync(
-        HttpClient http, string oauthAccessToken, string refreshToken, CancellationToken ct)
+        HttpClient http, string oauthAccessToken, string refreshToken, CancellationToken ct,
+        Action<string>? onStage = null)
     {
+        onStage?.Invoke("正在认证 Xbox…");
         var xbox = await PostJsonAsync(http, XboxAuthUrl, new
         {
             Properties = new
@@ -160,8 +163,10 @@ public static class MicrosoftAuth
             TokenType = "JWT",
         }, ct);
 
-        // XSTS：Token + Xui[0].uhs（UserHash）；identityToken 格式：XBL3.0 x=<uhs>;<xstsToken>
+        // XSTS：Token + DisplayClaims.xui[0].uhs（UserHash）；identityToken 格式：XBL3.0 x=<uhs>;<xstsToken>
+        onStage?.Invoke("正在认证 XSTS…");
         var (xstsToken, uhs) = await PostXstsAsync(http, xbox, ct);
+        onStage?.Invoke("正在登录 Minecraft…");
 
         // Minecraft token（login_with_xbox 响应带 expires_in——记录过期时间供启动前跳过刷新）
         using var mcReq = new HttpRequestMessage(HttpMethod.Post, MinecraftLoginUrl);
@@ -180,6 +185,7 @@ public static class MicrosoftAuth
         var expiresAt = DateTime.UtcNow.AddSeconds(Math.Clamp(expiresIn, 60, 86400 * 7));
 
         // 正版 UUID + 用户名
+        onStage?.Invoke("正在读取正版档案…");
         using var req = new HttpRequestMessage(HttpMethod.Get, MinecraftProfileUrl);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", minecraft);
         using var resp = await http.SendAsync(req, ct);

@@ -70,7 +70,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
                 <Path Grid.Column="2" Classes="help-hint"
-                           ToolTip.Tip="四档 GC 预设，只管内存回收，不碰内存大小。改完下次启动才生效。"
+                           ToolTip.Tip="四档 GC 预设，只管内存回收不管内存大小，下次启动生效。轻量：停顿目标 ≤200ms；均衡：≤100ms；流畅：≤50ms 并开启并行引用处理（适合大内存）；极致：≤50ms 并开启字符串去重（追求最低卡顿，内存开销略大）"
                            VerticalAlignment="Center"/>
             </Grid>
 
@@ -78,14 +78,7 @@
                 <TextBlock Text="启动时自动把游戏设为中文" Classes="setting-label" VerticalAlignment="Center"/>
                 <ToggleSwitch IsChecked="{Binding AutoChineseEnabled}"/>
             </StackPanel>
-
-            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
-                <TextBlock Text="微软登录 Client ID" Classes="setting-label" VerticalAlignment="Center"/>
-                <TextBox Grid.Column="1" Text="{Binding MicrosoftClientIdInput}"
-                         PlaceholderText="留空 = 用内置默认" Margin="0,0,8,0"/>
-                <Path Grid.Column="2" Classes="help-hint"
-                           ToolTip.Tip="正版登录用的 Azure 应用 ID。内置值失效时报「找不到应用」就填一个新的（其他启动器/社区流传的可用 ID 均可）。留空 = 保持现有设置" VerticalAlignment="Center"/>
-            </Grid>
+            <!-- 8-13：微软登录 Client ID 设置项已移除——登录有远程下发/缓存/内置三层兜底，无需用户填写 -->
         </StackPanel>
     </Border>
 </UserControl>
