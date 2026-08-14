@@ -240,19 +240,11 @@ public partial class HomeViewModel : ViewModelBase
             foreach (var e in svc.Entries.Where(e => e.Installed))
                 candidates.Add((e.GameDirectory, e.Id));
             // 目录扫描补漏：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
-            foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
-            {
-                var versionsDir = Path.Combine(dir, "versions");
-                if (!Directory.Exists(versionsDir)) continue;
-                foreach (var d in Directory.EnumerateDirectories(versionsDir))
-                {
-                    var id = Path.GetFileName(d);
-                    if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                    // AL29：已安装 = json+jar（残件版本不在主页显示，版本页可修）
-                    if (VersionManifestService.IsInstalled(dir, id))
-                        candidates.Add((dir, id));
-                }
-            }
+            // + 三路 jar 判定（8-14：原版父版本 jar 落加载器子目录也算——与版本页侧栏同口径）
+            foreach (var (id, dir) in VersionManifestService.ScanUsableInstances(
+                         GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true))
+                if (!candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                    candidates.Add((dir, id));
             // AL27：回滚 AL26 隐藏——原版与加载器都显示（友好名徽章保留；隐藏后用户失去原版可选，1.21.10 启动依赖它）
             InstalledVersions.Clear();
             foreach (var (dir, id) in candidates)

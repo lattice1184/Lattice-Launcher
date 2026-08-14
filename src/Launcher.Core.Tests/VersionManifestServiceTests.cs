@@ -121,6 +121,56 @@ public class VersionManifestServiceTests
         Assert.False(VersionManifestService.IsInstalled(g, id));
     }
 
+    // ---------- ScanUsableInstances（8-14：已装集合改三路 jar 判定——26.2 父版本 jar 落加载器子目录时
+    // 不得漏标：版本页侧栏「已安装」集合与行徽章必须同口径；真机复现：下载 26.2+fabric 后侧栏 26.2 不亮） ----------
+
+    [Fact]
+    public void ScanUsableInstances_VanillaParentWithLoaderChild_Usable()
+    {
+        // 26.2 原版 json-only（jar 在 fabric 子版本目录）→ 必须计入可用实例
+        var root = Path.Combine(Path.GetTempPath(), $"usable-{Guid.NewGuid():N}");
+        var vanilla = Path.Combine(root, "versions", "26.2");
+        Directory.CreateDirectory(vanilla);
+        File.WriteAllText(Path.Combine(vanilla, "26.2.json"), "{}");
+        var fab = Path.Combine(root, "versions", "fabric-loader-0.19.3-26.2");
+        Directory.CreateDirectory(fab);
+        File.WriteAllText(Path.Combine(fab, "fabric-loader-0.19.3-26.2.json"), "{\"inheritsFrom\":\"26.2\"}");
+        File.WriteAllText(Path.Combine(fab, "fabric-loader-0.19.3-26.2.jar"), "x");
+
+        var result = VersionManifestService.ScanUsableInstances([root], cleanForeignMarkers: false);
+
+        Assert.True(result.ContainsKey("26.2"), "原版父版本经子版本 jar 应判可用");
+        Assert.True(result.ContainsKey("fabric-loader-0.19.3-26.2"), "加载器版本应判可用");
+    }
+
+    [Fact]
+    public void ScanUsableInstances_JsonOnlyLone_Excluded()
+    {
+        // 只有 json、无自身 jar、无引用子版本 → 预取残件，不得计入
+        var root = Path.Combine(Path.GetTempPath(), $"usable-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, "versions", "lone-26.2");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "lone-26.2.json"), "{}");
+
+        var result = VersionManifestService.ScanUsableInstances([root], cleanForeignMarkers: false);
+
+        Assert.DoesNotContain("lone-26.2", result.Keys);
+    }
+
+    [Fact]
+    public void ScanUsableInstances_OwnJar_Usable()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"usable-{Guid.NewGuid():N}");
+        var dir = Path.Combine(root, "versions", "26.2");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "26.2.json"), "{}");
+        File.WriteAllText(Path.Combine(dir, "26.2.jar"), "x");
+
+        var result = VersionManifestService.ScanUsableInstances([root], cleanForeignMarkers: false);
+
+        Assert.True(result.ContainsKey("26.2"));
+    }
+
     // ---------- IsInstanceTarget（8-12：实例 = MOD 安装目标，json-only——26.2 父版本 jar 落加载器子目录） ----------
 
     [Fact]
