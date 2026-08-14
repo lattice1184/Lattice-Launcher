@@ -1,0 +1,12 @@
+PCL2 改良版启动器 — 来源声明
+
+本仓库包含来自 PCL Community Edition（PCL-CE）的代码，遵循 Apache License 2.0：
+
+- PCL.Core/ — vendor 自 https://github.com/PCL-Community/PCL-CE（tag v2.15.0），Apache License 2.0
+  - 该目录内的 PCL.Core/NOTICE 保留上游声明
+  - 修改内容见 PATCHES.md
+- PCL.Core.SourceGenerators/ — 同上来源，Apache License 2.0
+
+其余代码（src/ 下所有项目）为本项目原创。
+
+原版 PCL（Plain Craft Launcher）受《PCL 分发有限许可》约束，其源码（含 UI 层实现）不包含在本仓库中。

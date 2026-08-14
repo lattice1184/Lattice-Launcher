@@ -1,0 +1,423 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Launcher.App.App"
+             xmlns:local="using:Launcher.App"
+             xmlns:behaviors="using:Launcher.App.Animations"
+             xmlns:conv="using:Launcher.App.Converters"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+
+        <!-- ========== 设计令牌（单一调色板，视图引用资源而非硬编码） ========== -->
+        <!-- 背景色（含 alpha；ApplyBackgroundColor 运行时覆盖；XAML 默认值兜底 = 旧版硬编码值） -->
+        <Color x:Key="BackgroundColor">#B81D222C</Color>
+        <!-- 表面层（ApplyBackgroundColor 运行时按背景色亮暗翻转覆盖——浅色背景 → 深字白卡；此处默认值兜底） -->
+        <Color x:Key="BgBase">#14181F</Color>
+        <Color x:Key="BgSurface">#1D222C</Color>
+        <Color x:Key="BgRaised">#242A36</Color>
+        <Color x:Key="BgHover">#2C3544</Color>
+        <Color x:Key="BgActive">#2A3240</Color>
+        <Color x:Key="BorderColor">#2F3745</Color>
+        <!-- 文本层 -->
+        <Color x:Key="TextPrimary">#E8EAF0</Color>
+        <Color x:Key="TextSecondary">#8A93A6</Color>
+        <Color x:Key="TextDim">#6F7B90</Color>
+        <Color x:Key="TextLog">#B8C2D4</Color>
+        <!-- 强调（青绿，唯一饱和色）与状态 -->
+        <Color x:Key="Accent">#2DD4BF</Color>
+        <Color x:Key="AccentHover">#45E3CF</Color>
+        <!-- 强调派生（主题系统：ApplyAccentColor 运行时按 Accent 计算覆盖；此处默认值兜底 XAML 加载期） -->
+        <Color x:Key="AccentDark">#12332F</Color>
+        <Color x:Key="AccentLight">#B5F4E9</Color>
+        <Color x:Key="AccentSoft">#262DD4BF</Color>
+        <Color x:Key="OnAccent">#0B1F1C</Color>
+        <!-- 语义固定色（不随主题：警告/成功条须保持可辨识） -->
+        <Color x:Key="WarnBg">#33291A</Color>
+        <Color x:Key="WarnText">#E8B45A</Color>
+        <Color x:Key="SuccessBg">#1E3A2E</Color>
+        <Color x:Key="Danger">#E05A5A</Color>
+        <Color x:Key="Success">#5AD07C</Color>
+        <!-- 圆角与间距基准（圆滑不锐利） -->
+        <CornerRadius x:Key="RadiusSmall">5</CornerRadius>
+        <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
+        <CornerRadius x:Key="RadiusLarge">10</CornerRadius>
+        <!-- 间距基准（紧凑统一） -->
+        <x:Double x:Key="SpaceXXS">4</x:Double>
+        <x:Double x:Key="SpaceXS">6</x:Double>
+        <x:Double x:Key="SpaceS">8</x:Double>
+        <x:Double x:Key="SpaceM">10</x:Double>
+        <x:Double x:Key="SpaceL">12</x:Double>
+        <x:Double x:Key="SpaceXL">16</x:Double>
+        <Thickness x:Key="PagePadding">12</Thickness>
+        <Thickness x:Key="CardPad">12</Thickness>
+        <!-- 阴影令牌（#213 借鉴 BlockHelm：卡片轻阴影 + 浮层重阴影，全局统一） -->
+        <BoxShadows x:Key="ShadowCard">0 2 8 0 #14000000</BoxShadows>
+        <BoxShadows x:Key="ShadowPop">0 8 24 0 #26000000</BoxShadows>
+        <!-- 共享过渡实例：Expander 展开/收起高度动画（无实例状态，可多 Expander 复用） -->
+        <behaviors:ExpandCollapseTransition x:Key="ExpanderTransition"/>
+        <!-- 帮助问号图标（Material help 24x24 矢量路径——不依赖图标字体，任何系统渲染一致；
+             字体渲染（MDL2 E897）在 Skia 下像拼上去的字符，治根换 Path 矢量） -->
+        <StreamGeometry x:Key="HelpIconData">M11,18h2v-2h-2v2zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM12,20c-4.41,0 -8,-3.59 -8,-8s3.59,-8 8,-8 8,3.59 8,8 -3.59,8 -8,8zM12,6c-2.21,0 -4,1.79 -4,4h2c0,-1.1 0.9,-2 2,-2s2,0.9 2,2c0,2 -3,1.75 -3,5h2c0,-2.25 3,-2.5 3,-5 0,-2.21 -1.79,-4 -4,-4z</StreamGeometry>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- 全局字体：系统中文 UI 字体（弃 AI 默认 Inter） -->
+        <Style Selector="Window">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI Variable, Segoe UI"/>
+        </Style>
+
+        <!-- 按钮：弹性缩放由 SpringScaleBehavior 托管；涟漪由 RippleBehavior 托管（模板内置 RippleHost）。
+             hover 变色由 HoverBrushBehavior 托管（本地值驱动——样式伪类 Setter 对模板绑定的驱动在 Avalonia 12 不可靠，AD1 根治） -->
+        <Style Selector="Button">
+            <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
+            <Setter Property="behaviors:SpringScaleBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:RippleBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:HoverBrushBehavior.Enabled" Value="True"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource BgHover}"/>
+            <Setter Property="Template">
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <ContentPresenter Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}"/>
+                            <Canvas x:Name="RippleHost" IsHitTestVisible="False"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="Button:pressed">
+            <!-- 按下变深（#1A2029 比所有按钮底暗；BgActive 反而比底亮会显"白影"） -->
+            <Setter Property="Background" Value="#1A2029"/>
+        </Style>
+
+        <!-- 窗口与文本 -->
+        <Style Selector="Window">
+            <Setter Property="Background" Value="{DynamicResource BgBase}"/>
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        </Style>
+        <Style Selector="TextBlock.sub">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+        </Style>
+        <Style Selector="TextBlock.dim">
+            <Setter Property="Foreground" Value="{DynamicResource TextDim}"/>
+        </Style>
+        <!-- AL7 红字规范：关键性/难以挽回的错误信息红字标注（失败 Status 等） -->
+        <Style Selector="TextBlock.status-error">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <!-- 问号帮助命中区：Border 全矩形（Path 的命中=填充几何形状——问号圆圈中心的孔不触发，
+         8-14 实测放大图标后鼠标放孔里时有时无）。透明背景 → 整个 bounds（含 padding）可命中：
+         图标视觉 14px 居中，命中区 26x26，孔也命中。XAML 用法：<Border Classes="help-hint" ToolTip.Tip="…"><Path/></Border> -->
+        <Style Selector="Border.help-hint">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip.ShowDelay" Value="500"/>
+        </Style>
+        <Style Selector="Border.help-hint Path">
+            <Setter Property="Data" Value="{DynamicResource HelpIconData}"/>
+            <Setter Property="Stretch" Value="Uniform"/>
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Fill" Value="{DynamicResource Accent}"/>
+        </Style>
+        <!-- 外部链接（打开主页/官方下载页）：像超链接——Accent + 下划线 + 手型（8-14 用户要求易识别）。
+         文件夹类按钮（打开 mods 文件夹等）保持 ghost，不误用 -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ContentTemplate">
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" TextDecorations="Underline"
+                               Foreground="{DynamicResource Accent}"/>
+                </DataTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="TextBlock.page-title">
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <!-- 按钮 -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="#C9D2E3"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        <Style Selector="Button:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+
+        <!-- 主操作按钮（唯一饱和面；hover 亮青绿由行为驱动） -->
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="{DynamicResource Accent}"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource AccentHover}"/>
+        </Style>
+
+        <!-- 危险按钮（红字；hover 红底浅红字由行为驱动） -->
+        <Style Selector="Button.danger">
+            <Setter Property="Foreground" Value="{StaticResource Danger}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="#8C2F2F"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{StaticResource Danger}"/>
+        </Style>
+
+        <!-- 幽灵按钮（hover 灰底白字由行为驱动） -->
+        <Style Selector="Button.ghost">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverBrush" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{DynamicResource TextPrimary}"/>
+        </Style>
+
+        <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动） -->
+        <Style Selector="Button.tab">
+            <Setter Property="Padding" Value="16,7"/>
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+        </Style>
+        <Style Selector="Button.tab.active">
+            <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentLight}"/>
+        </Style>
+
+        <!-- 输入控件 -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="UseFloatingPlaceholder" Value="True"/>
+            <!-- 聚焦过渡：只渐变颜色（边框/背景），粗细与内边距不变——几何零变化，杜绝亚像素重排的"震动"感 -->
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.15"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+            <Setter Property="Background" Value="{DynamicResource BgHover}"/>
+            <Setter Property="PlaceholderForeground" Value="{DynamicResource Accent}"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="behaviors:DropDownAnimBehavior.Enabled" Value="True"/>
+        </Style>
+        <Style Selector="Expander">
+            <Setter Property="ContentTransition" Value="{StaticResource ExpanderTransition}"/>
+        </Style>
+
+        <!-- 开关滑块动画（#213 借鉴 BlockHelm：36x18 轨道 + 圆形 Thumb + 0.14s CubicEase）。
+             Avalonia 12 约定：模板需 PART_MovingKnobs（Panel），点击切换由 ToggleSwitch 自身处理
+             （OnPointerPressed），容器 IsHitTestVisible=False 让点击直达控件。
+             checked 驱动：轨道背景由伪类样式变色（BrushTransition 0.14s）；Thumb 位移用模板内
+             TranslateTransform 局部 Transitions + IsChecked 绑定（BoolThumbX 转换器，2/20 双侧对称），
+             绑定变化自动触发 0.14s CubicEase 过渡——绕开样式选择器对命名非 Control 的限制 -->
+        <Style Selector="ToggleSwitch">
+            <Setter Property="Template">
+                <ControlTemplate TargetType="ToggleSwitch">
+                    <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="8">
+                        <ContentPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1" x:Name="PART_MovingKnobs" VerticalAlignment="Center"
+                              IsHitTestVisible="False">
+                            <Border x:Name="SwitchArea" Width="36" Height="18" CornerRadius="9"
+                                    Background="#4D6F7B90" BorderBrush="{DynamicResource BorderColor}"
+                                    BorderThickness="1">
+                                <Ellipse x:Name="Thumb" Width="14" Height="14" Fill="White"
+                                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                                         RenderTransformOrigin="50%,50%">
+                                    <Ellipse.RenderTransform>
+                                        <TranslateTransform X="{Binding $parent[ToggleSwitch].IsChecked, Converter={x:Static conv:BoolThumbXConverter.Instance}}">
+                                            <TranslateTransform.Transitions>
+                                                <Transitions>
+                                                    <DoubleTransition Property="X" Duration="0:0:0.14"
+                                                                      Easing="CubicEaseInOut"/>
+                                                </Transitions>
+                                            </TranslateTransform.Transitions>
+                                        </TranslateTransform>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleSwitch /template/ Border#SwitchArea">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleSwitch:checked /template/ Border#SwitchArea">
+            <Setter Property="Background" Value="{DynamicResource Accent}"/>
+        </Style>
+        <Style Selector="ToggleSwitch:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+
+        <!-- 玻璃卡片（液态玻璃点缀；日志/控制台保持实色 card 保证对比度） -->
+        <Style Selector="Border.glass-card">
+            <Setter Property="Background" Value="#E6242A36"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="#4D2F3745"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- 卡片（圆角收敛；用于离散信息单元，不用于列表行） -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <!-- 设置卡片三层模板（#213 借鉴 BlockHelm）：GroupHeader 分组标题 + SettingGroupCard 半透明阴影卡片 + SettingRow 两列行 -->
+        <Style Selector="TextBlock.group-header">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="Margin" Value="2,0,0,8"/>
+        </Style>
+        <!-- 卡片内子分组标题（下载行为/CurseForge 等）；上边距 10 制造组间分隔感 -->
+        <Style Selector="TextBlock.group-sub">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+            <Setter Property="Margin" Value="2,10,0,2"/>
+        </Style>
+        <Style Selector="Border.setting-group">
+            <Setter Property="Background" Value="#CC1D222C"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BoxShadow" Value="{StaticResource ShadowCard}"/>
+            <Setter Property="Padding" Value="{StaticResource CardPad}"/>
+        </Style>
+        <!-- ColumnDefinitions 非 AvaloniaProperty（AVLN3000），列定义由各 Grid 显式声明；此处只统一行内间距与行高 -->
+        <Style Selector="Grid.setting-row">
+            <Setter Property="ColumnSpacing" Value="10"/>
+            <Setter Property="MinHeight" Value="30"/>
+        </Style>
+        <Style Selector="TextBlock.setting-label">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- 列表行：扁平 + hover 背景过渡 + 分隔线（缩放会跳动，不做） -->
+        <Style Selector="Border.row">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.row:hover">
+            <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
+        </Style>
+
+        <!-- AL11：下载任务行着重标识（覆盖 row 底部虚线为左强调条；active 优先于 hover） -->
+        <Style Selector="Border.taskRow.active">
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+        </Style>
+        <Style Selector="Border.taskRow.failed">
+            <Setter Property="Background" Value="#263A2020"/>
+            <Setter Property="BorderBrush" Value="#E05A5A"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+        </Style>
+
+        <!-- 下载角标：下载中呼吸脉冲（高亮标记下载导航项） -->
+        <Style Selector="Border.badge">
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="1"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <!-- 阶段指示点：当前激活呼吸脉冲（仅 Opacity） -->
+        <Style Selector="Border.stagedot.current">
+            <Style.Animations>
+                <Animation Duration="0:0:0.9" IterationCount="Infinite">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="Opacity" Value="1"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="Opacity" Value="0.55"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+
+        <!-- 进度条（值变化平滑过渡） -->
+        <Style Selector="ProgressBar">
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+            <Setter Property="Background" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource RadiusSmall}"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Value" Duration="0:0:0.3"/>
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <!-- 淡入工具类（Opacity 由绑定驱动时平滑过渡） -->
+        <Style Selector="Control.anim-fade">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+                </Transitions>
+            </Setter>
+        </Style>
+    </Application.Styles>
+</Application>

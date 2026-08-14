@@ -1,0 +1,188 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:app="using:Launcher.App.Converters"
+             x:Class="Launcher.App.Views.EcosystemView"
+             x:DataType="vm:EcosystemViewModel">
+
+    <DockPanel>
+        <!-- 顶部：搜索 + 实例 + 三级筛选 + 状态（类型 tab 由外层下载板块控制） -->
+        <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBox Text="{Binding Query}" Watermark="搜索…"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Instances}" SelectedItem="{Binding SelectedInstance}"
+                          PlaceholderText="目标实例" MinWidth="190"
+                          HorizontalContentAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:VersionInstanceVM">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding Name}"/>
+                                <Border CornerRadius="3" Padding="5,0" VerticalAlignment="Center"
+                                        Background="{DynamicResource AccentDark}" IsVisible="{Binding LoaderBadge, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                    <TextBlock Text="{Binding LoaderBadge}" FontSize="9" Foreground="{DynamicResource AccentLight}"/>
+                                </Border>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+
+            <!-- 筛选行 1：加载器 chips（仅 MOD） -->
+            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsModType}">
+                <Button Content="全部" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="全部"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=ALL}"/>
+                <Button Content="Fabric" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Fabric"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Fabric}"/>
+                <Button Content="Forge" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Forge"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Forge}"/>
+                <Button Content="NeoForge" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="NeoForge"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=NeoForge}"/>
+                <Button Content="Quilt" Classes="ghost" FontSize="11" Padding="10,3"
+                        Command="{Binding SelectLoaderCommand}" CommandParameter="Quilt"
+                        Classes.active="{Binding SelectedLoader, Converter={x:Static app:ValueEqualsConverter.Instance}, ConverterParameter=Quilt}"/>
+            </StackPanel>
+
+            <!-- 筛选行 2：版本/分类/排序/来源 Grid 均分（宽窗口无右侧空白）+ 收藏右对齐 -->
+            <Grid ColumnDefinitions="*,*,*,*,Auto" ColumnSpacing="10">
+                <ComboBox Grid.Column="0" ItemsSource="{Binding GameVersionOptions}"
+                          SelectedItem="{Binding SelectedGameVersion}" MinWidth="110">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+GameVersionOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:EcosystemViewModel.CategoryOptions}"
+                          SelectedItem="{Binding SelectedCategory}" MinWidth="120">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+CategoryOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="2" ItemsSource="{x:Static vm:EcosystemViewModel.SortOptions}"
+                          SelectedItem="{Binding SelectedSort}" MinWidth="110">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+SortOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <ComboBox Grid.Column="3" ItemsSource="{Binding SourceOptions}"
+                          SelectedItem="{Binding SelectedSource}" MinWidth="100">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:EcosystemViewModel+SourceOption">
+                            <TextBlock Text="{Binding Display}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Column="4" Content="★ 收藏" Classes="ghost" FontSize="11" Padding="10,3"
+                        Classes.active="{Binding FavoritesOnly}"
+                        Command="{Binding ToggleFavoritesCommand}"/>
+            </Grid>
+
+            <TextBlock Text="{Binding Status}" Foreground="#8A93A6" FontSize="12"/>
+        </StackPanel>
+
+        <!-- 内容：列表层与详情层叠放 -->
+        <Grid>
+            <!-- 列表层（DockPanel：ScrollViewer 受约束才能滚动） -->
+            <DockPanel IsVisible="{Binding !IsDetailOpen}">
+                <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
+                <StackPanel DockPanel.Dock="Top" Spacing="8" IsVisible="{Binding IsError}">
+                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A"/>
+                    <Button Content="重试" Command="{Binding SearchCommand}"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Top" Text="没找到你要的内容" Foreground="#8A93A6" HorizontalAlignment="Center"
+                           Margin="0,40" IsVisible="{Binding IsEmpty}"/>
+
+                <!-- 分页栏（◀ 页码 ▶） -->
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10"
+                            HorizontalAlignment="Center" Margin="0,8,0,0">
+                    <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding PrevPageCommand}" IsEnabled="{Binding HasPrev}"/>
+                    <TextBlock Text="{Binding PageText}" Classes="sub" FontSize="12"
+                               VerticalAlignment="Center" MinWidth="36" TextAlignment="Center"/>
+                    <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
+                            Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNext}"/>
+                </StackPanel>
+
+                <ScrollViewer x:Name="CardsScroll">
+                    <ItemsControl ItemsSource="{Binding Cards}">
+                        <!-- 竖排列表（PCL2 式：一行一个项目，全宽行） -->
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ProjectCardVM">
+                                <Button HorizontalAlignment="Stretch" Margin="0,1" Padding="0" Background="Transparent"
+                                        BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                        Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).OpenDetailCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Button.Styles>
+                                        <Style Selector="Button:hover > Border.modcard">
+                                            <Setter Property="Background" Value="{DynamicResource BgHover}"/>
+                                            <Setter Property="BorderBrush" Value="#3C4757"/>
+                                        </Style>
+                                        <Style Selector="Button:pressed > Border.modcard">
+                                            <Setter Property="Background" Value="{DynamicResource BgActive}"/>
+                                        </Style>
+                                    </Button.Styles>
+                                    <Border Classes="modcard" Background="Transparent"
+                                            Padding="10,8" BorderBrush="{DynamicResource BorderColor}"
+                                            BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
+                                            <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
+                                                    ClipToBounds="True" Background="{DynamicResource BgActive}"
+                                                    VerticalAlignment="Center">
+                                                <Image Source="{Binding Icon}" Width="40" Height="40" Stretch="Uniform"/>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Foreground="White"
+                                                               MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                                    <Border CornerRadius="3" Padding="5,1" Background="{DynamicResource AccentDark}"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding SourceText}" FontSize="10" Foreground="{DynamicResource AccentLight}"/>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Author}" Foreground="{DynamicResource TextSecondary}" FontSize="12"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource TextLog}" FontSize="12"
+                                                           MaxLines="2" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right">
+                                                    <Run Text="{Binding DownloadsText}"/><Run Text=" 下载"/>
+                                                </TextBlock>
+                                                <TextBlock Foreground="{DynamicResource TextDim}" FontSize="11" TextAlignment="Right"
+                                                           IsVisible="{Binding ShowFollows}">
+                                                    <Run Text="{Binding FollowsText}"/><Run Text=" 关注"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding UpdatedText}" Foreground="{DynamicResource TextDim}"
+                                                           FontSize="10" TextAlignment="Right"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3" Spacing="4" VerticalAlignment="Center">
+                                                <Button Content="安装" Classes="primary" FontSize="13" Padding="20,7"
+                                                        Command="{Binding $parent[UserControl].((vm:EcosystemViewModel)DataContext).InstallCardCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Classes="ghost" FontSize="14" Padding="4,0"
+                                                        Content="{Binding StarText}"
+                                                        Command="{Binding ToggleFavoriteCommand}"
+                                                        Foreground="{Binding StarColor}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- 详情层 -->
+            <ContentControl Content="{Binding Detail}" IsVisible="{Binding IsDetailOpen}"/>
+        </Grid>
+    </DockPanel>
+</UserControl>

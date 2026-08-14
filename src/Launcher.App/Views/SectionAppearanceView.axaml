@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.SectionAppearanceView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 外观 -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="10">
+            <TextBlock Text="外观" Classes="group-header"/>
+            <TextBlock Text="颜色" Classes="group-sub"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="窗口透明度" Classes="setting-label" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="0.7" Maximum="1.0" TickFrequency="0.05"
+                        Value="{Binding WindowOpacity}"/>
+                <TextBlock Grid.Column="2" Text="{Binding WindowOpacity, StringFormat={}{0:0.0}}"
+                           Classes="dim" FontSize="12" Width="36" TextAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="强调色" Classes="setting-label" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding AccentPresetItems}"
+                          SelectedItem="{Binding SelectedAccent}"
+                          HorizontalAlignment="Left" MinWidth="150" Padding="10,5">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AccentPresetVM">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Width="10" Height="10" CornerRadius="5"
+                                        Background="{Binding Hex}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Name}" FontSize="12"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+            <!-- 自定义颜色：输入 #RRGGBB 回车/失焦提交；非法显示提示不改色 -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*">
+                <TextBlock Text="自定义颜色" Classes="setting-label" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBox x:Name="CustomColorBox" Width="140" HorizontalAlignment="Left" Padding="10,5"
+                             PlaceholderText="#RRGGBB" FontFamily="Consolas" FontSize="12"
+                             KeyDown="OnCustomColorKeyDown" LostFocus="OnCustomColorLostFocus"/>
+                    <TextBlock x:Name="CustomColorError" Text="颜色格式不对，示例：#3B82F6" Classes="status-error"
+                               FontSize="11" IsVisible="False"/>
+                </StackPanel>
+            </Grid>
+            <TextBlock Text="背景" Classes="group-sub"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="背景色" Classes="setting-label" VerticalAlignment="Center"/>
+                <ColorPicker Grid.Column="1" IsAlphaEnabled="True" IsHexInputVisible="True"
+                             Color="{Binding BackgroundColorValue, Mode=TwoWay}"
+                             HorizontalAlignment="Left" Margin="0,-4"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="你调的颜色只显示在右侧内容区。半透明时透出玻璃底。浅色背景上文字自动变深"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <!-- 背景图片：缩略预览 + 选择/移除（仅内容区铺满 + 自动压暗） -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="背景图片" Classes="setting-label" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <Border Width="64" Height="34" CornerRadius="4" ClipToBounds="True" Background="#14181F"
+                            BorderBrush="{DynamicResource BorderColor}" BorderThickness="1">
+                        <Image Source="{Binding BackgroundImagePathText}" Stretch="UniformToFill"
+                               IsVisible="{Binding HasBackgroundImage}"/>
+                    </Border>
+                    <Button Content="选择图片…" Classes="ghost" FontSize="12" Padding="12,5" Click="OnPickBackgroundClick"/>
+                    <Button Content="移除" Classes="ghost" FontSize="12" Padding="12,5"
+                            Command="{Binding RemoveBackgroundImageCommand}"
+                            IsVisible="{Binding HasBackgroundImage}"/>
+                </StackPanel>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="铺满右侧内容区。自动压暗，保证你能看清。有图就用图"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="界面与操作" Classes="group-sub"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="界面密度" Classes="setting-label" VerticalAlignment="Center"/>
+                <Button Content="紧凑" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                        CommandParameter="0"/>
+                <Button Content="标准" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                        CommandParameter="1"/>
+                <Button Content="舒适" Classes="ghost" FontSize="12" Padding="12,5" Click="OnDensityClick"
+                        CommandParameter="2"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="保存并应用" Classes="primary" FontSize="12" Padding="16,6"
+                        Command="{Binding SaveAppearanceCommand}"/>
+                <Button Content="重置设置" Classes="danger" FontSize="12" Padding="16,6"
+                        Command="{Binding ResetAppearanceCommand}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="改了先预览，点保存才永久生效。重置是恢复默认，也要再保存"><Path/></Border>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

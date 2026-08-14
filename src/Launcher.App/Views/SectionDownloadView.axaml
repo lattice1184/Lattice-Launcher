@@ -1,0 +1,122 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             x:Class="Launcher.App.Views.SectionDownloadView"
+             x:DataType="vm:SettingsViewModel">
+
+    <!-- 下载 -->
+    <Border Classes="setting-group">
+        <StackPanel Spacing="10">
+            <TextBlock Text="下载" Classes="group-header"/>
+            <TextBlock Text="下载行为" Classes="group-sub"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="下载源策略" Classes="setting-label" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" ItemsSource="{Binding DownloadSourceOptions}"
+                          SelectedItem="{Binding SelectedDownloadSource}" HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DownloadSourceOption">
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="镜像只加速官方下载，别的源不加速"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="最大并发下载数" Classes="setting-label" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="1" Maximum="16" TickFrequency="1" Value="{Binding MaxConcurrentDownloads}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding MaxConcurrentDownloads}" Classes="dim" FontSize="12"
+                               Width="28" TextAlignment="Center"/>
+                    <Border Classes="help-hint"
+                               ToolTip.Tip="同时能下几个任务。改了只对新任务生效"><Path/></Border>
+                </StackPanel>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="分片数" Classes="setting-label" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="1" Maximum="32" TickFrequency="1"
+                        Value="{Binding ChunkCount}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ChunkCount}" Classes="dim" FontSize="12"
+                               Width="28" TextAlignment="Center"/>
+                    <Border Classes="help-hint"
+                               ToolTip.Tip="一个文件拆几段一起下，1 到 32 段。段越多越快，源站可能限流"><Path/></Border>
+                </StackPanel>
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="生态下载跟随实例版本" Classes="setting-label" VerticalAlignment="Center"/>
+                <ToggleSwitch IsChecked="{Binding EcoFollowInstance}"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="跟着主页选中的实例自动带出加载器和版本去查资源（PCL 存档版本号 CurseForge 不认时易匹配失败）；关掉就显示全部版本"><Path/></Border>
+            </StackPanel>
+
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="GitHub API Token" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding GitHubApiTokenInput}"
+                         PasswordChar="●" RevealPassword="False"
+                         PlaceholderText="填入你申请的 API 加速 GitHub 文件下载，没有就留空" Margin="0,0,8,0"
+                         LostFocus="OnGitHubTokenLostFocus"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="GitHub 官方 API 不填 token 每小时限 60 次（够偶尔用）；填了 5000 次，下载很多 GitHub 文件不会被限流。申请：github.com 右上头像 → Settings → Developer settings → Personal access tokens → 生成一个" VerticalAlignment="Center"/>
+            </Grid>
+
+            <TextBlock Text="CurseForge" Classes="group-sub"/>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                <TextBlock Text="CurseForge API Key" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding CurseForgeApiKeyInput}"
+                         PasswordChar="●" RevealPassword="False"
+                         PlaceholderText="API Key" Margin="0,0,8,0"/>
+                <Button Grid.Column="2" Content="检查" Classes="ghost" Padding="10,4"
+                        Click="OnCheckProxy"/>
+                <Button Grid.Column="3" Content="获取 API" Classes="ghost" Padding="10,4"
+                        Click="OnOpenCfConsole" ToolTip.Tip="要 Google 账号登录 console.curseforge.com 申请。表单里要填网站地址和 Git 地址"/>
+                <Path Grid.Column="4" Classes="help-hint"
+                           ToolTip.Tip="填 Key 才能用 CurseForge 源。Key 用系统加密存，不落明文"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <!-- 8-13 Cloudflare 风验证状态：绿块弹对勾 / 红块叉 + 状态文字 -->
+            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding CurseForgeApiKeyStatus, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                <Border x:Name="CfValidIcon" Width="30" Height="30" CornerRadius="7" Background="#22C55E"
+                        IsVisible="False" RenderTransformOrigin="50%,50%">
+                    <Path x:Name="CfCheckPath" Data="M7,15.5 L12.5,21 L23,9" Stroke="White" StrokeThickness="3"
+                          StrokeLineCap="Round"/>
+                </Border>
+                <Border x:Name="CfInvalidIcon" Width="30" Height="30" CornerRadius="7" Background="#EF4444"
+                        IsVisible="False" RenderTransformOrigin="50%,50%">
+                    <Path Data="M10,10 L20,20 M20,10 L10,20" Stroke="White" StrokeThickness="3"
+                          StrokeLineCap="Round"/>
+                </Border>
+                <TextBlock Text="{Binding CurseForgeApiKeyStatus}" FontSize="11"
+                           Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="CF 文件加速前缀" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding CurseForgeCdnPrefixText}"
+                         Watermark="如 https://mirror.example.com"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="填镜像地址替换官方下载前缀。留空走官方 CDN"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="下载限速" Classes="setting-label" VerticalAlignment="Center"/>
+                <Slider Grid.Column="1" Minimum="0" Maximum="20000" TickFrequency="100" Value="{Binding SpeedLimitKbps}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding SpeedLimitKbps}" Classes="dim" FontSize="12"
+                               Width="56" TextAlignment="Center"/>
+                    <Border Classes="help-hint"
+                               ToolTip.Tip="限制下载速度，0 是不限"><Path/></Border>
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="清理下载缓存" Classes="ghost" FontSize="12" Padding="12,5"
+                        Click="OnClearDownloadCache"/>
+                <Border Classes="help-hint"
+                           ToolTip.Tip="删掉下了一半的临时文件。已下完的不动"><Path/></Border>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

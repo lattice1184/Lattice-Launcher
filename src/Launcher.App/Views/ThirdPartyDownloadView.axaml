@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Launcher.App.ViewModels"
+             x:Class="Launcher.App.Views.ThirdPartyDownloadView"
+             x:DataType="vm:ThirdPartyDownloadViewModel">
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="640" Spacing="10" Margin="0,4" HorizontalAlignment="Left">
+            <Border Classes="card" Padding="16">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="下载第三方文件" FontSize="16" FontWeight="SemiBold"/>
+                        <Border Classes="help-hint"
+                                   ToolTip.Tip="粘一个直链，下到你选的位置。支持 .jar、.zip、.mrpack 和光影包格式。GitHub 直链自动走镜像加速"><Path/></Border>
+                    </StackPanel>
+                    <TextBlock Text="使用 Lattice 分片多线程引擎下载自定义文件：默认 8 分片并发，支持断点续传；GitHub 直链自动启用镜像加速。"
+                               Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
+
+                    <TextBox Text="{Binding UrlText}" PlaceholderText="下载链接（http/https 直链）" FontSize="13"/>
+
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <TextBlock Text="文件名" Classes="sub" FontSize="12" VerticalAlignment="Center" MinWidth="52"/>
+                        <TextBox Grid.Column="1" Text="{Binding FileNameText}"
+                                 PlaceholderText="留空自动从链接识别" FontSize="13"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                        <TextBlock Text="存到" Classes="sub" FontSize="12" VerticalAlignment="Center" MinWidth="52"/>
+                        <TextBox Grid.Column="1" Text="{Binding TargetDirText}" IsReadOnly="True" FontSize="12"/>
+                        <Button Grid.Column="2" Content="选择目录" Classes="ghost" Padding="14,6" Click="OnChooseDir"/>
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button Content="开始下载" Classes="primary" Padding="22,8"
+                                Command="{Binding StartDownloadCommand}" IsEnabled="{Binding CanStart}"/>
+                        <Border Classes="help-hint"
+                                   ToolTip.Tip="任务会进下载记录，断了能接着下。目录里有同名文件就自动加 (1)。不会覆盖你的文件。下载前要先认出文件名，认不出就在框里手填"><Path/></Border>
+                        <TextBlock Text="正在识别文件名…" Classes="dim" FontSize="12"
+                                   VerticalAlignment="Center" IsVisible="{Binding IsRecognizing}"/>
+                        <TextBlock Text="{Binding StatusText}" Classes="dim" FontSize="12"
+                                   VerticalAlignment="Center" TextWrapping="Wrap"
+                                   IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </StackPanel>
+
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
