@@ -27,7 +27,17 @@ public static class InstallerProcess
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        await process.WaitForExitAsync(ct);
+        try
+        {
+            await process.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // 8-22 全栈排查：取消必须杀安装器——否则 java 继续后台写 versions/，
+            // 用户立刻重试/装别的版本 → 两安装器并发写同目录装出损坏版本
+            try { process.Kill(entireProcessTree: true); } catch { /* 进程已退出 */ }
+            throw;
+        }
         return process.ExitCode;
     }
 }

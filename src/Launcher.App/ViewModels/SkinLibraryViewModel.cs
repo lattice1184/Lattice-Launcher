@@ -302,7 +302,9 @@ public partial class SkinLibraryViewModel : ViewModelBase
         }
     }
 
-    /// <summary>执行 API 调用（Task&lt;T&gt;）：同上</summary>
+    /// <summary>执行 API 调用（Task&lt;T&gt;）：同上。
+    /// 8-22 全栈排查：旧代码 RefreshAndRetryAsync 内部已带新 token 重试一次，返回后外层又执行第三次
+    /// （ApplySkin PUT 发两次、衣柜加载两遍）——改为直接返回自愈结果</summary>
     private async Task<T> WithRefreshAsync<T>(Func<CancellationToken, Task<T>> work)
     {
         try
@@ -311,13 +313,13 @@ public partial class SkinLibraryViewModel : ViewModelBase
         }
         catch (LittleSkinApi.UnauthorizedException)
         {
-            await RefreshAndRetryAsync(() => work(CancellationToken.None));
-            return await work(CancellationToken.None);
+            return await RefreshAndRetryAsync(() => work(CancellationToken.None));
         }
     }
 
-    /// <summary>401 自愈：刷新 token 一次，再失败清 token 回未连接</summary>
-    private async Task RefreshAndRetryAsync(Func<Task> retry)
+    /// <summary>401 自愈（有返回值版）：刷新 token 一次，带新 token 重试恰一次并返回结果；
+    /// 仍 401 则断连。8-22 全栈排查：旧实现「内部重试一次 + 外层又执行一次」= 双重执行</summary>
+    private async Task<T> RefreshAndRetryAsync<T>(Func<Task<T>> retry)
     {
         if (_tokenRefreshed)
         {
@@ -331,8 +333,24 @@ public partial class SkinLibraryViewModel : ViewModelBase
             throw new InvalidOperationException("LittleSkin 未连接，请重新连接");
         var fresh = await LittleSkinOAuth.RefreshAsync(_http, clientId, current.RefreshToken, CancellationToken.None);
         _store.Save(fresh);
-        await retry(); // 带新 token 重试
+        try
+        {
+            return await retry(); // 带新 token 重试恰一次
+        }
+        catch (LittleSkinApi.UnauthorizedException)
+        {
+            Disconnect(); // 新 token 仍 401 → 授权真失效
+            throw new InvalidOperationException("LittleSkin 授权已失效，请重新连接");
+        }
+        finally
+        {
+            _tokenRefreshed = false; // 8-22 复位：LittleSkin token 短效，下次过期可再自愈（旧代码永不复位 → 第二次过期直接登出）
+        }
     }
+
+    /// <summary>401 自愈（无返回值版）：同上，void 场景用</summary>
+    private async Task RefreshAndRetryAsync(Func<Task> retry)
+        => await RefreshAndRetryAsync(async () => { await retry(); return 0; });
 
     private void ShowError(Exception ex)
     {

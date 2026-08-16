@@ -625,8 +625,11 @@ public sealed class DownloadService
             // 竞速输（raceCts 已取消）或源自身超时——静默，赢家已经定了
             return (false, null);
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException
+            or IOException or UnauthorizedAccessException)
         {
+            // 8-22 全栈排查：IOException（文件锁/共享冲突）此前逃出整轮竞速循环——
+            // 挂死源残留 .race*.parts 文件锁着时，下一轮同 key 复用开文件直接崩。归入源失败换源兜底
             return (false, ex);
         }
     }

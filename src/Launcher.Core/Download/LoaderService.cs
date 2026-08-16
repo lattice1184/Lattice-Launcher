@@ -363,8 +363,11 @@ public sealed class LoaderService
         if (ctx is not null)
         {
             VersionJson? version = null;
+            Exception? metaError = null; // 8-22 全栈排查：子任务 Completion 永不抛 → meta 失败被吞成 NRE
             await ctx.AddChild($"加载器配置 {plan.Kind}", 0, async (p, c) =>
             {
+                try
+                {
                 // AL40：文案明确——「正在安装加载器」让用户知道卡在加载器（meta 源国内慢），
                 // 而非笼统的「排队等待」/「下载中」让人误以为 UI 卡死。
                 // REVIEW-治本：ProgressReporter 统一上报（阶段文字即时可见——meta 拉取 2-26s
@@ -380,7 +383,11 @@ public sealed class LoaderService
                 await File.WriteAllTextAsync(Path.Combine(versionDir, $"{id}.json"), json, c);
                 rep.ReportStage("加载器配置完成");
                 rep.Complete();
+                }
+                catch (Exception ex) { metaError = ex; throw; }
             }).Completion;
+            if (version is null)
+                throw metaError ?? new InvalidOperationException($"加载器信息拉取失败（{plan.Kind} meta 获取失败或版本 JSON 解析失败）");
 
             await _downloads.DownloadVersionAsync(version!, ctx, null, ct);
             return;
@@ -435,6 +442,10 @@ public sealed class LoaderService
             // 否则会继续走 FindNewestVersionDir+校验，把「安装器执行失败」误报成「缺 N 个文件」掩盖根因
             if (runChild.TerminalState == DownloadTaskState.Failed)
                 throw new InvalidOperationException(runChild.Error ?? $"运行 {plan.Kind} 安装器失败");
+            // 8-22 全栈排查：用户取消（Canceled）也必须停——继续 FindNewestVersionDir+Mark
+            // 会把从未被本启动器安装的目录打上 .yanla-installed 标记（污染版本页）
+            if (runChild.TerminalState == DownloadTaskState.Canceled)
+                throw new OperationCanceledException(ct.IsCancellationRequested ? "安装已取消" : $"运行 {plan.Kind} 安装器被取消");
 
             // 安装器写出的版本目录名不确定 → 取安装后最新修改的版本目录
             _lastInstalledVersionId = FindNewestVersionDir();

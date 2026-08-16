@@ -244,12 +244,17 @@ public sealed class ModpackInstaller
                         lock (skipped) skipped.Add((f.Path, "非法路径"));
                         return;
                     }
-                    await ctx.AddChild($"模组 {Path.GetFileName(f.Path)}", f.Size, async (p, c) =>
+                    // 8-22 全栈排查：子任务 Completion 永不抛——失败被计为「已装」（导入报告全绿但缺模组）
+                    var child = ctx.AddChild($"模组 {Path.GetFileName(f.Path)}", f.Size, async (p, c) =>
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                         await _downloads.DownloadFileAsync(url, target, f.Sha1, f.Size, p, c);
-                    }).Completion.WaitAsync(ct);
-                    Interlocked.Increment(ref installed);
+                    });
+                    await child.Completion.WaitAsync(ct);
+                    if (child.TerminalState == DownloadTaskState.Failed)
+                        lock (skipped) skipped.Add((f.Path, child.Error ?? "下载失败"));
+                    else
+                        Interlocked.Increment(ref installed);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
                 catch (Exception ex) { lock (skipped) skipped.Add((f.Path, ex.Message)); }
