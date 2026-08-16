@@ -84,18 +84,24 @@ public sealed class EcosystemService
         };
         var url = $"{ApiBase}/search?query={Uri.EscapeDataString(query ?? "")}"
                   + $"&facets={Uri.EscapeDataString(facets)}&index={indexName}&limit={limit}&offset={offset}";
-        return await GetJsonAsyncCached<ModrinthSearchResponse>(url, ct);
+        return await GetJsonAsyncCached<ModrinthSearchResponse>(url, SearchCacheTtl, ct);
     }
 
-    /// <summary>搜索响应磁盘缓存（5 分钟 TTL）：切页/重复搜索不重复打 API——模组页首屏慢的元凶之一</summary>
-    private async Task<T?> GetJsonAsyncCached<T>(string url, CancellationToken ct) where T : class
+    /// <summary>缓存 TTL 分级（8-16 批次 53 后按数据新鲜度分级）：搜索 5 分钟（结果要新鲜）、
+    /// 版本列表 30 分钟（安装链重复查，变化慢）、项目详情 24 小时（几乎不变——依赖名/详情页反复打）</summary>
+    private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan VersionsCacheTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan ProjectCacheTtl = TimeSpan.FromHours(24);
+
+    /// <summary>搜索响应磁盘缓存（TTL 分级见上）：切页/重复搜索不重复打 API——模组页首屏慢的元凶之一</summary>
+    private async Task<T?> GetJsonAsyncCached<T>(string url, TimeSpan ttl, CancellationToken ct) where T : class
     {
         var key = "eco-" + Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..16];
         var cachePath = Path.Combine(_cacheDir, key + ".json");
         try
         {
-            if (File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < TimeSpan.FromMinutes(5))
+            if (File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < ttl)
                 return JsonSerializer.Deserialize<T>(await File.ReadAllTextAsync(cachePath, ct));
         }
         catch { /* 缓存损坏忽略 */ }
@@ -112,9 +118,9 @@ public sealed class EcosystemService
         return result;
     }
 
-    /// <summary>项目详情（8-16 批次 53：走 5 分钟磁盘缓存——依赖名前查询/详情页重复打开不再重复打 API）</summary>
+    /// <summary>项目详情（8-16 批次 53：走磁盘缓存——依赖名前查询/详情页重复打开不再重复打 API；24h TTL）</summary>
     public Task<ModrinthProjectDetail?> GetProjectAsync(string projectIdOrSlug, CancellationToken ct = default)
-        => GetJsonAsyncCached<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ct);
+        => GetJsonAsyncCached<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ProjectCacheTtl, ct);
 
     /// <summary>匹配最新可用版本（按游戏版本+加载器过滤后取最新）</summary>
     public async Task<ModrinthVersion?> FindBestVersionAsync(
@@ -145,9 +151,9 @@ public sealed class EcosystemService
             query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { loader }))}");
         var url = $"{ApiBase}/project/{projectId}/version"
                   + (query.Count > 0 ? "?" + string.Join("&", query) : "");
-        // 8-16 批次 53：版本列表走 5 分钟缓存——安装流程主文件/依赖/手动选择会重复查同一版本列表
-        // （api.modrinth.com 国内直连实测 8.6s/次，缓存后重复查询秒回）
-        var list = await GetJsonAsyncCached<List<ModrinthVersion>>(url, ct);
+        // 8-16 批次 53：版本列表走缓存（30 分钟 TTL）——安装流程主文件/依赖/手动选择会重复查同一版本列表
+        // （api.modrinth.com 国内直连实测 8.6s/次，缓存后重复查询秒回；Fabric API 附带安装也吃这个缓存）
+        var list = await GetJsonAsyncCached<List<ModrinthVersion>>(url, VersionsCacheTtl, ct);
         return list ?? [];
     }
 
