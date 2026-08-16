@@ -113,3 +113,4 @@
 - 阻塞调用清理：VerifyFilesAsync 已 WhenAll 化；全 Core 项目仅剩 DownloadService.cs:324（后台任务，见 13）与 Ecosystem/Multiplayer 两处（不在本次改动范围）。
 - 竞速淘汰评估（AL59）：evalDelay 与源任务在 WhenAny 上的判定、领先源重评、赢家唯一性均无竞态；用户取消时源任务全部观察 ct 及时退出，无死循环。
 - 心跳（ReadWithStallAsync）与 throttle 的交互：throttle 每 64KB 块最大延迟（下限 8KB/s → 8s/块）远小于 30s 心跳窗口，无假阳性。
+- [flaky 8-16] PaceRunnerTests.Takeover_OvertakerStableLead_DethronesWinner：全量并发跑时偶发「进度回退 145285→141762」（6s 挂）；单跑 12/12 稳定——250ms 陪跑节拍 + 段表脚本时序，机器负载抖动触发。疑似 RaceProgress.Wrap 单调转发断言对时钟敏感
