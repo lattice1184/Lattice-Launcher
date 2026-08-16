@@ -69,6 +69,9 @@ function Publish-One([string]$finalName, [switch]$SelfContained) {
 
     $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
     if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }
+    # 8-22 防呆：记录构建产物时间，Move 后校验。此前发布显示成功但 exe 停留在旧版
+    # （增量缓存/占用静默失败），用户测到的「修复无效」实为旧 exe——产物必须新鲜
+    $builtAt = $exe.LastWriteTime
     $final = Join-Path $out $finalName
     # 占用检测：目标被运行中的启动器锁定时明确提示（不再静默失败）
     if (Test-Path $final) {
@@ -81,6 +84,9 @@ function Publish-One([string]$finalName, [switch]$SelfContained) {
         }
     }
     Move-Item $exe.FullName $final -Force
+    if ((Get-Item $final).LastWriteTime -lt $builtAt) {
+        throw "$finalName 产物未更新（可能是增量缓存或文件被占用）——请重跑发布脚本"
+    }
     Remove-Item $stage -Recurse -Force
     return $final
 }
