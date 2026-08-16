@@ -63,7 +63,9 @@ public sealed class CurseForgeService
         // 在国内网络实测挂起（15s 超时；HTTP/1.1 直连 0.4s 200）——CF 强制 HTTP/1.1，连接池照复用
         _http = http ?? new HttpClient(HttpClientPool.SharedHandler)
         {
-            Timeout = TimeSpan.FromSeconds(15),
+            // 8-22 15s → 8s：「全部」双源搜索等最慢源——CF 挂起时 15s 干等太久
+            // （双源并行显示逻辑未做「先到先显示」，缩短超时是当前最直接的提速）
+            Timeout = TimeSpan.FromSeconds(8),
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
         };
