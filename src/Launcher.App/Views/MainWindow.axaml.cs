@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Controls.Primitives;
 using Avalonia.Media.Imaging;
@@ -18,7 +19,7 @@ public partial class MainWindow : Window
     /// 模板 TemplateBinding 实时跟随，根治样式伪类在 Avalonia 12 下 hover 失效 / pressed 白影的问题。</summary>
     private readonly Dictionary<string, Button> _navButtons = new();
 
-    /// <summary>无边框窗口放大完成后恢复的常规尺寸下限（启动小窗下限由 XAML 设为 120）</summary>
+    /// <summary>常规尺寸下限（8-16 批次 50：构造器 Show 前设定——启动即最终尺寸，不再先出小窗）</summary>
     private const double NormalMinWidth = 760, NormalMinHeight = 500;
 
     /// <summary>激活指示条是否已首次定位（首次直接落位，之后切换才滑动）</summary>
@@ -27,12 +28,20 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // 8-16 批次 50：窗口以最终尺寸创建（XAML 已无 150×150 splash 尺寸；CenterScreen 在 Show 时按此尺寸居中），
+        // 消灭「先显示左上角 150×150 小窗、Opened 里再放大居中」的两段跳变
+        var (tw, th) = ResolveTargetSize();
+        MinWidth = NormalMinWidth;
+        MinHeight = NormalMinHeight;
+        Width = tw;
+        Height = th;
         // 8-13 批次 34 终局：无启动动画——亚克力层/描边默认即显示（axaml 默认 AcrylicBlur hint）
         _navButtons["home"] = NavHome;
         _navButtons["version"] = NavVersions;
         _navButtons["download"] = NavDownloads;
         _navButtons["server"] = NavServer;
         _navButtons["multiplayer"] = NavMultiplayer;
+        _navButtons["ecosystem"] = NavEcosystem;
         _navButtons["settings"] = NavSettings;
         // AL47 整合包拖入：全窗口接收 zip/mrpack 拖拽（DragOver 过滤，Drop 取第一个导入）
         DragDrop.SetAllowDrop(this, true);
@@ -68,18 +77,7 @@ public partial class MainWindow : Window
                 main.Settings.AppearanceChanged += () => ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
                 main.Settings.PreviewChanged += () => ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
             }
-            // 8-13 批次 34 终局：窗口以目标尺寸铺开直接全量显示（无启动动画——各版动画真机均不被接受）。
-            // 不做窗口 resize 动画：透明窗口逐帧 SetWindowPos 走软件合成路径（实测只有几帧）。
-            var (tw, th) = ResolveTargetSize();
-            MinWidth = NormalMinWidth;
-            MinHeight = NormalMinHeight;
-            Width = tw;
-            Height = th;
-            if (Screens.Primary?.WorkingArea is { } a)
-            {
-                var scale = RenderScaling > 0 ? RenderScaling : 1.0;
-                Position = new PixelPoint(a.X + (int)((a.Width - tw * scale) / 2), a.Y + (int)((a.Height - th * scale) / 2));
-            }
+            // 8-16 批次 50：尺寸与居中已前移构造器（Show 前）——此处不再 resize/重摆，窗口一次落位
             // 兜底：启动期间导航未布局被跳过，可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
             var indicatorTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
             indicatorTimer.Tick += (_, _) => { indicatorTimer.Stop(); ApplyNavVisuals(); };
@@ -103,6 +101,14 @@ public partial class MainWindow : Window
         Closing += (_, _) => SaveWindowSize();
     }
 
+    /// <summary>8-16 点击 Toast 复制内容到剪贴板（错误信息全模块可带走）</summary>
+    private void OnToastCopy(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Border { DataContext: ToastItem t } b
+            && TopLevel.GetTopLevel(b)?.Clipboard is { } cb && !string.IsNullOrEmpty(t.Message))
+            _ = cb.SetTextAsync(t.Message);
+    }
+
     /// <summary>8-13 批次 34 终局：无启动动画——RootSurface 默认可见（axaml 默认状态），描边终值即 axaml 的 #4D2F3745。</summary>
 
     /// <summary>颜色线性插值（亚克力层淡入时描边同步渐显；不依赖 Color.Lerp 的版本差异）</summary>
@@ -116,7 +122,7 @@ public partial class MainWindow : Window
         return new SolidColorBrush(c);
     }
 
-    /// <summary>放大目标 = 存档窗口尺寸（夹到主屏工作区内）；无存档用默认 860×560。</summary>
+    /// <summary>启动尺寸 = 存档窗口尺寸（夹到主屏工作区内）；无存档用默认 900×600。</summary>
     private (double w, double h) ResolveTargetSize()
     {
         var s = LauncherSettings.Current;
@@ -126,7 +132,7 @@ public partial class MainWindow : Window
         return (w, h);
     }
 
-    /// <summary>关闭时记住窗口尺寸（下次启动时由 GrowToFull 放大到该尺寸）。
+    /// <summary>关闭时记住窗口尺寸（下次启动构造器按此尺寸直接打开）。
     /// 防再污染：最大化/最小化时不覆盖存档；尺寸夹到主屏工作区 95% 内（防止真机测试/改分辨率
     /// 把超大尺寸存进设置，导致下次启动「窗口突然变大」）。</summary>
     private void SaveWindowSize()
@@ -253,7 +259,7 @@ public partial class MainWindow : Window
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsServerActive" or "IsMultiplayerActive" or "IsSettingsActive")
+        if (e.PropertyName is "IsHomeActive" or "IsVersionsActive" or "IsDownloadsActive" or "IsServerActive" or "IsMultiplayerActive" or "IsEcosystemActive" or "IsSettingsActive")
             ApplyNavVisuals();
     }
 
@@ -330,7 +336,7 @@ public partial class MainWindow : Window
     {
         var accentHex = LauncherSettings.Current.AccentColor;
         NavIndicator.Background = new SolidColorBrush(Color.Parse(
-            string.IsNullOrWhiteSpace(accentHex) || !accentHex.StartsWith('#') ? "#2DD4BF" : accentHex));
+            string.IsNullOrWhiteSpace(accentHex) || !accentHex.StartsWith('#') ? "#6C8CFF" : accentHex));
         if (NavIndicator.Parent is not Visual parent) return;
         if (btn.Bounds.Height <= 0) return; // 布局未就绪，跳过（splash 完成后由兜底调用补齐）
         var top = btn.TranslatePoint(new Point(0, 0), parent)?.Y ?? NavIndicator.Margin.Top;
@@ -373,6 +379,7 @@ public partial class MainWindow : Window
         "download" => main.IsDownloadsActive,
         "server" => main.IsServerActive,
         "multiplayer" => main.IsMultiplayerActive,
+        "ecosystem" => main.IsEcosystemActive,
         "settings" => main.IsSettingsActive,
         _ => false,
     };
@@ -413,7 +420,7 @@ public partial class MainWindow : Window
         if (RootSurface is null || NavSurface is null) return;
         // 合成失败：亚克力材质回退纯色（Material.FallbackColor 已设；这里确保不透明）
         if (RootSurface.Material is ExperimentalAcrylicMaterial m)
-            m.FallbackColor = Avalonia.Media.Color.Parse("#FF14181F");
+            m.FallbackColor = Avalonia.Media.Color.Parse("#FF12161F");
         NavSurface.IsVisible = false;
     }
 
@@ -421,10 +428,10 @@ public partial class MainWindow : Window
     /// AL7：参数化——预览传 VM 值（未写盘），保存传 Settings 值。</summary>
     private void ApplyAppearance(double opacity, DensityMode density)
     {
-        // 透明度：亚克力 TintOpacity 随设置（0.7-1.0 → 0.40-1.0 映射）
+        // 透明度：亚克力 TintOpacity 随设置（8-16 批次 50 整体调淡：0.7-1.0 → 0.30-0.95 映射）
         if (RootSurface?.Material is ExperimentalAcrylicMaterial m)
         {
-            m.TintOpacity = 0.40 + (opacity - 0.7) * 2.0; // 0.7→0.40，1.0→1.0
+            m.TintOpacity = 0.30 + (opacity - 0.7) * 2.1667; // 0.7→0.30，1.0→0.95
         }
 
         // 密度：整 UI 缩放（AL7 上调：紧凑 0.95 / 标准 1.0 / 舒适 1.15——旧 0.9 默认把整 UI 缩 10%，字太小主因）

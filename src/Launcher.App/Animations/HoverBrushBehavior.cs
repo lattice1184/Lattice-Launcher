@@ -43,11 +43,33 @@ public static class HoverBrushBehavior
         {
             c.PointerEntered += OnEntered;
             c.PointerExited += OnExited;
+            c.PointerReleased += OnReleased;
+            c.DetachedFromVisualTree += OnDetached;
         }
         else
         {
             c.PointerEntered -= OnEntered;
             c.PointerExited -= OnExited;
+            c.PointerReleased -= OnReleased;
+            c.DetachedFromVisualTree -= OnDetached;
+        }
+    }
+
+    /// <summary>
+    /// 8-16 离树兜底（「一直有」的另一半）：页面切换/窗口关闭时控件从视觉树移除，
+    /// 进行中的 hover 动画被取消且不执行 done → 本地值残留；切回该页时按钮带着深色。
+    /// 离树瞬间无条件清理本地值 + 复位状态（控件已离开，无视觉闪烁）。
+    /// </summary>
+    private static void OnDetached(object? s, VisualTreeAttachmentEventArgs e)
+    {
+        if (s is not Control c) return;
+        var st = States.GetValue(c, _ => new HoverState());
+        if (st.BgHovered || st.FgHovered)
+        {
+            c.ClearValue(TemplatedControl.BackgroundProperty);
+            c.ClearValue(TemplatedControl.ForegroundProperty);
+            st.BgHovered = false;
+            st.FgHovered = false;
         }
     }
 
@@ -99,6 +121,31 @@ public static class HoverBrushBehavior
         {
             UiAnim.TweenBrush(c, TemplatedControl.ForegroundProperty, st.BaseFg, UiAnim.Durations.Fast,
                 done: () => { c.ClearValue(TemplatedControl.ForegroundProperty); st.FgHovered = false; });
+        }
+    }
+
+    /// <summary>
+    /// 8-16 释放兜底（老残留 bug 根治）：按下后拖走 → 指针被捕获，PointerExited 不再触发，
+    /// hover 本地值永久挂着（「悬浮过就变深恢复不回去」）。
+    /// 注意不能用 IsPointerOver——它同样由 Entered/Exited 驱动，捕获中不更新（恒 true）；
+    /// 用 Released 事件的真实指针坐标 + bounds 判断。
+    /// </summary>
+    private static void OnReleased(object? s, PointerReleasedEventArgs e)
+    {
+        if (s is not Control c) return;
+        var pos = e.GetPosition(c);
+        var inside = pos.X >= 0 && pos.Y >= 0 && pos.X <= c.Bounds.Width && pos.Y <= c.Bounds.Height;
+        if (inside) return; // 指针仍在控件上（普通点击）→ hover 由 Exited 正常收尾
+        var st = States.GetValue(c, _ => new HoverState());
+        if (st.BgHovered)
+        {
+            c.ClearValue(TemplatedControl.BackgroundProperty);
+            st.BgHovered = false;
+        }
+        if (st.FgHovered)
+        {
+            c.ClearValue(TemplatedControl.ForegroundProperty);
+            st.FgHovered = false;
         }
     }
 }

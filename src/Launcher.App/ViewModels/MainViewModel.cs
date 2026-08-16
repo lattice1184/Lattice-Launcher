@@ -29,6 +29,8 @@ public partial class MainViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial bool IsMultiplayerActive { get; set; }
+    [ObservableProperty]
+    public partial bool IsEcosystemActive { get; set; }
 
     public HomeViewModel Home { get; } = new();
     public VersionBrowseViewModel Versions { get; } = new();
@@ -36,6 +38,7 @@ public partial class MainViewModel : ViewModelBase
     public SettingsViewModel Settings { get; } = new();
     public ServerViewModel Server { get; } = new();
     public MultiplayerViewModel Multiplayer { get; } = new();
+    public EcosystemNavViewModel EcosystemNav { get; } = new();
 
     /// <summary>全局当前版本（主页权威，单向驱动下载/开服页——AF1：主页选什么，后面就全都是那个版本）</summary>
     [ObservableProperty]
@@ -111,6 +114,7 @@ public partial class MainViewModel : ViewModelBase
         IsSettingsActive = page == "settings";
         IsServerActive = page == "server";
         IsMultiplayerActive = page == "multiplayer";
+        IsEcosystemActive = page == "ecosystem";
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
@@ -122,6 +126,7 @@ public partial class MainViewModel : ViewModelBase
             "settings" => Settings,
             "server" => Server,
             "multiplayer" => Multiplayer,
+            "ecosystem" => EcosystemNav,
             _ => Home,
         };
     }

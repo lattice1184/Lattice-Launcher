@@ -57,7 +57,7 @@ public class AccentColorMathTests
 
     private static readonly string[] Presets =
     [
-        "#2DD4BF", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899", "#EF4444", "#22C55E", "#F97316",
+        "#6C8CFF", "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899", "#EF4444", "#22C55E", "#F97316",
     ];
 
     [Fact]

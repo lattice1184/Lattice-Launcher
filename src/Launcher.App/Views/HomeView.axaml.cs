@@ -139,10 +139,17 @@ public partial class HomeView : UserControl
 
 }
 
-    /// <summary>8-13 重置皮肤（正版→官方皮肤；离线/Littleskin→随机默认）</summary>
+    /// <summary>8-16 批次 51：打开内置 LittleSkin 皮肤库窗口（非模态；VM 独立实例）</summary>
+    private void OnOpenSkinLibrary(object? sender, RoutedEventArgs e)
+    {
+        var win = new SkinLibraryWindow { DataContext = new ViewModels.SkinLibraryViewModel() };
+        win.Show(DialogService.MainWindow());
+    }
+
+    /// <summary>8-14 重置皮肤（正版→强制同步官方皮肤；离线/Littleskin→随机默认）</summary>
     private void OnResetSkin(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is HomeViewModel vm) vm.ResetSkin();
+        if (DataContext is HomeViewModel vm) _ = vm.ResetSkin();
     }
 
 }

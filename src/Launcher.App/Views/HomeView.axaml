@@ -291,8 +291,8 @@
                                 <Button Content="注册 Littleskin" Classes="link" FontSize="11" Padding="0"
                                         Command="{Binding Account.OpenLittleskinRegisterCommand}"/>
                                 <Button Content="皮肤库" Classes="link" FontSize="11" Padding="0"
-                                        Command="{Binding Account.OpenLittleskinSkinlibCommand}"
-                                        ToolTip.Tip="littleskin 皮肤库：选皮肤下载 PNG，拖进启动器窗口即换肤（不需要 littleskin 账号）"/>
+                                        Click="OnOpenSkinLibrary"
+                                        ToolTip.Tip="内置 LittleSkin 皮肤库：连接账号浏览衣柜，一键应用皮肤（游戏内立即生效）"/>
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>

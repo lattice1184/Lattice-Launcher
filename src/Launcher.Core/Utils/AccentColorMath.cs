@@ -8,7 +8,7 @@ public sealed record Rgb24(byte R, byte G, byte B);
 /// <summary>
 /// 强调色派生数学（主题系统）：从 Accent 派生「深卡背景 / 亮色文字 / 前景对比色」。
 /// 纯字节运算、无 Avalonia 依赖——App 层做 Rgb24 ↔ Avalonia Color 适配。
-/// 派生目标（默认青绿 #2DD4BF → #12332F 深卡 / #B5F4E9 亮字），换任何主题色都协调。
+/// 派生目标（8-16 批次 50 起默认靛蓝 #6C8CFF → #1B2033 深卡 / #A8BBFF 亮字），换任何主题色都协调。
 /// </summary>
 public static class AccentColorMath
 {
