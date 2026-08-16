@@ -159,9 +159,22 @@
                                                  Watermark="跟随全局"/>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                        <TextBlock Text="Java 路径" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
-                                        <TextBox Grid.Column="1" Text="{Binding Detail.ConfigJavaText}"
-                                                 Watermark="跟随全局"/>
+                                        <TextBlock Text="Java 版本" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" Spacing="6">
+                                            <TextBox Text="{Binding Detail.ConfigJavaText}"
+                                                     Watermark="跟随全局"/>
+                                            <ComboBox ItemsSource="{Binding Detail.JavaOptions}"
+                                                      SelectedItem="{Binding Detail.SelectedJava}"
+                                                      PlaceholderText="从已检测 Java 选择…"
+                                                      HorizontalAlignment="Stretch">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:JavaChoice">
+                                                        <TextBlock Text="{Binding Label}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
                                     </Grid>
                                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
                                         <TextBlock Text="额外 JVM 参数" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
@@ -182,6 +195,40 @@
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.ModsPreview}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModItemVM">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2" Content="{Binding UpdateText}" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.CheckOrUpdateCommand}"
+                                                            CommandParameter="{Binding}" IsEnabled="{Binding CanCheckUpdate}"/>
+                                                    <Button Grid.Column="3" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Grid.Column="4" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Button Content="{Binding Detail.Manage.ModsExpandText}" Classes="ghost"
+                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                                            Command="{Binding Detail.Manage.ToggleShowAllModsCommand}"
+                                            IsVisible="{Binding Detail.Manage.HasMoreMods}"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 4.5 资源包 / 光影包（启停/删除复用 MOD 命令——同为 zip/jar + .disabled） -->
+                            <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{Binding Detail.Manage.PacksCountText}" FontSize="13" FontWeight="SemiBold"/>
+                                    <Button Content="打开 resourcepacks 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                            HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenPacksFolderCommand}"/>
+                                    <ItemsControl ItemsSource="{Binding Detail.Manage.PacksPreview}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ModItemVM">
                                                 <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
                                                     <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -197,10 +244,27 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                    <Button Content="{Binding Detail.Manage.ModsExpandText}" Classes="ghost"
-                                            FontSize="11" Padding="8,3" HorizontalAlignment="Left"
-                                            Command="{Binding Detail.Manage.ToggleShowAllModsCommand}"
-                                            IsVisible="{Binding Detail.Manage.HasMoreMods}"/>
+                                    <TextBlock Text="{Binding Detail.Manage.ShaderCountText}" FontSize="13" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                                    <Button Content="打开 shaderpacks 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                            HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenShaderFolderCommand}"/>
+                                    <ItemsControl ItemsSource="{Binding Detail.Manage.ShaderPreview}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ModItemVM">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
+                                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </Border>
 

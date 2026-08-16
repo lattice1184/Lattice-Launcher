@@ -107,6 +107,18 @@ public sealed class AutoRepairService
             var p = Path.Combine(librariesDir, MavenPath.FullPath(lib.Name));
             if (File.Exists(p)) present.Add((p, artifact?.Sha1));
             else missing.Add(p);
+
+            // 8-14 natives（classifier）文件也参与校验——路径生成与下载侧一致
+            // （DownloadService 下载 loop 同款 natives-windows 逻辑）：删了 natives jar 却报
+            // 「已完整」会在启动解压时报错，质检误导用户（BUGS.md:55-59）
+            if (lib.Natives is { } natives && natives.TryGetValue("windows", out var classifierKey)
+                && lib.Downloads?.Classifiers?.TryGetValue(classifierKey, out var nativeFile) == true)
+            {
+                var nativeName = MavenPath.FileName(lib.Name + ":" + classifierKey);
+                var nativePath = Path.Combine(librariesDir, MavenPath.DirectoryPath(lib.Name), nativeName);
+                if (File.Exists(nativePath)) present.Add((nativePath, nativeFile.Sha1));
+                else missing.Add(nativePath);
+            }
         }
 
         long totalBytes = 0;

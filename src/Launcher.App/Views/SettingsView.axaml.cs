@@ -120,7 +120,7 @@ public partial class SettingsView : UserControl
     private static IBrush AccentBrush()
     {
         var hex = LauncherSettings.Current.AccentColor;
-        return new SolidColorBrush(Color.Parse(string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#') ? "#2DD4BF" : hex));
+        return new SolidColorBrush(Color.Parse(string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#') ? "#6C8CFF" : hex));
     }
 
     private bool IsActiveNav(Button btn) =>
