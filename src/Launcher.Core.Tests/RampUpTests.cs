@@ -50,7 +50,8 @@ public class RampUpTests
         Directory.CreateDirectory(partDir); // 生产路径由 DownloadChunkedAsync 创建；直接测探测函数需自建（探测写 probe.part）
         try
         {
-            var concurrency = await svc.ProbeAndDecideConcurrencyAsync("https://example.com/f.bin", 3 * 1024 * 1024, partDir, CancellationToken.None);
+            var concurrency = await svc.ProbeAndDecideConcurrencyAsync("https://example.com/f.bin", 3 * 1024 * 1024, partDir, CancellationToken.None,
+                new DownloadService.ThrottleState()); // 8-22 探测也走共享节流（限速 0 时无副作用）
             Assert.Equal(expectedConcurrency, concurrency);
         }
         finally
@@ -93,7 +94,8 @@ public class RampUpTests
         Directory.CreateDirectory(partDir);
         try
         {
-            var concurrency = await svc.ProbeAndDecideConcurrencyAsync("https://example.com/f.bin", totalSize, partDir, CancellationToken.None);
+            var concurrency = await svc.ProbeAndDecideConcurrencyAsync("https://example.com/f.bin", totalSize, partDir, CancellationToken.None,
+                new DownloadService.ThrottleState()); // 8-22 探测也走共享节流（限速 0 时无副作用）
             Assert.Equal(expected, concurrency);
         }
         finally

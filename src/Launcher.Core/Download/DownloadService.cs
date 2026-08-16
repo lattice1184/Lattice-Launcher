@@ -44,14 +44,16 @@ public sealed class DownloadService
         _resolver = resolver ?? ResolvingDlSourceMapper.Default;
         _options = options ?? DownloadOptions.FromSettings(LauncherSettings.Current);
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
-        _limitPerStream = _options.BytesPerSecond > 0
-            ? Math.Max(_options.BytesPerSecond / Math.Max(_options.ChunkCount, 1), 8192)
-            : 0;
+        // 8-22 限速根治（共享节流）：_limitPerStream 就是总限速——旧实现按 ChunkCount 均分到「每流」，
+        // 但并发流数会变：渐进升片（1→8 片）早期只有 1/8 速率（Fabric API 等小文件磨死），
+        // 多源竞速/升片后总流数 × 单流配额又超设定值（一瞬间速度超额）——两个症状同根。
+        // 现由任务级共享累加器保证总吞吐恒=设定值（见 ThrottleState / ThrottleStreamAsync）。
+        _limitPerStream = Math.Max(_options.BytesPerSecond, 0);
         _networkChecker = networkChecker
             ?? ((hosts, ct) => NetworkChecker.CheckAsync(hosts, TimeSpan.FromSeconds(3), ct));
     }
 
-    /// <summary>每流限速配额（总限速均分到并发流；每流独立累加器 → 总吞吐=设定值）</summary>
+    /// <summary>总限速（任务内所有源/片/探测段共享一个节流累加器 → 总吞吐恒=设定值，与并发数无关）</summary>
     private readonly long _limitPerStream;
 
     /// <summary>
@@ -64,8 +66,10 @@ public sealed class DownloadService
             ? Math.Min(_options.SlowSpeedBps, (long)(_limitPerStream * 0.8))
             : _options.SlowSpeedBps;
 
-    /// <summary>每流限速状态（独立累加器——流间不互相拖累，总吞吐=设定值）</summary>
-    private sealed class ThrottleState
+    /// <summary>任务级共享限速状态（同一文件所有源/片/探测段共用一个累加器——总吞吐=设定值恒成立；
+    /// 旧实现每流独立，渐进升片/多源竞速下并发数变化 → 总和偏离设定值：片少时慢、片多源多时超）。
+    /// 多流并发结算 → 访问由 ThrottleStreamAsync 内 lock 保护。</summary>
+    internal sealed class ThrottleState
     {
         public long Bytes;
         public readonly System.Diagnostics.Stopwatch Sw = System.Diagnostics.Stopwatch.StartNew();
@@ -191,20 +195,26 @@ public sealed class DownloadService
         }
     }
 
-    /// <summary>每流限速节流：每 64KB 结算一次，超出配额则等待</summary>
+    /// <summary>任务级共享限速节流：每 64KB 结算一次，超出配额则等待。锁内记账、锁外 Delay
+    /// （async 锁内等待会重入死锁）——多流/多源并发下同一累加器，总吞吐恒=设定值。</summary>
     private static async Task ThrottleStreamAsync(int n, CancellationToken ct, ThrottleState st, long limit)
     {
         if (limit <= 0) return;
-        st.Bytes += n;
-        if (st.Bytes >= 65536)
+        TimeSpan? wait = null;
+        lock (st)
         {
-            var target = (double)st.Bytes / limit;
-            var elapsed = st.Sw.Elapsed.TotalSeconds;
-            if (elapsed < target)
-                await Task.Delay(TimeSpan.FromSeconds(target - elapsed), ct);
-            st.Bytes = 0;
-            st.Sw.Restart();
+            st.Bytes += n;
+            if (st.Bytes >= 65536)
+            {
+                var target = (double)st.Bytes / limit;
+                var elapsed = st.Sw.Elapsed.TotalSeconds;
+                if (elapsed < target)
+                    wait = TimeSpan.FromSeconds(target - elapsed);
+                st.Bytes = 0;
+                st.Sw.Restart();
+            }
         }
+        if (wait is { } w) await Task.Delay(w, ct);
     }
 
     private static HttpClient CreateClient()
@@ -240,6 +250,9 @@ public sealed class DownloadService
         DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+        // 8-22 共享节流器：整个文件（所有源/片/探测段）共用一个累加器，跨换源轮保持
+        // 速率不重置——限速 = 「这个文件的下载速率」而非「每连接的速率」（根治慢+超额）
+        var throttle = new ThrottleState();
 
         // 幂等：完整文件且校验通过（SHA1 或大小）→ 跳过
         if (File.Exists(destPath))
@@ -301,7 +314,7 @@ public sealed class DownloadService
                 // 与原子 rename 语义；竞速只用于多源场景
                 try
                 {
-                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, null, ct);
+                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, null, ct, throttle);
                     LogWrapper.Info($"[下载] 完成 {ShortUrl(url)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                     return;
                 }
@@ -349,7 +362,7 @@ public sealed class DownloadService
                 var srcCts = CancellationTokenSource.CreateLinkedTokenSource(raceCts.Token);
                 pending.Add((idx, src, Task.Run(() => RaceOneAsync(idx, src, destPath,
                     expectedSha1, expectedSize, perSourceProgress.Handlers[idx], perSourceProgress.LiveHandlers[idx],
-                    srcCts.Token, ct), ct), srcCts));
+                    srcCts.Token, ct, throttle), ct), srcCts));
             }
             Exception? raceLast = null;
             var won = false;
@@ -541,7 +554,7 @@ public sealed class DownloadService
                     var srcCts = CancellationTokenSource.CreateLinkedTokenSource(raceCts.Token);
                     pending.Add((idx, src, Task.Run(() => RaceOneAsync(idx, src, destPath,
                         expectedSha1, expectedSize, perSourceProgress.Handlers[idx], perSourceProgress.LiveHandlers[idx],
-                        srcCts.Token, ct), ct), srcCts));
+                        srcCts.Token, ct, throttle), ct), srcCts));
                     lastEvalBytes[idx] = 0;
                     noProgressSince[idx] = 0;
                     added++;
@@ -596,14 +609,15 @@ public sealed class DownloadService
     /// </summary>
     private async Task<(bool Ok, Exception? Error)> RaceOneAsync(
         int index, string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken raceCt, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken raceCt, CancellationToken ct,
+        ThrottleState throttle)
     {
         // 8-13 片集按 URL 哈希命名：同 URL 跨轮复用已完成片（判死换路后下轮续传，不归零）；
         // 候选顺序轮间变化（Resolve 重排）不影响——键与 URL 绑定而非下标
         var raceDest = $"{destPath}.race{RaceKey(url)}";
         try
         {
-            await DownloadFromSourceAsync(url, raceDest, expectedSha1, expectedSize, progress, livePush, raceCt);
+            await DownloadFromSourceAsync(url, raceDest, expectedSha1, expectedSize, progress, livePush, raceCt, throttle);
             return (true, null);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -849,7 +863,7 @@ public sealed class DownloadService
     /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计</summary>
     private async Task DownloadFromSourceAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
     {
         // 黑科技 A：ghapi 占位 URL → GitHub API 换签名直链（null = 换链失败，快速失败不影响竞速）
         if (url.StartsWith(GitHubApiDirect.Scheme))
@@ -864,9 +878,9 @@ public sealed class DownloadService
         try
         {
             if (totalSize >= ChunkThreshold)
-                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, livePush, ct);
+                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, livePush, ct, throttle);
             else
-                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct);
+                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct, throttle);
             sw.Stop();
             _sourceStats.RecordSuccess(url, totalSize, sw.ElapsedMilliseconds);
         }
@@ -882,7 +896,7 @@ public sealed class DownloadService
     /// 不会出现「File.Exists 通过但内容半截」的 destPath。</summary>
     private async Task DownloadSingleAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
     {
         var tmp = destPath + ".tmp";
         var from = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
@@ -908,7 +922,6 @@ public sealed class DownloadService
             using var dst = new FileStream(tmp, FileMode.Append, FileAccess.Write, FileShare.None);
             var buffer = new byte[_options.BufferSize];
             long read = 0;
-            var throttle = new ThrottleState();
             // AL61 心率监测：持续低速（默认 30s < 100KB/s）→ 判源死抛异常 → 外层换路。
             // BUGS#1 修复：限速时阈值随限速下调（限速 50KB/s 时实测速度恒 50KB/s < 默认 100KB/s → 必判死）
             var slowDetector = new SlowSourceDetector(SlowThresholdForLimit(), _options.SlowSamples, _options.SlowProbeMs);
@@ -1018,7 +1031,7 @@ public sealed class DownloadService
     /// → 合并 → 总长/SHA1 校验；整体失败回退单连接</summary>
     private async Task DownloadChunkedAsync(
         string url, string destPath, long totalSize, string? expectedSha1,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
     {
         try
         {
@@ -1031,7 +1044,7 @@ public sealed class DownloadService
             // 片=并发）片数一变边界全变，旧 .part 全废——升片/重试必然从零重下。
             var chunkSize = ChunkSizeFor(totalSize);
             var totalChunks = Math.Max(1, (int)Math.Ceiling(totalSize / (double)chunkSize));
-            var currentConcurrency = Math.Clamp(await ProbeAndDecideConcurrencyAsync(url, totalSize, partDir, ct), 1, maxChunks);
+            var currentConcurrency = Math.Clamp(await ProbeAndDecideConcurrencyAsync(url, totalSize, partDir, ct, throttle), 1, maxChunks);
             // 并发 = gate 槽位数（初始探测值，上限 maxChunks）；升片 = Release 腾出更多槽位，排队片自动进入
             using var gate = new SemaphoreSlim(currentConcurrency, maxChunks);
             var lastUpgradeAt = DateTime.MinValue;
@@ -1121,7 +1134,7 @@ public sealed class DownloadService
                     await gate.WaitAsync(slowCts.Token);
                     try
                     {
-                        await DownloadChunkAsync(url, partPath, start, end, slowCts.Token, cp, Path.GetFileName(destPath), totalSize, progress, livePush);
+                        await DownloadChunkAsync(url, partPath, start, end, slowCts.Token, throttle, cp, Path.GetFileName(destPath), totalSize, progress, livePush);
                         // 片完成即时上报（force：允许同值重复报，见 ReportOnce 注释）
                         ReportOnce(cp, Path.GetFileName(destPath), totalSize, progress, force: true);
                     }
@@ -1193,7 +1206,7 @@ public sealed class DownloadService
             // AL29 H1：只清中间产物（.parts/.tmp），destPath 已有旧文件保持不动——新文件未验证不覆盖
             try { Directory.Delete(destPath + ".parts", true); } catch { }
             try { File.Delete(destPath + ".tmp"); } catch { }
-            await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct);
+            await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct, throttle);
         }
     }
 
@@ -1278,7 +1291,8 @@ public sealed class DownloadService
     /// AL60 探测并发决策：拉文件头 1MB（或 2s 窗口）测单连接速度 → 返回并发建议（固定片后并发数 ≠ 片数；
     /// 8-18 片边界固定 1MB，探测只决定同时下几片）。探测段写 probe.part（探测后删除）。
     /// </summary>
-    internal async Task<int> ProbeAndDecideConcurrencyAsync(string url, long totalSize, string partDir, CancellationToken ct)
+    internal async Task<int> ProbeAndDecideConcurrencyAsync(string url, long totalSize, string partDir, CancellationToken ct,
+        ThrottleState throttle)
     {
         var maxChunks = Math.Max(1, _options.ChunkCount);
         if (totalSize < ProbeBytes) return maxChunks; // 小文件（<1MB）保持旧满片行为——按连接限速源（Modrinth 单连几十 KB/s）
@@ -1291,7 +1305,7 @@ public sealed class DownloadService
         var probeEnd = Math.Min(probeLimit - 1, totalSize - 1);
         var probePart = Path.Combine(partDir, "probe.part");
         using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var probeTask = Task.Run(() => DownloadChunkAsync(url, probePart, 0, probeEnd, probeCts.Token));
+        var probeTask = Task.Run(() => DownloadChunkAsync(url, probePart, 0, probeEnd, probeCts.Token, throttle)); // 8-22 探测段也共享节流——限速时不再瞬间全速拉 1MB
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var probeDone = await Task.WhenAny(probeTask, Task.Delay(probeWindow, ct));
         var elapsed = Math.Max(sw.Elapsed.TotalSeconds, 0.001);
@@ -1321,7 +1335,7 @@ public sealed class DownloadService
     }
 
     private async Task DownloadChunkAsync(string url, string partPath, long start, long end, CancellationToken ct,
-        ChunkProgress? cp = null, string? destName = null, long totalSize = 0,
+        ThrottleState? throttle = null, ChunkProgress? cp = null, string? destName = null, long totalSize = 0,
         DownloadProgressHandler? progress = null, Action<long, long>? livePush = null, int attempt = 0)
     {
         try
@@ -1346,7 +1360,6 @@ public sealed class DownloadService
             await using var dst = new FileStream(partPath,
                 have > 0 && isPartial ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None);
             var buffer = new byte[_options.BufferSize];
-            var throttle = new ThrottleState();
             // AL66 读心跳：探测段也走本函数（探测读挂起时 slowWatch 尚未启动——心跳兜底）
             using var stallCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stallCts.CancelAfter(TimeSpan.FromMilliseconds(_options.ReadStallTimeoutMs));
@@ -1354,7 +1367,8 @@ public sealed class DownloadService
             while ((n = await ReadWithStallAsync(src, buffer, stallCts, ct)) > 0)
             {
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
-                await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
+                if (throttle is not null)
+                    await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 if (cp is not null && progress is not null)
                     ReportChunkProgress(cp, n, destName!, totalSize, progress, livePush);
             }
@@ -1363,7 +1377,7 @@ public sealed class DownloadService
         catch when (attempt < 1)
         {
             // 单片瞬时失败重试 1 次
-            await DownloadChunkAsync(url, partPath, start, end, ct, cp, destName, totalSize, progress, livePush, attempt + 1);
+            await DownloadChunkAsync(url, partPath, start, end, ct, throttle, cp, destName, totalSize, progress, livePush, attempt + 1);
         }
     }
 
