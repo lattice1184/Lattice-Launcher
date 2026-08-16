@@ -60,16 +60,23 @@ public sealed class McmodSearchService
 
         var slugs = new List<(string, string)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (classId, title) in ParseSearchResults(html))
+        var entries = ParseSearchResults(html).Take(maxResults).ToList();
+        // 8-22 详情页并行解析（旧串行 10 条目 × 0.4-2s = 10s+ 干等，观感像死掉）；门 4 防打爆 mcmod
+        using var gate = new SemaphoreSlim(4);
+        var tasks = entries.Select(async entry =>
         {
-            if (slugs.Count >= maxResults) break;
-            string? slug;
+            await gate.WaitAsync(ct);
             try
             {
-                var detail = await Http.GetStringAsync($"https://www.mcmod.cn/class/{classId}.html", ct);
-                slug = DecodeModrinthSlug(detail);
+                var detail = await Http.GetStringAsync($"https://www.mcmod.cn/class/{entry.ClassId}.html", ct);
+                return (Slug: DecodeModrinthSlug(detail), entry.Title);
             }
-            catch { continue; }
+            catch { return (Slug: (string?)null, entry.Title); }
+            finally { gate.Release(); }
+        }).ToArray();
+        foreach (var t in tasks)
+        {
+            var (slug, title) = await t;
             if (slug is not null && seen.Add(slug))
                 slugs.Add((slug, title));
         }
