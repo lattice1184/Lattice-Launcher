@@ -27,14 +27,14 @@
         <Color x:Key="TextSecondary">#8A93A6</Color>
         <Color x:Key="TextDim">#6F7B90</Color>
         <Color x:Key="TextLog">#B8C2D4</Color>
-        <!-- 强调（青绿，唯一饱和色）与状态 -->
-        <Color x:Key="Accent">#2DD4BF</Color>
-        <Color x:Key="AccentHover">#45E3CF</Color>
-        <!-- 强调派生（主题系统：ApplyAccentColor 运行时按 Accent 计算覆盖；此处默认值兜底 XAML 加载期） -->
-        <Color x:Key="AccentDark">#12332F</Color>
-        <Color x:Key="AccentLight">#B5F4E9</Color>
-        <Color x:Key="AccentSoft">#262DD4BF</Color>
-        <Color x:Key="OnAccent">#0B1F1C</Color>
+        <!-- 强调（8-16 批次 50：默认青绿 → 靛蓝 #6C8CFF，唯一饱和色）与状态 -->
+        <Color x:Key="Accent">#6C8CFF</Color>
+        <Color x:Key="AccentHover">#8FA8FF</Color>
+        <!-- 强调派生（主题系统：ApplyAccentColor 运行时按 Accent 计算覆盖；此处默认值 = 靛蓝的派生结果兜底 XAML 加载期） -->
+        <Color x:Key="AccentDark">#1B2033</Color>
+        <Color x:Key="AccentLight">#A8BBFF</Color>
+        <Color x:Key="AccentSoft">#261B2033</Color>
+        <Color x:Key="OnAccent">#FFFFFF</Color>
         <!-- 语义固定色（不随主题：警告/成功条须保持可辨识） -->
         <Color x:Key="WarnBg">#33291A</Color>
         <Color x:Key="WarnText">#E8B45A</Color>
@@ -173,7 +173,7 @@
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
-        <!-- 主操作按钮（唯一饱和面；hover 亮青绿由行为驱动） -->
+        <!-- 主操作按钮（唯一饱和面；hover 亮调由行为驱动） -->
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="{DynamicResource Accent}"/>
             <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>

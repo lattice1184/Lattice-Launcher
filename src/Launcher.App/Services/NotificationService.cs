@@ -18,14 +18,14 @@ public partial class ToastItem : ObservableObject
     {
         ToastType.Success => new SolidColorBrush(Color.Parse("#5AD07C")),
         ToastType.Error => new SolidColorBrush(Color.Parse("#E05A5A")),
-        _ => new SolidColorBrush(Color.Parse("#2DD4BF")),
+        _ => new SolidColorBrush(Color.Parse("#6C8CFF")),
     };
 
     public IBrush Border => Type switch
     {
         ToastType.Success => new SolidColorBrush(Color.Parse("#335AD07C")),
         ToastType.Error => new SolidColorBrush(Color.Parse("#33E05A5A")),
-        _ => new SolidColorBrush(Color.Parse("#332DD4BF")),
+        _ => new SolidColorBrush(Color.Parse("#336C8CFF")),
     };
 
     /// <summary>文字色（AL7 红字规范：Error Toast 红字，其余主色）</summary>

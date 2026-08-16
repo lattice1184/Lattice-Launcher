@@ -200,6 +200,10 @@ public partial class ServerViewModel : ViewModelBase
     public ServerViewModel()
     {
         OpNameText = Launcher.Core.Account.AccountService.Shared.Current?.Name ?? "";
+        // 8-15：账号切换后重预填 OP 默认值（此前构造时快照一次，切换账号「授予 OP」仍是旧账号）
+        Launcher.Core.Account.AccountService.Shared.Changed += () =>
+            Dispatcher.UIThread.Post(() =>
+                OpNameText = Launcher.Core.Account.AccountService.Shared.Current?.Name ?? "");
         _process.OutputReceived += line => AppendLog(line);
         _process.Exited += code =>
         {
@@ -337,6 +341,11 @@ public partial class ServerViewModel : ViewModelBase
             }
         }
         catch { }
+        finally
+        {
+            // 8-15 进页刷新 OP/封禁名单（此前只在启动/停止时刷——漏刷后列表一直 0，解封无处点）
+            Dispatcher.UIThread.Post(() => { RefreshOps(); RefreshBanned(); });
+        }
     }
 
     [RelayCommand]
@@ -753,33 +762,51 @@ public partial class ServerViewModel : ViewModelBase
     [ObservableProperty]
     public partial string LocalAddressText { get; set; } = "";
 
+    /// <summary>8-15 对外地址（蓝盾/虚拟局域网 IP 或 IP:端口；填了复制按钮优先复制它——虚拟网外朋友连不上物理局域网 IP）</summary>
+    [ObservableProperty]
+    public partial string ExternalAddressText { get; set; } = "";
+
+    /// <summary>服务端端口（RefreshLanAddress 读 server.properties；复制对外地址拼端口用）</summary>
+    private int _serverPort = 25565;
+
     /// <summary>刷新连接信息（读 server.properties 端口；无内网 IP 时局域网行留空）</summary>
     private void RefreshLanAddress()
     {
-        var port = 25565;
+        _serverPort = 25565;
         try
         {
             var dir = ServerDir;
             if (dir is not null)
-                port = ServerProperties.Load(Path.Combine(dir, "server.properties")).GetInt("server-port", 25565);
+                _serverPort = ServerProperties.Load(Path.Combine(dir, "server.properties")).GetInt("server-port", 25565);
         }
         catch { }
-        LocalAddressText = $"本机 127.0.0.1:{port}";
+        LocalAddressText = $"本机 127.0.0.1:{_serverPort}";
         var ip = FindLanIp();
-        LanAddressText = ip is null ? "" : $"局域网 {ip}:{port}";
+        LanAddressText = ip is null ? "" : $"局域网 {ip}:{_serverPort}";
     }
 
-    /// <summary>复制局域网地址（去掉前缀标签，直接得到 ip:port）</summary>
+    /// <summary>复制连接地址：对外地址优先（填了蓝盾/虚拟网地址复制它；只填 IP 自动拼当前端口），
+    /// 否则复制局域网地址（去掉前缀标签，得到 ip:port）</summary>
     [RelayCommand]
     private async Task CopyLanAddress()
     {
-        if (LanAddressText.Length == 0) return;
+        var text = ExternalAddressText.Trim();
+        if (text.Length == 0)
+        {
+            if (LanAddressText.Length == 0) return;
+            text = LanAddressText.Replace("局域网 ", "");
+        }
+        else if (!text.Contains(':'))
+        {
+            text = $"{text}:{_serverPort}"; // 只填了 IP → 拼服务端端口（虚拟网内端口不变）
+        }
         var top = DialogService.MainWindow();
         if (top is null) return;
         var cb = Avalonia.Controls.TopLevel.GetTopLevel(top)?.Clipboard;
         if (cb is null) return;
-        await cb.SetTextAsync(LanAddressText.Replace("局域网 ", ""));
-        NotificationService.Success("局域网地址已复制");
+        await cb.SetTextAsync(text);
+        NotificationService.Success(ExternalAddressText.Trim().Length > 0
+            ? "对外地址已复制" : "局域网地址已复制");
     }
 
     /// <summary>取内网 IPv4（优先私有段 192.168 / 10.x / 172.16-31）</summary>
@@ -855,12 +882,31 @@ public partial class ServerViewModel : ViewModelBase
     [RelayCommand]
     private void KickPlayer(ServerPlayerVM player) => PlayerOp($"kick {player.Name}", $"已踢出 {player.Name}");
 
-    /// <summary>封禁玩家（封禁后 500ms 刷新封禁列表——ban 后玩家不在线，解封入口必须在列表里）</summary>
+    /// <summary>封禁玩家（封禁后带重试刷新封禁列表——ban 后玩家不在线，解封入口必须在列表里）</summary>
     [RelayCommand]
     private void BanPlayer(ServerPlayerVM player)
     {
         PlayerOp($"ban {player.Name}", $"已封禁 {player.Name}");
-        _ = Task.Run(async () => { await Task.Delay(500); Dispatcher.UIThread.Post(RefreshBanned); });
+        RefreshBannedWithRetry(); // 8-15：服务端异步写盘可能 >500ms，单次刷新读空=名单 0 且无解封入口
+    }
+
+    /// <summary>
+    /// 8-15 封禁/解封后带重试刷新名单：服务端异步写盘可能 &gt;500ms（读早=0 条，且半截文件
+    /// 解析失败也返回空）——最多 5 次 ×500ms 轮询，名单非空即止。此前单次刷新漏读后
+    /// 列表一直 0，解封入口无处可点（用户自封自己解不掉的现场）。
+    /// </summary>
+    private void RefreshBannedWithRetry()
+    {
+        _ = Task.Run(async () =>
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                await Task.Delay(500);
+                var count = 0;
+                Dispatcher.UIThread.Invoke(() => { RefreshBanned(); count = BannedList.Count; });
+                if (count > 0) return;
+            }
+        });
     }
 
     /// <summary>授予 OP</summary>
@@ -915,8 +961,11 @@ public partial class ServerViewModel : ViewModelBase
             // 文件级移除（AL3）：服务端下次启动读 ops.json 生效
             if (ServerDir is { } stopped)
             {
-                ServerOpsFile.Remove(stopped, entry.Name);
-                OpStatusText = $"已移除 {entry.Name} 的 OP（文件已更新，重启服务端生效）";
+                // 8-15：写失败如实提示（此前 catch{} 吞错但 UI 谎报成功）
+                var ok = ServerOpsFile.Remove(stopped, entry.Name);
+                OpStatusText = ok
+                    ? $"已移除 {entry.Name} 的 OP（文件已更新，重启服务端生效）"
+                    : $"移除失败：{entry.Name} 的 ops.json 写入失败（文件被占用？）";
                 RefreshOps();
             }
             return;
@@ -949,23 +998,25 @@ public partial class ServerViewModel : ViewModelBase
 
     /// <summary>解封（运行中发 pardon；停止时直接改 banned-players.json 文件——重启生效，按钮不再"点不动"）</summary>
     [RelayCommand]
-    private async Task Unban(ServerBannedEntry entry)
+    private void Unban(ServerBannedEntry entry)
     {
         if (!IsRunning)
         {
             // 文件级解封（AL3）：服务端下次启动读 banned-players.json 生效
             if (ServerDir is { } stopped)
             {
-                ServerBannedFile.Unban(stopped, entry.Name);
-                OpStatusText = $"已解封 {entry.Name}（文件已更新，重启服务端生效）";
+                // 8-15：写失败如实提示（此前 catch{} 吞错但 UI 谎报成功）
+                var ok = ServerBannedFile.Unban(stopped, entry.Name);
+                OpStatusText = ok
+                    ? $"已解封 {entry.Name}（文件已更新，重启服务端生效）"
+                    : $"解封失败：{entry.Name} 的封禁文件写入失败（文件被占用？）";
                 RefreshBanned();
             }
             return;
         }
         _process.SendCommand($"pardon {entry.Name}");
         OpStatusText = $"已发送 pardon {entry.Name}——该玩家可重新进服";
-        await Task.Delay(500);
-        RefreshBanned();
+        RefreshBannedWithRetry(); // 8-15：带重试（服务端写盘慢时单次刷新读空）
     }
 
     // ---------- 预生成世界（AI：启动服务端 → 日志 Done → 自动 stop，空世界落盘） ----------

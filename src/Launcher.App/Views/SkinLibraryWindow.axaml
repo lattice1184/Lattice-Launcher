@@ -1,0 +1,128 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Launcher.App.ViewModels"
+        xmlns:core="using:Launcher.Core.Account"
+        x:Class="Launcher.App.Views.SkinLibraryWindow"
+        x:DataType="vm:SkinLibraryViewModel"
+        Title="LittleSkin 皮肤库"
+        Width="900" Height="640"
+        MinWidth="640" MinHeight="480"
+        WindowStartupLocation="CenterOwner">
+
+    <DockPanel Margin="14">
+        <!-- 顶部状态区：未连接 / 连接中（配对码）/ 已连接（角色选择） -->
+        <Border DockPanel.Dock="Top" Classes="card" Padding="12" Margin="0,0,0,10">
+            <StackPanel Spacing="8">
+                <!-- 已连接：角色 + 断开 + 网页打开 -->
+                <StackPanel IsVisible="{Binding IsConnected}">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="应用皮肤到角色：" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" MinWidth="160" ItemsSource="{Binding Players}"
+                                  SelectedItem="{Binding SelectedPlayer}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="core:PlayerInfo">
+                                    <TextBlock Text="{Binding Name}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="2" Content="在网页打开皮肤库" Classes="ghost" FontSize="11" Padding="10,4"
+                                Command="{Binding OpenWebSkinlibCommand}"/>
+                        <Button Grid.Column="3" Content="断开连接" Classes="ghost" FontSize="11" Padding="10,4"
+                                Command="{Binding DisconnectCommand}"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- 未连接：连接按钮 + 说明 -->
+                <StackPanel Spacing="6" IsVisible="{Binding !IsConnected}">
+                    <TextBlock Text="连接你的 LittleSkin 账号，浏览衣柜、一键应用皮肤到角色（游戏内立即生效）。"
+                               Classes="sub" FontSize="12" TextWrapping="Wrap"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="连接 LittleSkin 账号" Classes="primary" Padding="16,6"
+                                Command="{Binding ConnectCommand}" IsEnabled="{Binding !IsBusy}"/>
+                        <TextBlock Text="{Binding Status}" Classes="dim" FontSize="11"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 连接中：配对码大字 + 复制 + 重开授权页 + 取消 -->
+                <StackPanel Spacing="6" IsVisible="{Binding IsConnecting}">
+                    <TextBlock Text="配对码（在打开的网页中输入）：" Classes="sub" FontSize="12"/>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding DeviceCodeText}" FontFamily="Consolas" FontSize="26"
+                                   FontWeight="Bold" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                        <Button Content="复制代码" Classes="ghost" Padding="12,4" Click="OnCopyDeviceCode"/>
+                        <Button Content="打开授权页" Classes="ghost" Padding="12,4"
+                                Command="{Binding ReopenVerifyPageCommand}"/>
+                        <Button Content="取消" Classes="ghost" Padding="12,4" Command="{Binding CancelConnectCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Status}" Classes="dim" FontSize="11"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- 衣柜网格 -->
+        <ScrollViewer>
+            <Grid>
+            <ItemsControl ItemsSource="{Binding Closet}" IsVisible="{Binding IsConnected}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel ItemSpacing="8"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ClosetItemVM">
+                        <Border Classes="card" Padding="10" Width="168">
+                            <StackPanel Spacing="6">
+                                <Border Width="96" Height="96" CornerRadius="8" ClipToBounds="True"
+                                        Background="{DynamicResource BgActive}" HorizontalAlignment="Center">
+                                    <Image Source="{Binding Thumbnail}" Width="96" Height="96" Stretch="Uniform"/>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                    <TextBlock Text="{Binding Item.Name}" FontSize="12" FontWeight="SemiBold"
+                                               MaxLines="1" TextTrimming="CharacterEllipsis"/>
+                                    <Border CornerRadius="3" Padding="4,1" Background="{DynamicResource AccentDark}"
+                                            VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding TypeText}" FontSize="10"
+                                                   Foreground="{DynamicResource AccentLight}"/>
+                                    </Border>
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
+                                    <Button Grid.Column="0" Content="应用" Classes="primary" FontSize="11" Padding="0,4"
+                                            IsEnabled="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).SelectedPlayer, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                            Command="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).ApplySkinCommand}"
+                                            CommandParameter="{Binding}"
+                                            IsVisible="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).BusyItemTid, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                    <Button Grid.Column="1" Content="下载" Classes="ghost" FontSize="11" Padding="0,4"
+                                            Command="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).DownloadSkinCommand}"
+                                            CommandParameter="{Binding}"
+                                            IsVisible="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).BusyItemTid, Converter={x:Static ObjectConverters.IsNull}}"/>
+                                    <TextBlock Grid.ColumnSpan="2" Text="处理中…" Classes="dim" FontSize="11"
+                                               HorizontalAlignment="Center"
+                                               IsVisible="{Binding $parent[Border].((vm:SkinLibraryViewModel)DataContext).BusyItemTid, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="连接后显示你的皮肤衣柜" Classes="dim" FontSize="12"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding !IsConnected}"/>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- 分页栏 + 错误区 -->
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
+            <SelectableTextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource Danger}" FontSize="12"
+                                 TextWrapping="Wrap" IsVisible="{Binding IsError}"/>
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                <Button Content="◀" Classes="ghost" Padding="10,4" FontSize="12"
+                        Command="{Binding PrevPageCommand}" IsEnabled="{Binding HasPrev}"/>
+                <TextBlock Text="{Binding PageText}" Classes="sub" FontSize="12"
+                           VerticalAlignment="Center" MinWidth="60" TextAlignment="Center"/>
+                <Button Content="▶" Classes="ghost" Padding="10,4" FontSize="12"
+                        Command="{Binding NextPageCommand}" IsEnabled="{Binding HasNext}"/>
+            </StackPanel>
+        </StackPanel>
+    </DockPanel>
+</Window>

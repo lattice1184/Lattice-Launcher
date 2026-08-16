@@ -80,6 +80,13 @@
                                                 Command="{Binding CopyLanAddressCommand}"
                                                 IsVisible="{Binding LanAddressText, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                                     </Grid>
+                                    <!-- 8-15 对外地址（蓝盾/虚拟局域网）：填了复制按钮优先复制它 -->
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="对外" Classes="dim" FontSize="11" VerticalAlignment="Center"
+                                                   ToolTip.Tip="朋友在蓝盾/虚拟局域网里时填蓝盾分配的 IP（如 10.x.x.x）；只填 IP 会自动拼服务端端口"/>
+                                        <TextBox Grid.Column="1" Text="{Binding ExternalAddressText}" FontSize="12"
+                                                 Watermark="蓝盾/虚拟网 IP（留空用局域网）"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
 

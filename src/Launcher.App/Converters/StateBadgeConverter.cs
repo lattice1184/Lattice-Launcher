@@ -30,7 +30,7 @@ public sealed class StateBadgeConverter : IValueConverter
                 DownloadTaskState.Completed => Color.Parse("#5AD07C"),
                 DownloadTaskState.Failed => Color.Parse("#E05A5A"),
                 DownloadTaskState.Canceled => Color.Parse("#8A93A6"),
-                _ => Color.Parse("#2DD4BF"),
+                _ => Color.Parse("#6C8CFF"),
             });
     }
 

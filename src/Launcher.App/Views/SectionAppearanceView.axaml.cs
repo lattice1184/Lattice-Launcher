@@ -12,6 +12,17 @@ public partial class SectionAppearanceView : UserControl
 {
     public SectionAppearanceView() => InitializeComponent();
 
+    /// <summary>8-16 打开 LittleSkin OAuth 应用管理页（创建 client_id）</summary>
+    private void OnOpenLsOAuth(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "https://littleskin.cn/user/oauth/manage") { UseShellExecute = true });
+        }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/user/oauth/manage"); }
+    }
+
     private SettingsViewModel? Vm => DataContext as SettingsViewModel;
 
     private IStorageProvider? Picker => TopLevel.GetTopLevel(this)?.StorageProvider;

@@ -9,11 +9,11 @@
         x:Class="Launcher.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Lattice Launcher" Width="150" Height="150" MinWidth="120" MinHeight="120"
+        Title="Lattice Launcher"
         WindowStartupLocation="CenterScreen" SystemDecorations="None"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
         Background="Transparent"
-        TransparencyBackgroundFallback="#FF14181F">
+        TransparencyBackgroundFallback="#FF12161F">
 
     <Design.DataContext>
         <vm:MainViewModel />
@@ -26,9 +26,9 @@
         <ExperimentalAcrylicBorder x:Name="RootSurface" CornerRadius="12">
             <ExperimentalAcrylicBorder.Material>
                 <ExperimentalAcrylicMaterial BackgroundSource="Digger"
-                                             TintColor="#14181F"
-                                             TintOpacity="0.40"
-                                             FallbackColor="#FF14181F"/>
+                                             TintColor="#12161F"
+                                             TintOpacity="0.30"
+                                             FallbackColor="#FF12161F"/>
             </ExperimentalAcrylicBorder.Material>
             <Grid>
             <!-- 8-13 批次 34 终局：无启动动画——内容与背景随窗口直接全量显示 -->
@@ -38,8 +38,8 @@
                                            PointerPressed="TitleBar_PointerPressed">
                     <ExperimentalAcrylicBorder.Material>
                         <ExperimentalAcrylicMaterial BackgroundSource="Digger"
-                                                     TintColor="#14181F"
-                                                     TintOpacity="0.92"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性 -->
+                                                     TintColor="#12161F"
+                                                     TintOpacity="0.88"/><!-- 8-18：白色壁纸下 0.55 透 45% 壁纸 → 导航栏「花了」；提到 0.92 接近实色，保可读性。8-16 批次 50：调淡至 0.88 略透，玻璃感更自然 -->
                     </ExperimentalAcrylicBorder.Material>
                     <Grid>
                         <!-- 激活指示条：独立滑动元素（位置由 ApplyNavVisuals 动画控制），替代按钮左侧描边 -->
@@ -123,6 +123,20 @@
                                 <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
+                        <Button x:Name="NavEcosystem"
+                                Command="{Binding NavigateCommand}" CommandParameter="ecosystem"
+                                behaviors:SpringScaleBehavior.Enabled="False"
+                                behaviors:HoverBrushBehavior.Enabled="False"
+                                PointerEntered="NavEnter" PointerExited="NavExit"
+                                PointerPressed="NavPress" PointerReleased="NavRelease"
+                                HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="&#xE774;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <TextBlock Text="生态" Foreground="{Binding $parent[Button].Foreground}"/>
+                            </StackPanel>
+                        </Button>
                         <Button x:Name="NavSettings"
                                 Command="{Binding NavigateCommand}" CommandParameter="settings"
                                 behaviors:SpringScaleBehavior.Enabled="False"
@@ -191,8 +205,11 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="svc:ToastItem">
+                        <!-- 8-16 点击复制错误信息（Cursor 手型 + ToolTip 提示） -->
                         <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
-                                CornerRadius="10" Padding="14,9" Opacity="{Binding Opacity}">
+                                CornerRadius="10" Padding="14,9" Opacity="{Binding Opacity}"
+                                PointerPressed="OnToastCopy" Cursor="Hand"
+                                ToolTip.Tip="点击复制这段文字">
                             <Border.Transitions>
                                 <Transitions>
                                     <DoubleTransition Property="Opacity" Duration="0:0:0.24"/>

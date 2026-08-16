@@ -72,6 +72,15 @@
                            ToolTip.Tip="铺满右侧内容区。自动压暗，保证你能看清。有图就用图"
                            VerticalAlignment="Center"/>
             </Grid>
+            <TextBlock Text="皮肤库" Classes="group-sub"/>
+            <!-- 8-16 LittleSkin OAuth client_id（皮肤库设备码流必需；保存时 DPAPI 加密落盘） -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="LittleSkin Client ID" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding LittleSkinClientId}" PlaceholderText="OAuth 应用 Client ID"
+                         FontFamily="Consolas" FontSize="12"/>
+                <Button Grid.Column="2" Content="创建应用" Classes="ghost" FontSize="11" Padding="10,4"
+                        Click="OnOpenLsOAuth" ToolTip.Tip="打开 LittleSkin 用户中心 OAuth 应用管理页（选 Closet.Read / Player.ReadWrite 权限）"/>
+            </Grid>
             <TextBlock Text="界面与操作" Classes="group-sub"/>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="界面密度" Classes="setting-label" VerticalAlignment="Center"/>

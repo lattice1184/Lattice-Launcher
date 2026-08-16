@@ -34,22 +34,24 @@ public static class ServerOpsFile
         catch { return []; }
     }
 
-    /// <summary>文件级移除 OP（AL3：服务端停止时直接删 ops.json 条目——下次启动生效；运行中请用 deop 命令）</summary>
-    public static void Remove(string serverDir, string name)
+    /// <summary>文件级移除 OP（AL3：服务端停止时直接删 ops.json 条目——下次启动生效；运行中请用 deop 命令）。
+    /// 8-15 返回 bool：写盘失败（文件被占用/损坏）如实返回 false，调用方不再谎报「已移除」。</summary>
+    public static bool Remove(string serverDir, string name)
     {
         var path = Path.Combine(serverDir, "ops.json");
-        if (!File.Exists(path)) return;
+        if (!File.Exists(path)) return true;
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return true;
             var kept = doc.RootElement.EnumerateArray()
                 .Where(el => el.ValueKind == JsonValueKind.Object
                     && !(el.TryGetProperty("name", out var n) && n.GetString()?.Equals(name, StringComparison.OrdinalIgnoreCase) == true))
                 .Select(el => el.Clone())
                 .ToList();
             File.WriteAllBytes(path, JsonSerializer.SerializeToUtf8Bytes(kept));
+            return true;
         }
-        catch { /* 损坏/占用不处理（运行中请用 deop） */ }
+        catch { return false; }
     }
 }

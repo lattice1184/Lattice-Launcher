@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Account;
+using PCL.Core.Logging;
 
 namespace Launcher.App.ViewModels;
 
@@ -263,13 +264,7 @@ public partial class AccountViewModel : ViewModelBase
         catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/auth/register"); }
     }
 
-    /// <summary>8-13 Littleskin 皮肤库（无公开 API——网页浏览，下载 PNG 拖进启动器即换肤，不需要 littleskin 账号）</summary>
-    [RelayCommand]
-    private void OpenLittleskinSkinlib()
-    {
-        try { Process.Start(new ProcessStartInfo("https://littleskin.cn/skinlib") { UseShellExecute = true }); }
-        catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/skinlib"); }
-    }
+    /// <summary>8-16 批次 51：皮肤库改为内置窗口（SkinLibraryWindow，HomeView.axaml code-behind 打开）——此命令废弃</summary>
 
     /// <summary>8-13 正版账号管理：跳 Minecraft 官网（皮肤/披风/用户名——Mojang 不开放 API，只能官网改）</summary>
     [RelayCommand]
@@ -289,6 +284,10 @@ public partial class AccountViewModel : ViewModelBase
         if (IsMsAuthBusy) return;
         IsMsAuthBusy = true;
         Status = "";
+        // 8-14：点击后立即给反馈 + 全链路日志——此前设备码会话建立前 MsAuthStatus 空白，
+        // 微软服务器连接慢/超时时用户看到「点了没反应」（实为网络请求无反馈），日志也查不到
+        MsAuthStatus = "正在连接微软服务器…";
+        LogWrapper.Info("[账号] 发起正版登录（设备码流）");
         try
         {
             // 8-13 连接复用：SharedHandler 池化 TCP/TLS（每次登录新建 HttpClient 会白付握手 ~几百 ms）
@@ -299,7 +298,9 @@ public partial class AccountViewModel : ViewModelBase
             await ClientIdRemote.ResolveAsync(http, CancellationToken.None);
 
             // 1. 发起设备码会话 → 显示配对码 + 打开浏览器输码页
+            LogWrapper.Info("[账号] clientId 就绪，请求设备码会话");
             var session = await MicrosoftAuth.StartDeviceCodeAsync(http, CancellationToken.None);
+            LogWrapper.Info($"[账号] 设备码已获取 {session.UserCode}，已打开浏览器等待授权");
             DeviceCodeText = session.UserCode;
             DeviceCodeVerifyUri = session.VerificationUri.Length > 0 ? session.VerificationUri : "https://www.microsoft.com/link";
             IsDeviceCodeMode = true;
@@ -310,12 +311,15 @@ public partial class AccountViewModel : ViewModelBase
 
             // 2. 轮询等授权（可取消）→ 认证链（分步状态反馈，缓解同步慢的体感）
             _msCts = new CancellationTokenSource();
+            LogWrapper.Info("[账号] 设备码轮询等待授权…");
             var (oauthToken, refreshToken) = await MicrosoftAuth.PollDeviceCodeAsync(
                 http, session, status => MsAuthStatus = status, _msCts.Token);
+            LogWrapper.Info("[账号] 授权完成，走认证链（Xbox→XSTS→Minecraft）");
             var msSession = await MicrosoftAuth.AuthenticateMinecraftAsync(
                 http, oauthToken, refreshToken, _msCts.Token,
                 stage => MsAuthStatus = stage);
             _accounts.LoginMicrosoft(msSession);
+            LogWrapper.Info($"[账号] 正版登录成功：{msSession.MinecraftName}");
             MsAuthStatus = "";
             IsDeviceCodeMode = false;
             DeviceCodeText = "";

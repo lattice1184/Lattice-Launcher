@@ -165,7 +165,7 @@ public partial class App : Application
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#')) hex = "#2DD4BF";
+            if (string.IsNullOrWhiteSpace(hex) || !hex.StartsWith('#')) hex = "#6C8CFF";
             var accent = Avalonia.Media.Color.Parse(hex);
             Resources["Accent"] = accent;
             // AccentHover = 每通道提亮 8%
@@ -176,7 +176,7 @@ public partial class App : Application
                 (byte)Math.Min(255, h.B + 255 * 0.08));
             Resources["AccentHover"] = h;
             // 派生色（纯字节数学，Core 可测）
-            var rgb = AccentColorMath.TryNormalizeHex(hex) ?? new Rgb24(0x2D, 0xD4, 0xBF);
+            var rgb = AccentColorMath.TryNormalizeHex(hex) ?? new Rgb24(0x6C, 0x8C, 0xFF);
             var dark = AccentColorMath.DeriveDark(rgb);
             Resources["AccentDark"] = Avalonia.Media.Color.FromRgb(dark.R, dark.G, dark.B);
             Resources["AccentSoft"] = Avalonia.Media.Color.FromArgb(AccentColorMath.SoftAlpha, dark.R, dark.G, dark.B);

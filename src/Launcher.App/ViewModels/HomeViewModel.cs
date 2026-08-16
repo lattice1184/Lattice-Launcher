@@ -49,7 +49,7 @@ public partial class HomeViewModel : ViewModelBase
         {
             var s = LaunchState;
             if (s == "失败" || s.StartsWith("异常退出")) return new SolidColorBrush(Color.Parse("#E05A5A"));
-            if (s is "运行中" or "准备中") return new SolidColorBrush(Color.Parse("#2DD4BF"));
+            if (s is "运行中" or "准备中") return new SolidColorBrush(Color.Parse("#6C8CFF"));
             if (s.StartsWith("已退出")) return new SolidColorBrush(Color.Parse("#6F7B90"));
             return new SolidColorBrush(Color.Parse("#3A4250"));
         }
@@ -138,7 +138,8 @@ public partial class HomeViewModel : ViewModelBase
     public partial int CurrentStageIndex { get; set; } = -1;
 
     [ObservableProperty]
-    public partial Bitmap? PlayerAvatar { get; set; }
+    /// <summary>主页头像（8-15 改为 IImage：本地皮肤 CroppedBitmap 裁脸 / 网络 minotar 位图）</summary>
+    public partial IImage? PlayerAvatar { get; set; }
 
     /// <summary>8-13 头像未就绪时的首字母占位（网络头像下载期间不露白）</summary>
     [ObservableProperty]
@@ -262,7 +263,8 @@ public partial class HomeViewModel : ViewModelBase
     private static string LabelFor(string id, string gameDir)
         => InstallMarker.IsMarked(gameDir, id) ? "本启动器" : GameDirectory.SourceLabel(GameDirectory.SourceOf(gameDir));
 
-    private void RefreshPlayer()
+    /// <summary>刷新头像区（8-16 批次 51：皮肤库应用皮肤后由外部调用刷新本地头像）</summary>
+    public void RefreshPlayer()
     {
         var acc = _accounts.Current;
         PlayerName = acc?.Name ?? "未登录";
@@ -277,7 +279,23 @@ public partial class HomeViewModel : ViewModelBase
         var skinPath = LocalSkinPath(acc.Name);
         if (File.Exists(skinPath))
         {
-            try { PlayerAvatar = new Avalonia.Media.Imaging.Bitmap(skinPath); return; }
+            // 8-14：字节流加载而非 new Bitmap(path)——后者持有文件写锁，重置皮肤删文件报
+            // Access denied（实机：skins\Walmoss8_.png is denied）；流用完即关，文件不锁
+            // 8-15：显示裁皮肤头部（64×64 皮肤图脸在左上 8×8）——此前整张皮肤图直接当头像
+            // 显示，脸只占 1/8，看着像「一张图片」；CroppedBitmap 裁脸后 Image 44×44 放大
+            // （MVP 不叠加帽子层 (40,0)，帽沿/头发层缺失可接受）
+            try
+            {
+                var bytes = File.ReadAllBytes(skinPath);
+                using var ms = new MemoryStream(bytes);
+                // 8-16 修复启动崩溃：full 不能 using 释放——CroppedBitmap 持有源引用（get_Size 走源 Dpi），
+                // 源被 Dispose 后布局头像 Image 直接 ObjectDisposedException（批次 50 窗口一次落位后必现）。
+                // 不显式释放，头像对象小（32×32≈4KB）切换频率低，GC 兜底。
+                var full = new Avalonia.Media.Imaging.Bitmap(ms);
+                PlayerAvatar = new Avalonia.Media.Imaging.CroppedBitmap(full,
+                    new Avalonia.PixelRect(0, 0, 8, 8));
+                return;
+            }
             catch { /* 损坏皮肤回退网络 */ }
         }
         _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
@@ -306,7 +324,9 @@ public partial class HomeViewModel : ViewModelBase
                 return;
             }
             Directory.CreateDirectory(Path.GetDirectoryName(LocalSkinPath(acc.Name))!);
-            File.Copy(sourcePath, LocalSkinPath(acc.Name), overwrite: true);
+            // 8-16 不再显式 Dispose 头像（Image 控件引用中，释放即竞态崩溃）；强制写（GC 回收锁 + 清只读 + 重试 + tmp 原子替换）
+            PlayerAvatar = null;
+            ForceWriteSkinFile(LocalSkinPath(acc.Name), File.ReadAllBytes(sourcePath));
             RefreshPlayer();
             NotificationService.Success("已更换皮肤，下次启动游戏生效");
         }
@@ -316,9 +336,10 @@ public partial class HomeViewModel : ViewModelBase
         }
     }
 
-    /// <summary>8-13 重置皮肤：正版 = 删本地皮肤（游戏内恢复 Mojang 官方皮肤）；
+    /// <summary>8-14 重置皮肤（PCL 式强硬版）：正版 = 从正版账号**强制同步官方皮肤**覆盖本地
+    /// （minotar.net 镜像国内可达，拉取的是账号皮肤原图；不再依赖「删文件」——删不掉也覆盖写）；
     /// 离线/Littleskin = 随机 Steve/Alex 默认皮肤（内置资源，游戏内同样生效）</summary>
-    public void ResetSkin()
+    public async Task ResetSkin()
     {
         var acc = _accounts.Current;
         if (acc is null) return;
@@ -327,17 +348,23 @@ public partial class HomeViewModel : ViewModelBase
             var dest = LocalSkinPath(acc.Name);
             if (acc.Type == "microsoft")
             {
-                if (File.Exists(dest)) File.Delete(dest);
-                NotificationService.Success("已重置，游戏内恢复官方正版皮肤");
+                // 8-16 不再显式 Dispose 头像（同上）；删除（失败不阻塞）→ 从正版拉官方皮覆盖写
+                PlayerAvatar = null;
+                try { if (File.Exists(dest)) File.Delete(dest); } catch { }
+                await SyncOfficialSkinAsync(acc.Name, dest);
+                NotificationService.Success("已强制同步正版账号的官方皮肤，游戏内生效");
             }
             else
             {
                 var asset = Random.Shared.Next(2) == 0 ? "steve.png" : "alex.png";
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                using var stream = Avalonia.Platform.AssetLoader.Open(
-                    new Uri($"avares://Launcher.App/Assets/{asset}"));
-                using var fs = File.Create(dest);
-                stream.CopyTo(fs);
+                using (var stream = Avalonia.Platform.AssetLoader.Open(
+                    new Uri($"avares://Launcher.App/Assets/{asset}")))
+                using (var ms = new MemoryStream())
+                {
+                    stream.CopyTo(ms);
+                    ForceWriteSkinFile(dest, ms.ToArray());
+                }
                 NotificationService.Success("已重置为默认皮肤，下次启动游戏生效");
             }
             RefreshPlayer();
@@ -347,6 +374,21 @@ public partial class HomeViewModel : ViewModelBase
             NotificationService.Error($"重置失败: {ex.Message}");
         }
     }
+
+    /// <summary>从正版账号拉取官方皮肤（minotar.net/skin/{name}——Mojang 皮肤镜像，国内可达，
+    /// 返回 64×64/64×32 皮肤原图，正版账号未换过皮则返回默认皮）覆盖本地。若目标仍被外部
+    /// 进程独占锁住（游戏运行中），异常如实抛出并提示。</summary>
+    private async Task SyncOfficialSkinAsync(string name, string dest)
+    {
+        using var http = new HttpClient();
+        http.Timeout = TimeSpan.FromSeconds(15);
+        var bytes = await http.GetByteArrayAsync($"https://minotar.net/skin/{Uri.EscapeDataString(name)}");
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        ForceWriteSkinFile(dest, bytes); // 强制写：GC 回收锁 + 重试 + 原子替换
+    }
+
+    /// <summary>8-16 批次 51：强写逻辑已迁移 Core（SkinFileWriter.ForceWrite），皮肤库窗口共用</summary>
+    private static void ForceWriteSkinFile(string dest, byte[] bytes) => SkinFileWriter.ForceWrite(dest, bytes);
 
     /// <summary>推进阶段指示条</summary>
     private void SetStage(string stageName)
@@ -686,7 +728,7 @@ public partial class LaunchStageVM : ObservableObject
 
     /// <summary>指示点颜色：完成=暗青、当前=主强调、未到=灰（单一强调色系）</summary>
     public IBrush DotColor => IsDone ? new SolidColorBrush(Color.Parse("#1E8F82"))
-        : IsCurrent ? new SolidColorBrush(Color.Parse("#2DD4BF"))
+        : IsCurrent ? new SolidColorBrush(Color.Parse("#6C8CFF"))
         : new SolidColorBrush(Color.Parse("#3A4250"));
 
     public LaunchStageVM(string name) => Name = name;

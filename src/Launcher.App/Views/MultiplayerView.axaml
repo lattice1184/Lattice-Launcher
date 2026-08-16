@@ -156,7 +156,7 @@
                                                             IsVisible="{Binding IsHost}" VerticalAlignment="Center">
                                                         <TextBlock Text="房主" FontSize="10" Foreground="{DynamicResource AccentLight}"/>
                                                     </Border>
-                                                    <Border CornerRadius="3" Padding="5,1" Background="#2DD4BF"
+                                                    <Border CornerRadius="3" Padding="5,1" Background="#6C8CFF"
                                                             IsVisible="{Binding IsLocal}" VerticalAlignment="Center">
                                                         <TextBlock Text="我" FontSize="10" Foreground="#0B1F1C"/>
                                                     </Border>
