@@ -122,6 +122,9 @@ public class RampUpTests
             var concurrency = await svc.ProbeAndDecideConcurrencyAsync(url, 1536 * 1024, partDir, CancellationToken.None,
                 new DownloadService.ThrottleState());
             Assert.Equal(expected, concurrency);
+            // 8-22 域特征快速路径：渐进限速域小文件免探测——不发起任何请求（探测对它们纯浪费）；
+            // 普通域仍走探测（1 次请求）
+            Assert.Equal(url.Contains("modrinth") || url.Contains("github") ? 0 : 1, handler.Ranges.Count);
         }
         finally
         {
