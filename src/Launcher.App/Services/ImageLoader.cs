@@ -18,6 +18,10 @@ public static class ImageLoader
     private static readonly SemaphoreSlim Gate = new(4);
     private static readonly string CacheDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Launcher", "imgcache");
+    /// <summary>内存位图缓存上限（8-22 内存瘦身：旧实现只增不减——翻页/切 tab 攒几十上百张
+    /// 位图常驻（每张 96px 解码 ≈36KB，300 张 = 10MB+）。超限整体清空：磁盘缓存（imgcache）
+    /// 兜底重新解码（毫秒级），无泄漏无失效。按「近似 LRU」——字典无序，整体清最简。</summary>
+    private const int CacheMaxEntries = 128;
 
     public static Task LoadAsync(string? url, Action<Bitmap?> onLoaded, CancellationToken ct = default)
         => LoadAsync(url, onLoaded, 96, ct);
@@ -32,6 +36,7 @@ public static class ImageLoader
         }
         try
         {
+            TrimIfNeeded(); // 8-22 超限整体清空（磁盘缓存兜底）
             var task = Cache.GetOrAdd(url, static u => DownloadAsync(u, 96));
             var bitmap = decodeWidth <= 96
                 ? await task
@@ -46,6 +51,14 @@ public static class ImageLoader
             Cache[url] = Task.FromResult<Bitmap?>(null);
             Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(null));
         }
+    }
+
+    /// <summary>容量裁剪：超过上限整体清空（近似 LRU 的最简实现——位图重新解码有磁盘缓存兜底）</summary>
+    private static void TrimIfNeeded()
+    {
+        if (Cache.Count <= CacheMaxEntries) return;
+        foreach (var key in Cache.Keys)
+            Cache.TryRemove(key, out _);
     }
 
     private static async Task<Bitmap?> DownloadAsync(string url, int decodeWidth)
