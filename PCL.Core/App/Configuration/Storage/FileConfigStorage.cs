@@ -26,6 +26,11 @@ public class FileConfigStorage : ConfigStorage
     private readonly Channel<(string, Action)> _writeActionChannel;
     private readonly CancellationTokenSource _writeActionCts;
     private readonly ManualResetEventSlim _writeStopEvent = new(true);
+    // 8-22 全栈排查严重项：内存树（JsonObject/YamlMappingNode）无锁并发——后台写线程 Sync
+    // 序列化树的同时任意线程 Get 读树 → 并发枚举+修改抛 InvalidOperationException 逃出 catch
+    // 白名单 → ConfigStorage.Access → ForceShutdown(-2) 整个进程退出。读写锁保护全部 File 访问：
+    // Get/Exists 读锁，后台写 action + File.Sync 写锁（读锁内严禁写操作——互等死锁）
+    private readonly ReaderWriterLockSlim _fileLock = new();
 
     public FileConfigStorage(IKeyValueFileProvider file)
     {
@@ -66,9 +71,15 @@ public class FileConfigStorage : ConfigStorage
             {
                 try
                 {
-                    LogWrapper.Trace("Config", $"正在保存 {File.FilePath}");
-                    foreach (var action in writeActionMap.Values) action();
-                    File.Sync();
+                    // 写锁：写树 + 落盘必须与任何读互斥（读锁内不写树——见 Get 分支注释）
+                    _fileLock.EnterWriteLock();
+                    try
+                    {
+                        LogWrapper.Trace("Config", $"正在保存 {File.FilePath}");
+                        foreach (var action in writeActionMap.Values) action();
+                        File.Sync();
+                    }
+                    finally { _fileLock.ExitWriteLock(); }
                 }
                 catch (Exception ex)
                 {
@@ -102,41 +113,70 @@ public class FileConfigStorage : ConfigStorage
         switch (action)
         {
             case StorageAction.Get:
-                if (!File.Exists(strKey)) return false;
+            {
+                // 读锁保护：与后台写线程（Set/Delete action + Sync 序列化）互斥——
+                // 并发枚举+修改会抛 InvalidOperationException 逃出 catch 白名单 → 进程退出
+                var cleanup = false;
+                var found = false;
+                TValue? readResult = default;
+                _fileLock.EnterReadLock();
                 try
                 {
-                    value = File.Get<TValue>(strKey);
+                    if (File.Exists(strKey))
+                    {
+                        try
+                        {
+                            readResult = File.Get<TValue>(strKey);
+                            found = true;
+                        }
+                        catch (Exception ex) when (ex is JsonException
+                                                       or InvalidCastException
+                                                       or FormatException
+                                                       or OverflowException
+                                                       or ArgumentException
+                                                       or KeyNotFoundException
+                                                       or InvalidDataException)
+                        {
+                            LogWrapper.Warn(ex, "Config", $"配置项 {strKey} 读取失败（可能已损坏），重置为默认值");
+                            cleanup = true;
+                        }
+                    }
                 }
-                catch (Exception ex) when (ex is JsonException
-                                               or InvalidCastException
-                                               or FormatException
-                                               or OverflowException
-                                               or ArgumentException
-                                               or KeyNotFoundException
-                                               or InvalidDataException)
+                finally { _fileLock.ExitReadLock(); }
+                if (cleanup)
                 {
-                    LogWrapper.Warn(ex, "Config", $"配置项 {strKey} 读取失败（可能已损坏），重置为默认值");
+                    // 清理必须在锁外：读锁内写树 + Sync 落盘会与写锁互等 → 死锁
                     if (!_writeActionChannel.Writer.TryWrite((strKey, () => File.Remove(strKey))))
                     {
                         LogWrapper.Warn("Config", $"配置项 {strKey} 清理任务入队失败，改为同步删除");
                         try
                         {
-                            File.Remove(strKey);
-                            File.Sync();
+                            _fileLock.EnterWriteLock();
+                            try { File.Remove(strKey); File.Sync(); }
+                            finally { _fileLock.ExitWriteLock(); }
                         }
                         catch (Exception cleanupEx)
                         {
                             LogWrapper.Error(cleanupEx, "Config", $"配置项 {strKey} 同步删除失败，可能需人工处理");
                         }
                     }
-                    return false;
                 }
+                if (!found) return false;
+                value = readResult!;
                 return true;
+            }
             case StorageAction.Exists:
-                // 由于 Exists 的 value 类型一定是 bool，此处可 unsafe 直接赋值
-                if (typeof(TValue) == typeof(bool)) Unsafe.As<TValue, bool>(ref value) = File.Exists(strKey);
-                else throw new InvalidOperationException($"Storage action '{StorageAction.Exists}' must have a boolean value");
+            {
+                // 由于 Exists 的 value 类型一定是 bool，此处可 unsafe 直接赋值（读锁保护同 Get）
+                _fileLock.EnterReadLock();
+                try
+                {
+                    if (typeof(TValue) == typeof(bool)) Unsafe.As<TValue, bool>(ref value) = File.Exists(strKey);
+                    else throw new InvalidOperationException($"Storage action '{StorageAction.Exists}' must have a boolean value");
+                }
+                finally { _fileLock.ExitReadLock(); }
                 return true;
+            }
             case StorageAction.Set:
                 var localValue = value;
                 _writeActionChannel.Writer.TryWrite((strKey, () => File.Set(strKey, localValue)));

@@ -145,7 +145,11 @@ public sealed partial class StartupService
             {
                 foreach (var (command, model) in models)
                 {
-                    _UnhandledCommandMap[command] = model;
+                    // 8-22 全栈排查：旧代码无锁写与 TryHandleCommand 的锁内遍历并发 → 字典损坏
+                    lock (_UnhandledCommandMap)
+                    {
+                        _UnhandledCommandMap[command] = model;
+                    }
                     TryHandleCommand(command);
                 }
             });
