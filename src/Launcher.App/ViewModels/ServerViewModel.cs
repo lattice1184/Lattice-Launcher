@@ -858,6 +858,13 @@ public partial class ServerViewModel : ViewModelBase
         await Task.Run(() => _process.Stop());
     }
 
+    /// <summary>8-22 全栈排查：启动器退出时停服务端（fire-and-forget，异常静默——退出清理不阻断）</summary>
+    public void StopOnExit()
+    {
+        if (!IsRunning) return;
+        try { Task.Run(() => _process.Stop()); } catch { /* 进程已退出 */ }
+    }
+
     /// <summary>发送控制台命令（回车触发；输入框清空）</summary>
     [RelayCommand]
     private void SendCommand(string command)
@@ -1104,6 +1111,10 @@ public partial class ServerViewModel : ViewModelBase
             {
                 SetStatus("服务端下载失败，一键开服中止", error: true);
                 _oneClickActive = false;
+                // 8-22 全栈排查：一键开服/生成世界失败中止时 _autoStopOnReady/_autoJoinOnReady 未复位——
+                // 状态泄漏到下一次手动开服（就绪被自动停/自动拉起客户端）。统一在此复位
+                _autoStopOnReady = false;
+                _autoJoinOnReady = false;
                 return;
             }
         }
@@ -1120,6 +1131,10 @@ public partial class ServerViewModel : ViewModelBase
             {
                 SetStatus("世界生成失败，一键开服中止（可查看控制台日志）", error: true);
                 _oneClickActive = false;
+                // 8-22 全栈排查：一键开服/生成世界失败中止时 _autoStopOnReady/_autoJoinOnReady 未复位——
+                // 状态泄漏到下一次手动开服（就绪被自动停/自动拉起客户端）。统一在此复位
+                _autoStopOnReady = false;
+                _autoJoinOnReady = false;
                 return;
             }
         }
@@ -1156,6 +1171,10 @@ public partial class ServerViewModel : ViewModelBase
         finally
         {
             _oneClickActive = false;
+                // 8-22 全栈排查：一键开服/生成世界失败中止时 _autoStopOnReady/_autoJoinOnReady 未复位——
+                // 状态泄漏到下一次手动开服（就绪被自动停/自动拉起客户端）。统一在此复位
+                _autoStopOnReady = false;
+                _autoJoinOnReady = false;
         }
     }
 

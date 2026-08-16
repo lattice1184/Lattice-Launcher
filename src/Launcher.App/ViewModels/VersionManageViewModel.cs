@@ -413,8 +413,18 @@ public partial class VersionManageViewModel : ViewModelBase
             var backupsDir = Path.Combine(_gameDir, "backups");
             Directory.CreateDirectory(backupsDir);
             var zipPath = Path.Combine(backupsDir, $"{_versionId}-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
-            await Task.Run(() => ZipFile.CreateFromDirectory(RootDir, zipPath,
-                CompressionLevel.Optimal, includeBaseDirectory: false));
+            // 8-22 全栈排查：ZipFile.CreateFromDirectory 会把 backups 目录（含正在写入的 zip 自身）
+            // 包进归档 → zip 自包含损坏/体积爆炸。改手动遍历排除 backups（仅排除顶层备份目录）
+            await Task.Run(() =>
+            {
+                using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+                foreach (var f in Directory.EnumerateFiles(RootDir, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetRelativePath(RootDir, f);
+                    if (rel.StartsWith("backups" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+                    zip.CreateEntryFromFile(f, rel.Replace('\\', '/'), CompressionLevel.Optimal);
+                }
+            });
             StatusText = $"已备份 → {zipPath}";
         }
         catch (Exception ex)

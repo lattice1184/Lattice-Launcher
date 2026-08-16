@@ -68,10 +68,11 @@ public partial class LoaderPickerViewModel : ViewModelBase
 
     public async Task LoadVersionsAsync()
     {
-        if (IsLoadingVersions) return;
+        // 8-22 全栈排查：旧 `if (IsLoadingVersions) return` 早退——点 Fabric（请求在途）后点 Quilt，
+        // Quilt 的加载被吞 → UI 选中 Quilt 但版本列表永远是 Fabric 的。改并发跑 + gen 丢弃旧响应
+        var gen = ++_versionGen;
         IsLoadingVersions = true;
         StatusText = "查询版本中…";
-        var gen = ++_versionGen;
         try
         {
             Versions.Clear();
@@ -88,11 +89,11 @@ public partial class LoaderPickerViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            StatusText = $"查询失败: {ex.Message}";
+            if (gen == _versionGen) StatusText = $"查询失败: {ex.Message}";
         }
         finally
         {
-            IsLoadingVersions = false;
+            if (gen == _versionGen) IsLoadingVersions = false; // 旧请求完成不得清掉新请求的加载态
         }
     }
 

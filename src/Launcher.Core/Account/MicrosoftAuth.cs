@@ -190,10 +190,25 @@ public static class MicrosoftAuth
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", minecraft);
         using var resp = await http.SendAsync(req, ct);
         var profileJson = await resp.Content.ReadAsStringAsync(ct);
+        // 8-22 全栈排查：非 2xx（token 吊销 401/服务端 500）时错误体可能是 HTML 或
+        // 无 error 键的 JSON——旧代码直接 Parse+GetProperty 抛 KeyNotFoundException/JsonException，
+        // 用户看到「字典中不存在给定键」而非「请重新登录」
+        if (!resp.IsSuccessStatusCode)
+        {
+            string detail = "（无法解析服务端错误）";
+            try
+            {
+                using var errDoc = JsonDocument.Parse(profileJson);
+                if (errDoc.RootElement.TryGetProperty("error", out var err) && err.ValueKind == System.Text.Json.JsonValueKind.String)
+                    detail = err.GetString()!;
+            }
+            catch { /* 非 JSON 错误体——用默认文案 */ }
+            throw new InvalidOperationException($"正版档案获取失败（HTTP {(int)resp.StatusCode}：{detail}）——可能未购买 Minecraft 或登录已过期，请重新登录");
+        }
         using var profileDoc = JsonDocument.Parse(profileJson);
         var profile = profileDoc.RootElement;
         if (!profile.TryGetProperty("id", out _))
-            throw new InvalidOperationException($"未获取到正版档案（{profile.GetProperty("error").GetString()}）——可能未购买 Minecraft");
+            throw new InvalidOperationException("未获取到正版档案——可能未购买 Minecraft");
 
         return new MicrosoftSession(
             minecraft,

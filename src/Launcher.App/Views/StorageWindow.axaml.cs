@@ -77,34 +77,32 @@ public partial class StorageWindow : Window
             DeleteRequested = OnDeleteRequested,
         });
 
-    /// <summary>删除确认（对话框）→ 删除文件/目录 → 移除列表项</summary>
-    private void OnDeleteRequested(StorageItemVM item)
+    /// <summary>删除确认（对话框）→ 删除文件/目录 → 移除列表项。
+    /// 8-22 全栈排查：旧实现 Task.Run 内 ShowDialog（必须 UI 线程）→ 跨线程异常被吞 → 确认框永不出现、删除永远不执行</summary>
+    private async void OnDeleteRequested(StorageItemVM item)
     {
-        _ = Task.Run(async () =>
+        var owner = DialogService.MainWindow();
+        if (owner is null || !await DialogService.Confirm(owner,
+                $"删除：{item.Path}\n\n此操作不可恢复，确认删除？", "删除", "删除", "取消"))
         {
-            var owner = DialogService.MainWindow();
-            if (owner is null || !await DialogService.Confirm(owner,
-                    $"删除：{item.Path}\n\n此操作不可恢复，确认删除？", "删除", "删除", "取消"))
-            {
-                return;
-            }
-            try
+            return;
+        }
+        try
+        {
+            await Task.Run(() =>
             {
                 if (item.IsFile) { if (File.Exists(item.Path)) File.Delete(item.Path); }
                 else if (Directory.Exists(item.Path)) Directory.Delete(item.Path, true);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    Items.Remove(item);
-                    NotificationService.Success("已删除");
-                });
-            }
-            catch (Exception ex)
+            });
+            Dispatcher.UIThread.Post(() =>
             {
-                NotificationService.Error($"删除失败: {ex.Message}");
-            }
-        });
-    
-}
-
-
+                Items.Remove(item);
+                NotificationService.Success("已删除");
+            });
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"删除失败: {ex.Message}");
+        }
+    }
 }

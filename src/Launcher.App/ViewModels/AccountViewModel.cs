@@ -77,7 +77,8 @@ public partial class AccountViewModel : ViewModelBase
 
         // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）。
         // 8-13：不置空——加载期间保留旧头像，首字母块兜底，避免每次刷新闪空白
-        AvatarFallback = acc is null ? "" : acc.Name[..1].ToUpperInvariant();
+        // 8-22 全栈排查：空 Name（accounts.json 手工编辑/外部账号空名）→ [..1] 索引越界崩
+        AvatarFallback = acc is null || string.IsNullOrEmpty(acc.Name) ? "" : acc.Name[..1].ToUpperInvariant();
         if (acc is not null)
             _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
                 bmp => Avatar = bmp);
