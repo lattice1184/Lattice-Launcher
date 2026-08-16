@@ -270,10 +270,14 @@ public sealed class LoaderService
                 {
                     // REVIEW-卡完成：fabric-api 挂组内子任务（有进度/速度/Stage）——旧代码组路径下
                     // progress 参数无效 → 主任务「148.5/148.5 满进度 + 2.8MB/s 在下载」却无任何表达
-                    // （真机 8-11 用户误以为引擎坏了）；子任务 weight=0 不定条 + 下载速度可见
-                    await ctx.AddChild("Fabric API", 0,
+                    // （真机 8-11 用户误以为引擎坏了）；子任务 weight=0 不定条 + 下载速度可见。
+                    // 8-22 根治「卡进度条」：查询到文件大小后动态补 weight——父进度条从 148.5
+                    // 继续走到 150.1，Fabric API 阶段进度不再静止（聚合每轮按 Children 重算 total）
+                    DownloadTask? fabChild = null;
+                    fabChild = ctx.AddChild("Fabric API", 0,
                         (p, c) => InstallFabricApiAsync(id, plan.McVersion, c,
-                            new ProgressReporter("正在准备 Fabric API…", p))).Completion;
+                            new ProgressReporter("正在准备 Fabric API…", p), fabChild));
+                    await fabChild.Completion;
                 }
                 else
                 {
@@ -293,7 +297,7 @@ public sealed class LoaderService
     /// 元数据大多已被 PrefetchFabricApiAsync 预热（缓存命中秒回）；未命中时此处仍兜底直查。
     /// </summary>
     private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct,
-        ProgressReporter? rep = null)
+        ProgressReporter? rep = null, DownloadTask? child = null)
     {
         try
         {
@@ -301,6 +305,8 @@ public sealed class LoaderService
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(30));
             var c2 = timeout.Token;
+            // 8-22 查询阶段明示（消灭「进度静止不知在等什么」）：预取命中时秒回；未命中如实告知
+            rep?.ReportStage("正在查询 Fabric API（Modrinth 网络较慢时约需几秒）…");
             var eco = new EcosystemService(_http, _downloads, _gameDirectory, cacheDir: _ecoCacheDir);
             var project = await eco.GetProjectAsync("fabric-api", c2);
             var versions = await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", c2);
@@ -311,8 +317,15 @@ public sealed class LoaderService
             if (best is null)
             {
                 Debug.WriteLine($"[Loader] {mcVersion} 无 fabric-api 版本，跳过");
+                rep?.ReportStage($"Fabric API 无 {mcVersion} 构建，已跳过");
+                rep?.Complete();
                 return;
             }
+            // 8-22 查到文件大小 → 补子任务 weight：父进度条从 148.5 继续走到 150.1，
+            // Fabric API 阶段进度不再静止（「卡进度条」根治——聚合每轮按 Children 重算 total）
+            var size = best.Files?.FirstOrDefault(f => f.Primary)?.Size ?? 0;
+            if (size > 0 && child is not null) child.Weight = size;
+            rep?.ReportStage("正在下载 Fabric API…");
             // REVIEW-卡完成：reporter 透传——组内子任务有真实下载速度（真机 2.8MB/s 可见）+ 节流
             await eco.InstallAsync(project.Id, best, versionId, ProjectType.Mod,
                 rep is null ? null : p => rep.Report(p.FileBytesDone, p.FileTotalBytes), c2);
