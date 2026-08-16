@@ -12,7 +12,8 @@
                 <TextBlock Text="Lattice Launcher" FontSize="14" FontWeight="SemiBold"/>
                 <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12" VerticalAlignment="Bottom"/>
             </StackPanel>
-            <TextBlock Text="用 Avalonia / .NET 10 做的，核心来自开源的 PCL Community（Apache-2.0 协议）" Classes="dim" FontSize="11"/>
+            <TextBlock Text="自己写的 Minecraft 启动器，AI（Claude）协助开发" Classes="dim" FontSize="11"/>
+            <TextBlock Text="用 Avalonia / .NET 10 做的，核心来自开源 PCL Community（Apache-2.0）" Classes="dim" FontSize="11"/>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
                 <Button Content="仓库主页" Classes="ghost" Padding="14,6" Click="OnOpenGitHub"
