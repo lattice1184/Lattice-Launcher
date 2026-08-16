@@ -11,6 +11,23 @@ public partial class SectionAboutView : UserControl
 {
     public SectionAboutView() => InitializeComponent();
 
+    private const string RepoUrl = "https://github.com/lattice1184/Lattice-Launcher";
+
+    /// <summary>8-22 关于页跳转：打开仓库主页（默认浏览器）</summary>
+    private void OnOpenGitHub(object? sender, RoutedEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo(RepoUrl) { UseShellExecute = true }); }
+        catch { Launcher.App.Services.NotificationService.Error("无法打开浏览器，请手动访问 " + RepoUrl); }
+    }
+
+    /// <summary>8-22 关于页跳转：打开提 issue 页（反馈入口）</summary>
+    private void OnOpenIssues(object? sender, RoutedEventArgs e)
+    {
+        var url = RepoUrl + "/issues/new";
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { Launcher.App.Services.NotificationService.Error("无法打开浏览器，请手动访问 " + url); }
+    }
+
     /// <summary>打开存储空间窗口（列出全部启动器文件位置与占用，可清理）</summary>
     private void OnOpenStorage(object? sender, RoutedEventArgs e)
     {
