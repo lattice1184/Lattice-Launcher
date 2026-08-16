@@ -7,11 +7,15 @@ using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Download;
+using Launcher.Core.Launch;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
 
 namespace Launcher.App.ViewModels;
+
+/// <summary>已检测 Java 的下拉选项（版本设置「Java 版本」选择）</summary>
+public sealed record JavaChoice(string Label, string Path);
 
 /// <summary>已装版本行（左栏）：DisplayName 为 PCL 式显示名（"1.21.11 (Fabric)"），Id 为真实目录名；
 /// 来源标签 + 加载器徽章 + 所在目录 + 客户端文件缺失标记（有 json 无 jar 的残件版本）+ 继承的原版版本</summary>
@@ -419,6 +423,19 @@ public partial class InstalledVersionDetailVM : ViewModelBase
     [ObservableProperty]
     public partial string ConfigArgsText { get; set; } = "";
 
+    /// <summary>已检测的 Java（版本设置「Java 版本」下拉；后台扫描填充）</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<JavaChoice> JavaOptions { get; set; } = [];
+
+    /// <summary>下拉当前选中（选中即写入 ConfigJavaText 版本级 Java 路径）</summary>
+    [ObservableProperty]
+    public partial JavaChoice? SelectedJava { get; set; }
+
+    partial void OnSelectedJavaChanged(JavaChoice? value)
+    {
+        if (value is not null) ConfigJavaText = value.Path;
+    }
+
     [ObservableProperty]
     public partial bool HasConfigOverrides { get; set; }
 
@@ -529,6 +546,26 @@ public partial class InstalledVersionDetailVM : ViewModelBase
         ConfigJavaText = cfg.JavaPath ?? "";
         ConfigArgsText = cfg.ExtraJvmArgs ?? "";
         HasConfigOverrides = cfg.HasOverrides;
+        LoadJavaOptionsAsync();
+    }
+
+    /// <summary>后台扫描本机已检测 Java，填充「Java 版本」下拉并对齐当前配置（起进程解析版本，不能卡 UI 线程）</summary>
+    private void LoadJavaOptionsAsync()
+    {
+        _ = Task.Run(() =>
+        {
+            try { return JavaSelector.ScanInstalled(); }
+            catch { return new List<JavaSelector.JavaInstall>(); }
+        }).ContinueWith(t => Dispatcher.UIThread.Post(() =>
+        {
+            var opts = t.Result
+                .Select(j => new JavaChoice($"JDK {j.Major} — {j.Path}", j.Path))
+                .OrderByDescending(o => o.Path.Contains("jre-legacy", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ToList();
+            JavaOptions = opts;
+            SelectedJava = opts.FirstOrDefault(o =>
+                string.Equals(o.Path, ConfigJavaText, StringComparison.OrdinalIgnoreCase));
+        }), TaskScheduler.Default);
     }
 
     /// <summary>保存版本级配置（空 = 跟随全局）</summary>

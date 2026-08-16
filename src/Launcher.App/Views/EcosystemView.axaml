@@ -94,12 +94,17 @@
             <DockPanel IsVisible="{Binding !IsDetailOpen}">
                 <ProgressBar DockPanel.Dock="Top" IsIndeterminate="True" IsVisible="{Binding IsLoading}"/>
                 <StackPanel DockPanel.Dock="Top" Spacing="8" IsVisible="{Binding IsError}">
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A"/>
+                    <SelectableTextBlock Text="{Binding ErrorMessage}" Foreground="#E05A5A" TextWrapping="Wrap"/>
                     <Button Content="重试" Command="{Binding SearchCommand}"
                             HorizontalAlignment="Left"/>
                 </StackPanel>
                 <TextBlock DockPanel.Dock="Top" Text="没找到你要的内容" Foreground="#8A93A6" HorizontalAlignment="Center"
                            Margin="0,40" IsVisible="{Binding IsEmpty}"/>
+                <!-- 8-14 CF 无 key 平替：官网手动下载入口（PCL 式「去网页下」） -->
+                <Button DockPanel.Dock="Top" Content="前往 CurseForge 官网手动下载" Classes="ghost" FontSize="12"
+                        HorizontalAlignment="Center" Margin="0,0,0,8"
+                        Command="{Binding OpenManualBrowseCommand}"
+                        IsVisible="{Binding ManualBrowseUrl, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
                 <!-- 分页栏（◀ 页码 ▶） -->
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10"

@@ -23,7 +23,8 @@ public class LoaderServiceTests
         // 临时缓存目录：profile json 缓存隔离（防测试间共享 AppData 缓存污染）
         var cache = Path.Combine(Path.GetTempPath(), $"lpc-{Guid.NewGuid():N}");
         Directory.CreateDirectory(cache);
-        return new LoaderService(http, downloads, gameDir, loaderProfileCacheDir: cache);
+        return new LoaderService(http, downloads, gameDir, loaderProfileCacheDir: cache,
+            ecoCacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
     }
 
     [Fact]
@@ -237,7 +238,8 @@ public class LoaderServiceTests
     {
         var http = new HttpClient(new StubHandler([]));
         var downloads = new DownloadService(http, gameDirectory: gameDir);
-        var svc = new LoaderService(http, downloads, gameDir, installerProcess);
+        var svc = new LoaderService(http, downloads, gameDir, installerProcess,
+            ecoCacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
         var plan = new LoaderInstallPlan(LoaderKind.Forge, "1.21.10", "60.1.0", null,
             "https://maven.minecraftforge.net/net/minecraftforge/forge/1.21.10-60.1.0/forge-1.21.10-60.1.0-installer.jar",
             null, null); // 与 CreatePlanAsync 生产一致：Sha1/Size 均为 null

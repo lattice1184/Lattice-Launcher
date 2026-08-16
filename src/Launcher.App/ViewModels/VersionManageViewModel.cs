@@ -2,8 +2,11 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Launcher.App.Services;
 using Launcher.Core.Download;
+using Launcher.Core.Model.Modrinth;
+using Launcher.Core.Services;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -24,6 +27,12 @@ public partial class VersionManageViewModel : ViewModelBase
 
     public ObservableCollection<ModItemVM> Mods { get; } = [];
     public ObservableCollection<SaveItemVM> Saves { get; } = [];
+
+    // 8-14 资源包 / 光影包（复用 ModItemVM：同为 zip/jar + .disabled 启停，启停/删除复用 ToggleMod/DeleteMod）
+    public ObservableCollection<ModItemVM> PacksPreview { get; } = [];
+    public ObservableCollection<ModItemVM> ShaderPreview { get; } = [];
+    public string PacksCountText => $"资源包（{PacksPreview.Count}）";
+    public string ShaderCountText => $"光影（{ShaderPreview.Count}）";
 
     private const int ModsPreviewLimit = 10;
 
@@ -89,17 +98,23 @@ public partial class VersionManageViewModel : ViewModelBase
         try
         {
             // 后台只收集 List；ObservableCollection 的写入统一在 UI 线程（避免跨线程集合异常）
-            var (mods, saves) = await Task.Run(async () => (CollectMods(), await CollectSavesAsync()));
-            OnPropertyChanged(nameof(ModsCountText));
-            OnPropertyChanged(nameof(SavesCountText));
+            var (mods, saves, packs, shaders) = await Task.Run(async () => (
+                CollectMods(), await CollectSavesAsync(),
+                CollectPacks("resourcepacks"), CollectPacks("shaderpacks")));
             Mods.Clear();
             foreach (var m in mods) Mods.Add(m);
             Saves.Clear();
             foreach (var sv in saves) Saves.Add(sv);
+            PacksPreview.Clear();
+            foreach (var p in packs) PacksPreview.Add(p);
+            ShaderPreview.Clear();
+            foreach (var s in shaders) ShaderPreview.Add(s);
             OnPropertyChanged(nameof(ModsCountText));
+            OnPropertyChanged(nameof(SavesCountText));
+            OnPropertyChanged(nameof(PacksCountText));
+            OnPropertyChanged(nameof(ShaderCountText));
             ShowAllMods = false;
             RefreshModsPreview();
-            OnPropertyChanged(nameof(SavesCountText));
             StatusText = "";
         }
         catch (Exception ex)
@@ -162,6 +177,105 @@ public partial class VersionManageViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenModsFolder() => OpenFolder(Path.Combine(RootDir, "mods"));
+
+    // ---------- 资源包 / 光影包（复用 ModItemVM：zip/jar + .disabled 启停，ToggleMod/DeleteMod 通用） ----------
+
+    private List<ModItemVM> CollectPacks(string dirName)
+    {
+        var list = new List<ModItemVM>();
+        var dir = Path.Combine(RootDir, dirName);
+        if (!Directory.Exists(dir)) return list;
+        foreach (var f in Directory.EnumerateFiles(dir, "*.jar*")
+                 .Concat(Directory.EnumerateFiles(dir, "*.zip*")))
+        {
+            var file = Path.GetFileName(f);
+            var disabled = file.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
+            list.Add(new ModItemVM(f, disabled ? file[..^".disabled".Length] : file, new FileInfo(f).Length));
+        }
+        return list;
+    }
+
+    [RelayCommand]
+    private void OpenPacksFolder() => OpenFolder(Path.Combine(RootDir, "resourcepacks"));
+
+    [RelayCommand]
+    private void OpenShaderFolder() => OpenFolder(Path.Combine(RootDir, "shaderpacks"));
+
+    // ---------- MOD 更新检查（8-14）：文件名 slug → Modrinth 搜项目 → 最新版本对比 → 有更新可一键替换 ----------
+
+    private readonly EcosystemService _eco = new();
+    private readonly DownloadService _dl = new();
+
+    /// <summary>检查/更新二合一（行按钮）：未查则检查，有更新则应用更新</summary>
+    [RelayCommand]
+    private async Task CheckOrUpdateAsync(ModItemVM mod)
+    {
+        if (mod.IsChecking) return;
+        if (mod.HasUpdate) await ApplyUpdateAsync(mod);
+        else await CheckUpdateAsync(mod);
+    }
+
+    private async Task CheckUpdateAsync(ModItemVM mod)
+    {
+        mod.IsChecking = true;
+        try
+        {
+            // slug：文件名首段（去 .jar/.disabled），小写字母数字——如 alexscaves-2.0.2.jar → alexscaves
+            var baseName = mod.Name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)
+                ? mod.Name[..^".jar".Length] : mod.Name;
+            var slug = Regex.Match(baseName, @"^[a-zA-Z][a-zA-Z0-9_-]*").Value.ToLowerInvariant();
+            if (string.IsNullOrEmpty(slug)) { mod.UpdateText = "未找到"; return; }
+
+            var resp = await _eco.SearchAsync(ProjectType.Mod, slug, limit: 1, offset: 0);
+            var hit = resp?.Hits?.FirstOrDefault();
+            if (hit is null) { mod.UpdateText = "未找到"; return; }
+
+            var latest = await _eco.FindBestVersionAsync(hit.ProjectId, ExtractMcVersion(_versionId), null);
+            var file = latest is null ? null : EcosystemService.PickPrimaryFile(latest.Files);
+            if (latest is null || file is null) { mod.UpdateText = "已最新"; return; }
+
+            // 版本号相同（或新版文件名已存在）→ 已最新
+            if (string.Equals(CurrentVersionOf(mod.Name), latest.VersionNumber, StringComparison.OrdinalIgnoreCase))
+            { mod.UpdateText = "已最新"; return; }
+
+            mod.UpdateUrl = file.Url;
+            mod.UpdateSha1 = file.Hashes?.Sha1;
+            mod.UpdateSize = file.Size;
+            mod.UpdateVersion = latest.VersionNumber;
+            mod.UpdateFileName = file.FileName;
+            mod.UpdateText = $"更新 {latest.VersionNumber}";
+            mod.HasUpdate = true;
+        }
+        catch { mod.UpdateText = "检查失败"; }
+        finally { mod.IsChecking = false; }
+    }
+
+    private async Task ApplyUpdateAsync(ModItemVM mod)
+    {
+        if (mod.UpdateUrl is null || mod.UpdateFileName is null) return;
+        mod.IsChecking = true;
+        try
+        {
+            var dir = Path.Combine(RootDir, "mods");
+            Directory.CreateDirectory(dir);
+            var target = Path.Combine(dir, mod.UpdateFileName);
+            var tmp = target + ".tmp";
+            await _dl.DownloadFileAsync(mod.UpdateUrl, tmp, mod.UpdateSha1, mod.UpdateSize, null, CancellationToken.None);
+            // 新文件名与旧不同则删旧（保持启停态：新文件默认启用）
+            if (!string.Equals(Path.GetFileName(target), mod.Name, StringComparison.OrdinalIgnoreCase))
+            { try { File.Delete(mod.Path); } catch { } }
+            File.Move(tmp, target, true);
+            mod.UpdateText = "已最新";
+            mod.HasUpdate = false;
+            ReloadMods();
+        }
+        catch { mod.UpdateText = "更新失败"; }
+        finally { mod.IsChecking = false; }
+    }
+
+    /// <summary>文件名中的版本号（alexscaves-2.0.2.jar → 2.0.2；匹配不到返回空）</summary>
+    private static string? CurrentVersionOf(string name)
+        => Regex.Match(name, @"\d+(\.\d+){1,3}").Value is { Length: > 0 } v ? v : null;
 
     // ---------- 存档（借用 PCL.Core SaveManager 解析 level.dat） ----------
 
@@ -482,10 +596,47 @@ public partial class VersionManageViewModel : ViewModelBase
     }
 }
 
-/// <summary>MOD 文件项（名称 / 路径 / 禁用态 / 大小）</summary>
-public sealed record ModItemVM(string Path, string Name, long SizeBytes)
+/// <summary>MOD 文件项（名称 / 路径 / 禁用态 / 大小 + 更新检查状态，可通知 UI 行内变化）</summary>
+public sealed partial class ModItemVM : ObservableObject
 {
+    public string Path { get; }
+    public string Name { get; }
+    public long SizeBytes { get; }
+
+    public ModItemVM(string path, string name, long sizeBytes)
+    {
+        Path = path;
+        Name = name;
+        SizeBytes = sizeBytes;
+    }
+
     public string SizeText => SizeBytes >= 1024 * 1024 ? $"{SizeBytes / 1024.0 / 1024:0.0} MB" : $"{SizeBytes / 1024:0} KB";
+
+    /// <summary>检查中（按钮禁用）</summary>
+    [ObservableProperty]
+    public partial bool IsChecking { get; set; }
+
+    /// <summary>有可更新版本（显示「更新 vX」）</summary>
+    [ObservableProperty]
+    public partial bool HasUpdate { get; set; }
+
+    /// <summary>更新按钮文案：检查更新 / 检查中… / 更新 vX / 已最新 / 未找到 / 检查失败</summary>
+    [ObservableProperty]
+    public partial string UpdateText { get; set; } = "检查更新";
+
+    /// <summary>最新版下载信息（URL / SHA1 / 大小 / 版本号 / 文件名）</summary>
+    public string? UpdateUrl { get; set; }
+    public string? UpdateSha1 { get; set; }
+    public long UpdateSize { get; set; }
+    public string? UpdateVersion { get; set; }
+    public string? UpdateFileName { get; set; }
+
+    /// <summary>行内更新按钮可用性（检查中或已到最新时禁用）</summary>
+    public bool CanCheckUpdate => !IsChecking && !HasUpdate && UpdateText != "已最新";
+
+    partial void OnIsCheckingChanged(bool value) => OnPropertyChanged(nameof(CanCheckUpdate));
+    partial void OnHasUpdateChanged(bool value) => OnPropertyChanged(nameof(CanCheckUpdate));
+    partial void OnUpdateTextChanged(string value) => OnPropertyChanged(nameof(CanCheckUpdate));
 }
 
 /// <summary>存档项（世界名 / 最后游玩 / 路径，来自 PCL.Core SaveManager 解析 level.dat）</summary>

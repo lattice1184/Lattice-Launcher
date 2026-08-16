@@ -41,7 +41,7 @@ public partial class ProjectCardVM : ObservableObject
 
     /// <summary>星标颜色（收藏=强调青，未收藏=弱灰）</summary>
     public IBrush StarColor => IsFavorite
-        ? new SolidColorBrush(Color.Parse("#2DD4BF"))
+        ? new SolidColorBrush(Color.Parse("#6C8CFF"))
         : new SolidColorBrush(Color.Parse("#6F7B90"));
 
     partial void OnIsFavoriteChanged(bool value)
@@ -150,14 +150,17 @@ public partial class ProjectCardVM : ObservableObject
 /// <summary>目标版本实例（生态安装目标 / 主页启动选择）；SourceLabel 标识版本来源（PCL2/本启动器等）；GameDir 为版本所在游戏目录；LoaderBadge 为真实加载器徽章（fabric/forge/neoforge/quilt，AG1 检测）；McVersion 为加载器版本继承的原版版本号</summary>
 public sealed record VersionInstanceVM(string Name, string SourceLabel = "", string GameDir = "", string LoaderBadge = "", string McVersion = "")
 {
-    /// <summary>显示名：加载器版本 → "26.2 (Fabric)"，附来源标签；原版保持原名</summary>
+    /// <summary>
+    /// 显示名：加载器版本 → "26.2 (Fabric)"，原版 → "26.2 (原版)"（8-16 批次 53：主页下拉
+    /// 「自配原版 vs 带加载器版」并列是 AL27 刻意设计——原版必须保留可选；标注后一眼区分），附来源标签。
+    /// </summary>
     public string DisplayName
     {
         get
         {
             var core = LoaderBadge.Length > 0
                 ? $"{(McVersion.Length > 0 ? McVersion : Name)} ({Cap(LoaderBadge)})"
-                : Name;
+                : $"{Name} (原版)";
             return SourceLabel.Length > 0 ? $"{core} · {SourceLabel}" : core;
         }
     }

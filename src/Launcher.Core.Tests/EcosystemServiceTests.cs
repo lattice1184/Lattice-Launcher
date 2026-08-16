@@ -351,7 +351,7 @@ public class EcosystemServiceTests
         var handler = new RouteHandler();
         handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D&loaders=%5B%22fabric%22%5D", "[]");
         handler.Route("/v2/project/abc/version?loaders=%5B%22fabric%22%5D", VersionsJson);
-        var svc = new EcosystemService(new HttpClient(handler));
+        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
         var list = await svc.GetVersionsAsync("abc", "26.2", "fabric");
 
@@ -367,7 +367,7 @@ public class EcosystemServiceTests
     {
         var handler = new RouteHandler();
         handler.Route("/v2/project/abc/version?game_versions=%5B%221.21.1%22%5D", "[]");
-        var svc = new EcosystemService(new HttpClient(handler));
+        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
         var list = await svc.GetVersionsAsync("abc", "1.21.1");
 
@@ -380,7 +380,7 @@ public class EcosystemServiceTests
     {
         var handler = new RouteHandler();
         handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", VersionsJson);
-        var svc = new EcosystemService(new HttpClient(handler));
+        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
         var list = await svc.GetVersionsAsync("abc", "26.2");
 
@@ -394,7 +394,7 @@ public class EcosystemServiceTests
         var handler = new RouteHandler();
         handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", "[]");
         handler.Route("/v2/project/abc/version", "[]");
-        var svc = new EcosystemService(new HttpClient(handler));
+        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
         var list = await svc.GetVersionsAsync("abc", "26.2");
 

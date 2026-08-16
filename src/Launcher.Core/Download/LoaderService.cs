@@ -32,14 +32,17 @@ public sealed class LoaderService
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
     private readonly string? _loaderProfileCacheDir;
+    private readonly string? _ecoCacheDir;
     // AL29 测试缝：真实环境跑 java 安装器进程；测试注入 stub（控制退出码与写文件行为）
     private readonly Func<string, string[], Action<string>?, CancellationToken, Task<int>> _installerProcess;
 
     public LoaderService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
         Func<string, string[], Action<string>?, CancellationToken, Task<int>>? installerProcess = null,
-        string? loaderProfileCacheDir = null) // REVIEW-前摇：profile json 缓存目录（测试注入临时目录隔离全局 AppData）
+        string? loaderProfileCacheDir = null, // REVIEW-前摇：profile json 缓存目录（测试注入临时目录隔离全局 AppData）
+        string? ecoCacheDir = null) // 8-16 批次 53：Modrinth API 磁盘缓存目录（测试隔离，同 loaderProfileCacheDir 思路）
     {
         _loaderProfileCacheDir = loaderProfileCacheDir;
+        _ecoCacheDir = ecoCacheDir;
         // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
         _http = http ?? new HttpClient(HttpClientPool.SharedHandler) { Timeout = TimeSpan.FromSeconds(20) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
@@ -292,7 +295,7 @@ public sealed class LoaderService
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(30));
             var c2 = timeout.Token;
-            var eco = new EcosystemService(_http, _downloads, _gameDirectory);
+            var eco = new EcosystemService(_http, _downloads, _gameDirectory, cacheDir: _ecoCacheDir);
             var project = await eco.GetProjectAsync("fabric-api", c2);
             var versions = await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", c2);
             // 8-19：GetVersionsAsync 对年份号（26.2）会降级返回全量——fabric-api 必须精确匹配 mcVersion

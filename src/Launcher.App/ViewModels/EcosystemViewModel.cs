@@ -99,13 +99,24 @@ public partial class EcosystemViewModel : ViewModelBase
 
     public sealed record SourceOption(string Display, string? Key);
 
-    private void BuildSourceOptions() =>
+    private void BuildSourceOptions()
+    {
+        // 8-16 批次 54：数据包 CF 无分类（classId=0）——源只留 Modrinth
+        if (_type == ProjectType.Datapack)
+        {
+            SourceOptions =
+            [
+                new SourceOption("Modrinth", "modrinth"),
+            ];
+            return;
+        }
         SourceOptions =
         [
             new SourceOption("全部", null),
             new SourceOption("Modrinth", "modrinth"),
             new SourceOption(_cf.IsEnabled ? "CurseForge" : "CurseForge（未配置 Key）", "curseforge"),
         ];
+    }
 
     [ObservableProperty]
     public partial SourceOption? SelectedSource { get; set; }
@@ -200,6 +211,17 @@ public partial class EcosystemViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string Status { get; set; } = "";
+
+    /// <summary>8-14 官网手动下载入口（CF 无 key / 源不可用时置位；非空则空态区显示「前往官网」按钮）</summary>
+    [ObservableProperty]
+    public partial string? ManualBrowseUrl { get; set; }
+
+    [RelayCommand]
+    private void OpenManualBrowse()
+    {
+        if (string.IsNullOrWhiteSpace(ManualBrowseUrl)) return;
+        try { Process.Start(new ProcessStartInfo(ManualBrowseUrl) { UseShellExecute = true }); } catch { }
+    }
 
     [ObservableProperty]
     public partial ProjectDetailViewModel? Detail { get; set; }
@@ -313,6 +335,7 @@ public partial class EcosystemViewModel : ViewModelBase
         IsLoading = true;
         IsError = false;
         IsEmpty = false;
+        ManualBrowseUrl = null; // 每次搜索重置官网跳转入口
         try
         {
             if (FavoritesOnly)
@@ -373,7 +396,9 @@ public partial class EcosystemViewModel : ViewModelBase
         {
             if (seq != _requestSeq) return;
             Cards.Clear();
-            FinishPage(seq, 0, gameVersion, "你还没配 CurseForge API Key。去设置页填一个才能用。");
+            // 8-14 CF 无 key 平替：提示填 key + 提供官网跳转入口（PCL 式「去网页下」）
+            ManualBrowseUrl = "https://www.curseforge.com/minecraft";
+            FinishPage(seq, 0, gameVersion, "你还没配 CurseForge API Key。去设置页填一个，或用下方按钮到官网手动下载。");
             return;
         }
         var sort = CfSortOf(SelectedSort?.Index);

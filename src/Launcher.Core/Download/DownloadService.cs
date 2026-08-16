@@ -107,9 +107,9 @@ public sealed class DownloadService
         }
 
         private readonly Shared _shared;
-        private readonly DownloadProgressHandler _inner;
+        private readonly DownloadProgressHandler? _inner;
 
-        private RaceProgress(Shared shared, DownloadProgressHandler inner)
+        private RaceProgress(Shared shared, DownloadProgressHandler? inner)
         {
             _shared = shared;
             _inner = inner;
@@ -117,28 +117,54 @@ public sealed class DownloadService
 
         private readonly int _index;      // 本源序号（per-source 字节记录用）
         private readonly long[] _bytes;   // per-source 已下载字节（淘汰制评估"谁领先"用）
+        private readonly long[] _pushTicks; // per-source 最近逐读推拍 tick（陪跑采样用；0=尚无）
 
-        private RaceProgress(Shared shared, DownloadProgressHandler inner, int index, long[] bytes)
+        private RaceProgress(Shared shared, DownloadProgressHandler? inner, int index, long[] bytes, long[] pushTicks)
         {
             _shared = shared;
             _inner = inner;
             _index = index;
             _bytes = bytes;
+            _pushTicks = pushTicks;
         }
 
-        /// <summary>为 count 个候选源创建共享同一比较器的转发器（一一对应）</summary>
-        public static RaceProgress Wrap(int count, DownloadProgressHandler progress)
+        /// <summary>为 count 个候选源创建共享同一比较器的转发器（一一对应）。
+        /// 8-14 批次41：progress 可空——headless（无 UI 回调）下仍需要每源字节采样/淘汰评估；
+        /// 陪跑源复用本组件的 Max 单调转发（slot = candidates.Count+k），UI 永不回退。</summary>
+        public static RaceProgress Wrap(int count, DownloadProgressHandler? progress)
         {
             var shared = new Shared();
             var bytes = new long[count];
+            var pushTicks = new long[count];
             var arr = new DownloadProgressHandler[count];
+            var liveArr = new Action<long, long>[count];
             for (var i = 0; i < count; i++)
-                arr[i] = new RaceProgress(shared, progress, i, bytes).Invoke;
-            return new RaceProgress(shared, progress, 0, bytes) { Handlers = arr };
+            {
+                var rp = new RaceProgress(shared, progress, i, bytes, pushTicks);
+                arr[i] = rp.Invoke;
+                liveArr[i] = rp.Push;
+            }
+            return new RaceProgress(shared, progress, 0, bytes, pushTicks) { Handlers = arr, LiveHandlers = liveArr };
         }
 
         /// <summary>每个候选源对应的转发器（与 Wrap 的 count 一一对应）</summary>
         public DownloadProgressHandler[] Handlers { get; private init; } = [];
+
+        /// <summary>每源逐读推拍委托（陪跑采样用，无节流）：读循环每次读完调用（与 Handlers 一一对应）</summary>
+        public Action<long, long>[] LiveHandlers { get; private init; } = [];
+
+        /// <summary>某源最近一次推拍 tick（0 = 尚无；陪跑采样判「无新读」用）</summary>
+        public long GetPushTick(int index) => Interlocked.Read(ref _pushTicks[index]);
+
+        /// <summary>逐读推拍：字节单调守卫（并发分片互抢时不回退），tick 仅在字节前进时更新</summary>
+        private void Push(long bytes, long tick)
+        {
+            if (bytes > Interlocked.Read(ref _bytes[_index]))
+            {
+                Interlocked.Exchange(ref _bytes[_index], bytes);
+                Interlocked.Exchange(ref _pushTicks[_index], tick);
+            }
+        }
 
         /// <summary>某源的已下载字节（竞速淘汰评估用——Interlocked 读，任意线程安全）</summary>
         public long GetBytes(int index) => Interlocked.Read(ref _bytes[index]);
@@ -160,7 +186,7 @@ public sealed class DownloadService
             var bytes = Math.Min(Interlocked.Read(ref _shared.Max), _shared.Total);
             if (bytes <= 0) return;
             if (Interlocked.Exchange(ref _shared.LastSent, bytes) == bytes) return; // 同值不重复转发
-            _inner(new DownloadProgress(p.Stage, p.CurrentFile, bytes, _shared.Total,
+            _inner?.Invoke(new DownloadProgress(p.Stage, p.CurrentFile, bytes, _shared.Total,
                 Math.Min(bytes * 100.0 / _shared.Total, 99)));
         }
     }
@@ -275,7 +301,7 @@ public sealed class DownloadService
                 // 与原子 rename 语义；竞速只用于多源场景
                 try
                 {
-                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, ct);
+                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, null, ct);
                     LogWrapper.Info($"[下载] 完成 {ShortUrl(url)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                     return;
                 }
@@ -312,14 +338,18 @@ public sealed class DownloadService
             // 直接透传各源绝对字节会混合虚高——字节交替回退触发计速基线重置，完成瞬间剩余字节
             // 全挤进最后 0.25s 窗口 → 速度爆表（实机：19MB 真下 10s，显示几百 MB/s）。
             // 语义为"领先源进度"（AL58b）：每源独立转发器，全局取领先值单调转发。
-            var perSourceProgress = progress is null ? null : RaceProgress.Wrap(candidates.Count, progress);
+            // 批次 41 陪跑：Wrap 恒创建（headless 下采样/淘汰评估同样可用）；陪跑源复用共享 Max 槽位
+            // （slot = candidates.Count+k），UI 单调领先值永无回退
+            var slotCount = candidates.Count + _options.PaceMaxSources;
+            var perSourceProgress = RaceProgress.Wrap(slotCount, progress);
             for (var i = 0; i < candidates.Count; i++)
             {
                 var idx = i;
                 var src = candidates[i];
                 var srcCts = CancellationTokenSource.CreateLinkedTokenSource(raceCts.Token);
                 pending.Add((idx, src, Task.Run(() => RaceOneAsync(idx, src, destPath,
-                    expectedSha1, expectedSize, perSourceProgress?.Handlers[idx], srcCts.Token, ct), ct), srcCts));
+                    expectedSha1, expectedSize, perSourceProgress.Handlers[idx], perSourceProgress.LiveHandlers[idx],
+                    srcCts.Token, ct), ct), srcCts));
             }
             Exception? raceLast = null;
             var won = false;
@@ -327,13 +357,30 @@ public sealed class DownloadService
             // 收敛到领先源让它的 ramp-up 自决并发；无 progress 数据时无法评估——跳过）
             var evalSw = System.Diagnostics.Stopwatch.StartNew();
             var evalInterval = _options.RaceEliminateInterval;
-            var lastEvalBytes = new long[candidates.Count]; // 8-13 速度外推评估：上次评估各源字节
-            var noProgressSince = new long[candidates.Count]; // 8-14 watchdog：各源连续零增量起始 tick（0=有进度）
+            var lastEvalBytes = new long[slotCount]; // 8-13 速度外推评估：上次评估各源字节
+            var noProgressSince = new long[slotCount]; // 8-14 watchdog：各源连续零增量起始 tick（0=有进度）
+            // 批次 41 陪跑状态（本轮内有效；全部只在主循环单线程上读写）
+            var demotedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase); // 被顶替下台的源（不进 abandonedKeys——其 .parts 下轮可复用）
+            var pace = new PaceTracker(_options);
+            var paceActive = false;        // 陪跑源在局中
+            var paceGraceUntil = 0L;       // 触发后淘汰评估宽限截止 tick
+            var paceSw = System.Diagnostics.Stopwatch.StartNew();
+            var paceInterval = TimeSpan.FromMilliseconds(_options.PaceProbeIntervalMs);
             while (pending.Count > 0)
             {
                 var remaining = evalInterval - evalSw.Elapsed;
                 var evalDelay = remaining > TimeSpan.Zero ? Task.Delay(remaining, ct) : Task.CompletedTask;
-                var done = await Task.WhenAny(pending.Select(p => p.Task).Cast<Task>().Append(evalDelay));
+                var paceRemaining = paceInterval - paceSw.Elapsed;
+                var paceDelay = _options.PaceEnabled && paceRemaining > TimeSpan.Zero
+                    ? Task.Delay(paceRemaining, ct) : Task.CompletedTask;
+                var done = await Task.WhenAny(pending.Select(p => p.Task).Cast<Task>().Append(evalDelay).Append(paceDelay));
+                if (done == paceDelay)
+                {
+                    // 批次 41 陪跑节拍：采样/触发/顶替（全部主循环单线程，零锁）
+                    PaceTick();
+                    paceSw.Restart();
+                    continue;
+                }
                 if (done == evalDelay)
                 {
                     if (perSourceProgress is not null && pending.Count > 0)
@@ -358,9 +405,25 @@ public sealed class DownloadService
                         }
                         if (pending.Count > 1)
                         {
-                            var leadIndex = pending[leadPos].Index;
-                            foreach (var p in pending.Where(p => p.Index != leadIndex))
-                                p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                            // 陪跑宽限期内不淘汰（新入局源免遭 eta 外推秒杀）；到期后正常收敛
+                            if (!paceActive || Environment.TickCount64 >= paceGraceUntil)
+                            {
+                                var leadIndex = pending[leadPos].Index;
+                                foreach (var p in pending.Where(p => p.Index != leadIndex))
+                                    p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                            }
+                            // 陪跑期领先源停滞兜底（防多源全死挂起——watchdog 对 bytes 最大者生效）
+                            if (paceActive)
+                            {
+                                var top = pending.OrderByDescending(p => perSourceProgress.GetBytes(p.Index)).First();
+                                var topBytes = perSourceProgress.GetBytes(top.Index);
+                                if ((total <= 0 || topBytes < total)
+                                    && noProgressSince[top.Index] > 0
+                                    && Environment.TickCount64 - noProgressSince[top.Index] >= _options.RaceWatchdogStallMs)
+                                {
+                                    AbandonDoomed(top);
+                                }
+                            }
                         }
                         else if ((total <= 0 || cur[0] < total)
                                  && noProgressSince[pending[0].Index] > 0
@@ -373,12 +436,7 @@ public sealed class DownloadService
                             // （流读 token 失效的洞），整轮无限挂起、日志死寂 8 分钟——外层兜底必须存在。
                             // 墙钟而非 tick 数：进度上报是 250ms 精细粒度，健康源（≥判死阈值）必有增量；
                             // tick 数随评估间隔缩放，测试加速间隔会误杀慢启动源
-                            var doomed = pending[0];
-                            pending.RemoveAt(0);
-                            abandonedKeys.Add(RaceKey(doomed.Src)); // 后续轮跳过（其 .race 文件可能被挂死任务锁着）
-                            doomed.Cts.Cancel(); // 能取消就取消（省连接/句柄），不能也无所谓——任务后台自生自灭
-                            var stalledMs = Environment.TickCount64 - noProgressSince[doomed.Index];
-                            LogWrapper.Warn($"[下载] watchdog 摘除 {ShortUrl(doomed.Src)} 零增量{stalledMs / 1000}s——进下一轮（已弃用该源）");
+                            AbandonDoomed(pending[0]);
                         }
                     }
                     evalSw.Restart();
@@ -389,6 +447,7 @@ public sealed class DownloadService
                 var (ok, err) = await (Task<(bool Ok, Exception? Error)>)done;
                 if (ok)
                 {
+                    // 陪跑状态收尾：任一源完成即走既有赢家路径（旧赢家完成=陪跑白跑，陪跑完成=直接赢）
                     // AL58 赢家先落盘再收尾：旧实现先等所有 pending 停止再 rename——慢源（限并发镜像
                     // 的龟速分片）取消传播要几十秒，UI 停在"下完了"静默；且慢源永远赢不了时
                     // 任务被拖死（376MB 限并发实测 0.1MB/s）。rename 先行：任务立即完成，
@@ -413,6 +472,98 @@ public sealed class DownloadService
                 if (err is not null) raceLast = err;
             }
             if (won) return;
+
+            // ---------- 批次 41 陪跑本地函数（仅主循环线程调用；闭包捕获本轮状态） ----------
+
+            // 陪跑节拍：收敛阶段采样+触发；陪跑阶段稳定领先判定+顶替
+            void PaceTick()
+            {
+                if (perSourceProgress is null || pending.Count == 0) return;
+                var now = Environment.TickCount64;
+                var total = perSourceProgress.GetTotal();
+
+                if (paceActive)
+                {
+                    // 陪跑阶段：旧赢家 = Index < candidates.Count 的条目；全部退场则回归普通竞速
+                    var nonPace = pending.Where(p => p.Index < candidates.Count).ToList();
+                    if (nonPace.Count == 0)
+                    {
+                        paceActive = false;
+                        pace.ResetSampling();
+                        return;
+                    }
+                    long winnerBytes = 0;
+                    foreach (var p in nonPace)
+                        winnerBytes = Math.Max(winnerBytes, perSourceProgress.GetBytes(p.Index));
+                    long bestPace = 0;
+                    foreach (var p in pending)
+                        if (p.Index >= candidates.Count)
+                            bestPace = Math.Max(bestPace, perSourceProgress.GetBytes(p.Index));
+                    if (bestPace > winnerBytes) pace.NoteStableLead();
+                    else pace.ResetStableLead();
+                    if (PaceTracker.ShouldTakeover(_options, bestPace, winnerBytes, pace.StableLeadTicks, total))
+                    {
+                        foreach (var p in nonPace)
+                        {
+                            demotedKeys.Add(RaceKey(p.Src)); // 不进 abandonedKeys——其 .parts 下轮可复用
+                            p.Cts.Cancel();
+                        }
+                        paceActive = false;
+                        pace.ResetSampling();
+                        LogWrapper.Info($"[下载] 陪跑顶替：取消旧赢家 {string.Join(" | ", nonPace.Select(p => ShortUrl(p.Src)))}（陪跑领先 {bestPace / 1024 / 1024}MB > {winnerBytes / 1024 / 1024}MB）");
+                    }
+                    return;
+                }
+
+                // 收敛阶段：仅剩唯一幸存源时采样与触发
+                if (pending.Count != 1 || total <= 0) return;
+                var lead = pending[0];
+                var leadBytes = perSourceProgress.GetBytes(lead.Index);
+                if (leadBytes >= total) return; // 收尾（合并/校验）不触发
+                var pushTick = perSourceProgress.GetPushTick(lead.Index);
+                // 8-15 断流：无新推拍 = 源已断流（健康源逐读必每秒有推拍）——零速度采样让下降
+                // 计数累积触发陪跑（此前空拍跳过 → 断流永不陪跑，只等 watchdog 30s——真机卡死）
+                if (pushTick == pace.LastPushTick) pace.SampleStall();
+                else pace.Sample(leadBytes, pushTick);
+                if (!pace.ShouldTrigger(total, leadBytes, now)) return;
+
+                // 触发：按历史速度排名挑落选源入局（排除 abandoned/demoted/在局源）
+                var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                used.UnionWith(abandonedKeys);
+                used.UnionWith(demotedKeys);
+                used.UnionWith(pending.Select(p => RaceKey(p.Src)));
+                var pool = _sourceStats.Rank(candidates.Where(c => !used.Contains(RaceKey(c))).ToList());
+                var added = 0;
+                for (var k = 0; k < pool.Count && added < _options.PaceMaxSources; k++)
+                {
+                    var src = pool[k];
+                    var idx = candidates.Count + added; // 槽位 candidates.Count+k（与 Wrap 扩容对齐）
+                    var srcCts = CancellationTokenSource.CreateLinkedTokenSource(raceCts.Token);
+                    pending.Add((idx, src, Task.Run(() => RaceOneAsync(idx, src, destPath,
+                        expectedSha1, expectedSize, perSourceProgress.Handlers[idx], perSourceProgress.LiveHandlers[idx],
+                        srcCts.Token, ct), ct), srcCts));
+                    lastEvalBytes[idx] = 0;
+                    noProgressSince[idx] = 0;
+                    added++;
+                }
+                if (added == 0) return;
+                var lastKbps = pace.LastSpeed * 1000 / 1024;
+                var peakKbps = pace.PeakSpeed * 1000 / 1024;
+                paceActive = true;
+                pace.MarkTriggered(now); // 起冷却 + 清采样（注意：先取速度后标记）
+                paceGraceUntil = now + _options.PaceEliminateGraceMs;
+                LogWrapper.Info($"[下载] 陪跑开赛 +{added} 源（领先源 {ShortUrl(lead.Src)} 降速 {lastKbps:0}KB/s，峰值 {peakKbps:0}KB/s）：{string.Join(" | ", pool.Take(added).Select(ShortUrl))}");
+            }
+
+            // 摘除卡死源（不等待任务结束——挂死任务可能无视取消 token；进 abandonedKeys 后续轮跳过）
+            void AbandonDoomed((int Index, string Src, Task<(bool Ok, Exception? Error)> Task, CancellationTokenSource Cts) doomed)
+            {
+                pending.Remove(doomed);
+                abandonedKeys.Add(RaceKey(doomed.Src)); // 其 .race 文件可能被挂死任务锁着
+                doomed.Cts.Cancel(); // 能取消就取消（省连接/句柄），不能也无所谓——任务后台自生自灭
+                var stalledMs = Environment.TickCount64 - noProgressSince[doomed.Index];
+                LogWrapper.Warn($"[下载] watchdog 摘除 {ShortUrl(doomed.Src)} 零增量{stalledMs / 1000}s——进下一轮（已弃用该源）");
+            }
             last = raceLast ?? last;
             if (attempt < _options.MaxSourceAttempts - 1)
             {
@@ -445,14 +596,14 @@ public sealed class DownloadService
     /// </summary>
     private async Task<(bool Ok, Exception? Error)> RaceOneAsync(
         int index, string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, CancellationToken raceCt, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken raceCt, CancellationToken ct)
     {
         // 8-13 片集按 URL 哈希命名：同 URL 跨轮复用已完成片（判死换路后下轮续传，不归零）；
         // 候选顺序轮间变化（Resolve 重排）不影响——键与 URL 绑定而非下标
         var raceDest = $"{destPath}.race{RaceKey(url)}";
         try
         {
-            await DownloadFromSourceAsync(url, raceDest, expectedSha1, expectedSize, progress, raceCt);
+            await DownloadFromSourceAsync(url, raceDest, expectedSha1, expectedSize, progress, livePush, raceCt);
             return (true, null);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -537,6 +688,144 @@ public sealed class DownloadService
     }
 
     /// <summary>
+    /// 陪跑监督器（批次 41）：收敛阶段（pending==1）按节拍采样唯一幸存源速度，追踪窗口次高值（峰值）
+    /// 与连续下降计数；触发/顶替决策纯函数化（ShouldTriggerPace/ShouldTakeover）供测试直测。
+    /// 只在竞速主循环单线程上被调用，无需锁。
+    /// </summary>
+    internal sealed class PaceTracker
+    {
+        private readonly DownloadOptions _opts;
+        private readonly double[] _ring;    // 速度环（字节/ms）
+        private int _ringPos;
+        private int _ringCount;
+        private long _lastBytes = -1;
+        private long _lastPushTick;
+        private double _lastSpeed;
+        private int _declineSamples;
+        private long _triggeredAtMs;        // 上次触发 tick（0 = 无冷却）
+
+        public PaceTracker(DownloadOptions opts)
+        {
+            _opts = opts;
+            _ring = new double[Math.Max(2, opts.PacePeakWindowSamples)];
+        }
+
+        /// <summary>采样领先源（仅收敛阶段每节拍调用一次）：读循环逐读推拍 (bytes, pushTick)——
+        /// 速度按推拍差算（= 精确逐读速率）。250ms 上报节流与采样节拍错位会产生交替伪波动，
+        /// 阶梯降速下错位交替不断清零下降计数、永远测不出——推拍绕开节流量化（8-14 采样重做）。
+        /// 时间加权 EMA（τ=1s）：慢源 dt≈秒级 → 接近逐读原速；快源 dt≈毫秒 → 平滑逐读抖动。
+        /// 下降计数连续不增语义：平台拍 EMA 相等保留计数，回升清零。首推只记基线。</summary>
+        public void Sample(long bytes, long pushTick)
+        {
+            if (pushTick == _lastPushTick) return;               // 无新读完成：跳过
+            if (_lastPushTick == 0) { _lastPushTick = pushTick; _lastBytes = bytes; return; }
+            var dt = pushTick - _lastPushTick;
+            _lastPushTick = pushTick;
+            if (dt <= 0) return;
+            var speed = (bytes - _lastBytes) / (double)dt;
+            _lastBytes = bytes;
+            _ring[_ringPos] = speed;
+            _ringPos = (_ringPos + 1) % _ring.Length;
+            if (_ringCount < _ring.Length) _ringCount++;
+            var alpha = 1.0 - Math.Exp(-dt / 1000.0);
+            var ema = alpha * speed + (1.0 - alpha) * _lastSpeed;
+            if (ema < _lastSpeed) _declineSamples++;
+            else if (ema > _lastSpeed) _declineSamples = 0;      // 平台（相等）保留——连续不增
+            _lastSpeed = ema;
+        }
+
+        /// <summary>最近一次推拍 tick（PaceTick 判「断流」用：无新推拍 = 源已断流）</summary>
+        public long LastPushTick => _lastPushTick;
+
+        /// <summary>
+        /// 断流拍（8-15）：源无新读（推拍不更新）时按零速度采样——EMA 向 0 收敛、下降计数累积。
+        /// 此前空拍直接跳过 → 断流时下降计数永不累积 → 陪跑永不触发，只等 watchdog 30s 摘除
+        /// （真机 13:04 Nexus-Player 卡死现场：无「陪跑开赛」，30s 后才摘除重赛）。
+        /// 健康源逐读推拍每秒必有新推拍（8KB 缓冲读间隔毫秒级），无新推拍 = 真断流，不会误判。
+        /// 峰值保留（断流不重置）；EMA 按采样节拍收敛，5 拍 ≈ 5s 触发陪跑（vs watchdog 30s）。
+        /// </summary>
+        public void SampleStall()
+        {
+            if (_lastPushTick == 0) return; // 尚未有任何读（慢启动/无进度），不算断流
+            var dt = _opts.PaceProbeIntervalMs;
+            var alpha = 1.0 - Math.Exp(-dt / 1000.0);
+            var ema = (1.0 - alpha) * _lastSpeed;
+            if (ema < _lastSpeed) _declineSamples++;
+            else if (ema > _lastSpeed) _declineSamples = 0;
+            _lastSpeed = ema;
+        }
+
+        /// <summary>窗口峰值速度（字节/ms；窗口 = PacePeakWindowSamples 拍）。
+        /// 取次高值而非最高：开局瞬时突发（ramp-up 过冲/单次快读）会顶高阈值线，
+        /// 正常回落都够得着「<峰值×比例」→ 假触发；次高值只认持续 ≥2 拍的能力，突发拍被忽略。</summary>
+        public double PeakSpeed
+        {
+            get
+            {
+                var top = 0.0;
+                var second = 0.0;
+                for (var i = 0; i < _ringCount; i++)
+                {
+                    var v = _ring[i];
+                    if (v >= top) { second = top; top = v; }
+                    else if (v > second) second = v;
+                }
+                return _ringCount >= 2 ? second : top;
+            }
+        }
+
+        public double LastSpeed => _lastSpeed;
+        public int DeclineSamples => _declineSamples;
+        public int StableLeadTicks { get; private set; }
+
+        /// <summary>顶替稳定计数：陪跑源领先一拍 +1，落后归零</summary>
+        public void NoteStableLead() => StableLeadTicks++;
+        public void ResetStableLead() => StableLeadTicks = 0;
+
+        /// <summary>触发判定（收敛阶段、bytes&lt;total 时调用）：冷却 + 纯函数条件</summary>
+        public bool ShouldTrigger(long total, long leadBytes, long now)
+        {
+            if (!_opts.PaceEnabled) return false;
+            if (_triggeredAtMs != 0 && now - _triggeredAtMs < _opts.PaceCooldownMs) return false;
+            return ShouldTriggerPace(_opts, _lastSpeed, PeakSpeed, _declineSamples, total, total - leadBytes);
+        }
+
+        /// <summary>标记已触发：起冷却 + 清采样（陪跑入局后重新积累）</summary>
+        public void MarkTriggered(long now)
+        {
+            _triggeredAtMs = now;
+            ResetSampling();
+        }
+
+        public void ResetSampling()
+        {
+            _lastBytes = -1;
+            _lastPushTick = 0;
+            _lastSpeed = 0;
+            _declineSamples = 0;
+            _ringPos = 0;
+            _ringCount = 0;
+            StableLeadTicks = 0;
+        }
+
+        /// <summary>纯函数：连续下降样本达标 + 当前速度 &lt; 窗口次高值×比例 + 大文件/剩余量守卫</summary>
+        internal static bool ShouldTriggerPace(DownloadOptions opts, double curSpeed, double peakSpeed,
+            int declineSamples, long total, long remainBytes)
+            => declineSamples >= opts.PaceDeclineSamples
+               && peakSpeed > 0
+               && curSpeed < peakSpeed * opts.PaceDeclineRatio
+               && total >= opts.PaceMinTotalBytes
+               && remainBytes >= opts.PaceMinRemainBytes;
+
+        /// <summary>纯函数：陪跑源字节反超 + 稳定领先样本达标 + 旧赢家未进入收尾（bytes&lt;total 合并/校验中不顶替）</summary>
+        internal static bool ShouldTakeover(DownloadOptions opts, long paceBytes, long winnerBytes,
+            int stableLeadTicks, long total)
+            => paceBytes > winnerBytes
+               && stableLeadTicks >= opts.PaceStableLeadSamples
+               && winnerBytes < total;
+    }
+
+    /// <summary>
     /// 8-18 清理目标的全部中间产物：.tmp、.parts 目录、.race* 系列（本体/.tmp/.parts）。
     /// 永不动 destPath 本身——幂等检查（File.Exists(destPath)）依赖 destPath 存在的语义；
     /// 写入全走中间产物 + 原子 rename，destPath 不可能半截。终态失败时调用（不留垃圾文件）。
@@ -560,7 +849,7 @@ public sealed class DownloadService
     /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计</summary>
     private async Task DownloadFromSourceAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
     {
         // 黑科技 A：ghapi 占位 URL → GitHub API 换签名直链（null = 换链失败，快速失败不影响竞速）
         if (url.StartsWith(GitHubApiDirect.Scheme))
@@ -575,9 +864,9 @@ public sealed class DownloadService
         try
         {
             if (totalSize >= ChunkThreshold)
-                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, ct);
+                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, livePush, ct);
             else
-                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
+                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct);
             sw.Stop();
             _sourceStats.RecordSuccess(url, totalSize, sw.ElapsedMilliseconds);
         }
@@ -593,7 +882,7 @@ public sealed class DownloadService
     /// 不会出现「File.Exists 通过但内容半截」的 destPath。</summary>
     private async Task DownloadSingleAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
     {
         var tmp = destPath + ".tmp";
         var from = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
@@ -637,6 +926,7 @@ public sealed class DownloadService
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
                 await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 read += n;
+                livePush?.Invoke(read, Environment.TickCount64); // 逐读推拍（陪跑采样——绕开 250ms 上报节流量化）
                 // 8-22 补：剩余不足一片不判死（同分片路径——弃尾清零净亏，等流读完；total 未知时保持原判死行为）
                 if ((total <= 0 || total - read >= ChunkSizeFor(total)) && slowDetector.ShouldAbort(read, ct))
                     throw new SlowSourceException(_options.SlowSpeedBps, slowDetector.LastSpeed);
@@ -728,7 +1018,7 @@ public sealed class DownloadService
     /// → 合并 → 总长/SHA1 校验；整体失败回退单连接</summary>
     private async Task DownloadChunkedAsync(
         string url, string destPath, long totalSize, string? expectedSha1,
-        DownloadProgressHandler? progress, CancellationToken ct)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct)
     {
         try
         {
@@ -831,7 +1121,7 @@ public sealed class DownloadService
                     await gate.WaitAsync(slowCts.Token);
                     try
                     {
-                        await DownloadChunkAsync(url, partPath, start, end, slowCts.Token, cp, Path.GetFileName(destPath), totalSize, progress);
+                        await DownloadChunkAsync(url, partPath, start, end, slowCts.Token, cp, Path.GetFileName(destPath), totalSize, progress, livePush);
                         // 片完成即时上报（force：允许同值重复报，见 ReportOnce 注释）
                         ReportOnce(cp, Path.GetFileName(destPath), totalSize, progress, force: true);
                     }
@@ -903,7 +1193,7 @@ public sealed class DownloadService
             // AL29 H1：只清中间产物（.parts/.tmp），destPath 已有旧文件保持不动——新文件未验证不覆盖
             try { Directory.Delete(destPath + ".parts", true); } catch { }
             try { File.Delete(destPath + ".tmp"); } catch { }
-            await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, ct);
+            await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct);
         }
     }
 
@@ -1032,7 +1322,7 @@ public sealed class DownloadService
 
     private async Task DownloadChunkAsync(string url, string partPath, long start, long end, CancellationToken ct,
         ChunkProgress? cp = null, string? destName = null, long totalSize = 0,
-        DownloadProgressHandler? progress = null, int attempt = 0)
+        DownloadProgressHandler? progress = null, Action<long, long>? livePush = null, int attempt = 0)
     {
         try
         {
@@ -1066,21 +1356,23 @@ public sealed class DownloadService
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct);
                 await ThrottleStreamAsync(n, ct, throttle, _limitPerStream);
                 if (cp is not null && progress is not null)
-                    ReportChunkProgress(cp, n, destName!, totalSize, progress);
+                    ReportChunkProgress(cp, n, destName!, totalSize, progress, livePush);
             }
         }
         catch (OperationCanceledException) { throw; } // 取消不重试（探测取消/用户取消原样上抛——否则重试请求悬挂）
         catch when (attempt < 1)
         {
             // 单片瞬时失败重试 1 次
-            await DownloadChunkAsync(url, partPath, start, end, ct, cp, destName, totalSize, progress, attempt + 1);
+            await DownloadChunkAsync(url, partPath, start, end, ct, cp, destName, totalSize, progress, livePush, attempt + 1);
         }
     }
 
     /// <summary>分片进度节流上报：Interlocked 累加字节，CompareExchange 抢占 250ms 窗口（见 ChunkProgress 注释）</summary>
-    private static void ReportChunkProgress(ChunkProgress cp, int n, string destName, long totalSize, DownloadProgressHandler progress)
+    private static void ReportChunkProgress(ChunkProgress cp, int n, string destName, long totalSize,
+        DownloadProgressHandler progress, Action<long, long>? livePush)
     {
         Interlocked.Add(ref cp.Bytes, n);
+        livePush?.Invoke(cp.Bytes, Environment.TickCount64); // 逐读推拍（陪跑采样——绕开节流量化）
         var now = cp.Sw.ElapsedMilliseconds;
         var last = Interlocked.Read(ref cp.LastReportMs);
         if (now - last >= ChunkProgress.WindowMs

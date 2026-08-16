@@ -124,6 +124,28 @@ public class MirrorFallbackTests
     }
 
     [Fact]
+    public async Task ForgeMaven_OfficialSlow_MirrorWins()
+    {
+        // 8-14 修复：maven.minecraftforge.net 无镜像 → 单候选官方直连 37-81KB/s 判死失败
+        // （整合包 Forge 1.20.1-47.4.0 实机 45s 报错）。修复后应映射到 BMCLAPI /maven——
+        // 官方假死（500），镜像 200 秒成功。
+        var handler = new HostStubHandler();
+        handler.RouteBytes("maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.4.0/forge-1.20.1-47.4.0-installer.jar", 500, []);
+        handler.RouteBytes("bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/1.20.1-47.4.0/forge-1.20.1-47.4.0-installer.jar", 200, "forge"u8.ToArray());
+        var svc = CreateService(handler);
+        var dest = Path.Combine(Path.GetTempPath(), $"forge-{Guid.NewGuid():N}.jar");
+        try
+        {
+            var url = "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.4.0/forge-1.20.1-47.4.0-installer.jar";
+            await svc.DownloadFileAsync(url, dest, null, 5, null, CancellationToken.None);
+
+            Assert.Equal("forge"u8.ToArray(), File.ReadAllBytes(dest));
+            Assert.Contains(handler.Requests, r => r.Contains("bmclapi2.bangbang93.com/maven/net/minecraftforge"));
+        }
+        finally { if (File.Exists(dest)) File.Delete(dest); }
+    }
+
+    [Fact]
     public async Task NetworkUnreachable_AfterRetries_ReportsClearly()
     {
         var handler = new HostStubHandler();
