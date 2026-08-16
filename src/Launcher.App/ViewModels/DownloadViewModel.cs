@@ -20,6 +20,7 @@ public partial class DownloadViewModel : ViewModelBase
     private EcosystemViewModel? _modpacks;
     private EcosystemViewModel? _resourcepacks;
     private EcosystemViewModel? _shaders;
+    private EcosystemViewModel? _datapacks;
     private ThirdPartyDownloadViewModel? _thirdParty;
 
     public ObservableCollection<DownloadTask> Tasks => DownloadManager.Instance.Tasks;
@@ -116,6 +117,9 @@ public partial class DownloadViewModel : ViewModelBase
     public partial bool IsShaderTabSelected { get; set; }
 
     [ObservableProperty]
+    public partial bool IsDatapackTabSelected { get; set; }
+
+    [ObservableProperty]
     public partial bool IsThirdPartyTabSelected { get; set; }
 
     /// <summary>内容区 ContentControl 显示条件（queue 用常驻面板，其余走懒 ContentControl）</summary>
@@ -206,7 +210,7 @@ public partial class DownloadViewModel : ViewModelBase
     private async void PreloadTabs()
     {
         if (Interlocked.Exchange(ref _preloadStarted, 1) == 1) return;
-        var tabs = new[] { "mod", "modpack", "resourcepack", "shader" };
+        var tabs = new[] { "mod", "modpack", "resourcepack", "shader", "datapack" };
         for (var i = 0; i < tabs.Length; i++)
         {
             await Task.Delay(300 * (i + 1));
@@ -223,6 +227,7 @@ public partial class DownloadViewModel : ViewModelBase
         IsModpackTabSelected = tab == "modpack";
         IsResourcepackTabSelected = tab == "resourcepack";
         IsShaderTabSelected = tab == "shader";
+        IsDatapackTabSelected = tab == "datapack";
         IsThirdPartyTabSelected = tab == "thirdparty";
         if (tab != "queue")
         {
@@ -239,6 +244,7 @@ public partial class DownloadViewModel : ViewModelBase
         "modpack" => _modpacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Modpack), e => e.InitializeAsync()),
         "resourcepack" => _resourcepacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Resourcepack), e => e.InitializeAsync()),
         "shader" => _shaders ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Shader), e => e.InitializeAsync()),
+        "datapack" => _datapacks ??= CreateAndLoad(new EcosystemViewModel(ProjectType.Datapack), e => e.InitializeAsync()),
         "thirdparty" => _thirdParty ??= new ThirdPartyDownloadViewModel(),
         _ => throw new ArgumentOutOfRangeException(nameof(tab)),
     };
@@ -265,6 +271,7 @@ public partial class DownloadViewModel : ViewModelBase
         ProjectType.Modpack => "modpack",
         ProjectType.Resourcepack => "resourcepack",
         ProjectType.Shader => "shader",
+        ProjectType.Datapack => "datapack",
         _ => "mod",
     };
 

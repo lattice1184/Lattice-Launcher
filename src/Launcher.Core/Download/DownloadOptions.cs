@@ -61,6 +61,41 @@ public sealed class DownloadOptions
     /// </summary>
     public long RaceWatchdogStallMs { get; init; } = 30000;
 
+    // ---------- 陪跑（Pace Runner，批次 41）：赢家降速时后台提前重赛、新源顶替 ----------
+
+    /// <summary>陪跑总开关（false = 零行为变化，回滚保险）</summary>
+    public bool PaceEnabled { get; init; } = true;
+
+    /// <summary>陪跑源数（同时决定 RaceProgress/采样数组扩容大小与陪跑 idx 分配——改动须同步主循环两处）</summary>
+    public int PaceMaxSources { get; init; } = 2;
+
+    /// <summary>监督采样节拍（毫秒；测试注入 100ms 加速）</summary>
+    public long PaceProbeIntervalMs { get; init; } = 1000;
+
+    /// <summary>触发所需连续下降样本数（×节拍 = 连续下降秒数，默认 5s）</summary>
+    public int PaceDeclineSamples { get; init; } = 5;
+
+    /// <summary>窗口峰值样本数（×节拍 = 峰值窗口，默认 30s）</summary>
+    public int PacePeakWindowSamples { get; init; } = 30;
+
+    /// <summary>触发速度比：当前速度 &lt; 窗口次高值 × 此值才可触发（次高值防开局突发抬线；防稳定源抖动误触）</summary>
+    public double PaceDeclineRatio { get; init; } = 0.5;
+
+    /// <summary>顶替所需稳定领先样本数（×节拍 = 稳定领先秒数，默认 3s）</summary>
+    public int PaceStableLeadSamples { get; init; } = 3;
+
+    /// <summary>大文件门槛（小于此值不陪跑——小文件来不及降速就下完了）</summary>
+    public long PaceMinTotalBytes { get; init; } = 50L * 1024 * 1024;
+
+    /// <summary>剩余量守卫（剩余不足此值不触发——99% 收尾不折腾）</summary>
+    public long PaceMinRemainBytes { get; init; } = 8L * 1024 * 1024;
+
+    /// <summary>触发冷却（毫秒；防假触发后立即重复开赛）</summary>
+    public long PaceCooldownMs { get; init; } = 30000;
+
+    /// <summary>触发后淘汰评估宽限（毫秒；新入局的陪跑源免遭 eta 外推秒杀）</summary>
+    public long PaceEliminateGraceMs { get; init; } = 10000;
+
     /// <summary>源死亡判定：采样间隔（毫秒）</summary>
     public long SlowProbeMs { get; init; } = 5000;
 

@@ -418,7 +418,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
         CanInstall = false;
         InstallButtonText = "取消";
         Progress = 0;
-        ProgressState = "准备中…";
+        // 8-16 批次 53：版本信息查询（api.modrinth.com 国内 8.6s/次）期间明示耗时——避免「卡住」错觉
+        ProgressState = "正在获取版本信息…（网络较慢时可能需要一些时间）";
 
         if (_card.Source == "curseforge")
         {

@@ -173,6 +173,8 @@
                     Command="{Binding SelectTabCommand}" CommandParameter="resourcepack"/>
             <Button Content="光影包" Classes="tab" Classes.active="{Binding IsShaderTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="shader"/>
+            <Button Content="数据包" Classes="tab" Classes.active="{Binding IsDatapackTabSelected}"
+                    Command="{Binding SelectTabCommand}" CommandParameter="datapack"/>
             <Button Content="第三方文件" Classes="tab" Classes.active="{Binding IsThirdPartyTabSelected}"
                     Command="{Binding SelectTabCommand}" CommandParameter="thirdparty"/>
             <Button Content="下载记录" Classes="tab" Classes.active="{Binding IsQueueTabSelected}"

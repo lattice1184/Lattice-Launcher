@@ -20,15 +20,19 @@ public sealed class EcosystemService
     private readonly DownloadService _downloads;
     private readonly string _gameDirectory;
     private readonly McmodSearchService _mcmod;
+    private readonly string _cacheDir;
 
     public EcosystemService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
-        McmodSearchService? mcmod = null)
+        McmodSearchService? mcmod = null, string? cacheDir = null)
     {
         _http = http ?? HttpClientPool.Create();
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _mcmod = mcmod ?? new McmodSearchService();
+        // 8-16 批次 53：缓存目录可注入（测试隔离——磁盘缓存跨测试共享会污染请求计数断言）
+        _cacheDir = cacheDir ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
     }
 
     /// <summary>
@@ -86,11 +90,9 @@ public sealed class EcosystemService
     /// <summary>搜索响应磁盘缓存（5 分钟 TTL）：切页/重复搜索不重复打 API——模组页首屏慢的元凶之一</summary>
     private async Task<T?> GetJsonAsyncCached<T>(string url, CancellationToken ct) where T : class
     {
-        var cacheDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
         var key = "eco-" + Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..16];
-        var cachePath = Path.Combine(cacheDir, key + ".json");
+        var cachePath = Path.Combine(_cacheDir, key + ".json");
         try
         {
             if (File.Exists(cachePath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < TimeSpan.FromMinutes(5))
@@ -102,7 +104,7 @@ public sealed class EcosystemService
         {
             try
             {
-                Directory.CreateDirectory(cacheDir);
+                Directory.CreateDirectory(_cacheDir);
                 await File.WriteAllTextAsync(cachePath, JsonSerializer.Serialize(result), ct);
             }
             catch { /* 缓存写入失败不影响结果 */ }
@@ -110,9 +112,9 @@ public sealed class EcosystemService
         return result;
     }
 
-    /// <summary>项目详情</summary>
+    /// <summary>项目详情（8-16 批次 53：走 5 分钟磁盘缓存——依赖名前查询/详情页重复打开不再重复打 API）</summary>
     public Task<ModrinthProjectDetail?> GetProjectAsync(string projectIdOrSlug, CancellationToken ct = default)
-        => GetJsonAsync<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ct);
+        => GetJsonAsyncCached<ModrinthProjectDetail>($"{ApiBase}/project/{projectIdOrSlug}", ct);
 
     /// <summary>匹配最新可用版本（按游戏版本+加载器过滤后取最新）</summary>
     public async Task<ModrinthVersion?> FindBestVersionAsync(
@@ -143,7 +145,9 @@ public sealed class EcosystemService
             query.Add($"loaders={Uri.EscapeDataString(JsonSerializer.Serialize(new[] { loader }))}");
         var url = $"{ApiBase}/project/{projectId}/version"
                   + (query.Count > 0 ? "?" + string.Join("&", query) : "");
-        var list = await GetJsonAsync<List<ModrinthVersion>>(url, ct);
+        // 8-16 批次 53：版本列表走 5 分钟缓存——安装流程主文件/依赖/手动选择会重复查同一版本列表
+        // （api.modrinth.com 国内直连实测 8.6s/次，缓存后重复查询秒回）
+        var list = await GetJsonAsyncCached<List<ModrinthVersion>>(url, ct);
         return list ?? [];
     }
 
@@ -183,20 +187,35 @@ public sealed class EcosystemService
         };
         var result = resolver.Resolve(request);
 
-        // 依赖显示名：项目标题 + 一句话说明（用户能看懂装的是什么——如 AANobbMI 是 Iris 的渲染 API 库）
-        var names = new List<string>();
+        // 依赖显示名：项目标题 + 一句话说明（用户能看懂装的是什么——如 AANobbMI 是 Iris 的渲染 API 库）。
+        // 8-16 批次 53：串行 → 并行（门 4）——api.modrinth.com 国内 8.6s/次，串行 5 个依赖 = 43s 干等
+        var names = new List<string>(result.ToInstall.Count);
+        var lockObj = new object();
+        using var gate = new SemaphoreSlim(4);
+        var tasks = new List<Task>();
         foreach (var dep in result.ToInstall.Take(5))
         {
-            try
+            tasks.Add(Task.Run(async () =>
             {
-                var detail = await GetProjectAsync(dep.ProjectId, ct);
-                if (detail is null) { names.Add(dep.ProjectId); continue; }
-                var hint = detail.Description;
-                if (hint is { Length: > 28 }) hint = hint[..28] + "…";
-                names.Add(string.IsNullOrEmpty(hint) ? detail.Title : $"{detail.Title}——{hint}");
-            }
-            catch { names.Add(dep.ProjectId); }
+                await gate.WaitAsync(ct);
+                try
+                {
+                    var detail = await GetProjectAsync(dep.ProjectId, ct);
+                    string label;
+                    if (detail is null) { label = dep.ProjectId; }
+                    else
+                    {
+                        var hint = detail.Description;
+                        if (hint is { Length: > 28 }) hint = hint[..28] + "…";
+                        label = string.IsNullOrEmpty(hint) ? detail.Title : $"{detail.Title}——{hint}";
+                    }
+                    lock (lockObj) names.Add(label);
+                }
+                catch { lock (lockObj) names.Add(dep.ProjectId); }
+                finally { gate.Release(); }
+            }, ct));
         }
+        await Task.WhenAll(tasks);
         return names;
     }
 
@@ -315,12 +334,14 @@ public sealed class EcosystemService
         _ => "mod",
     };
 
-    /// <summary>安装子目录；整合包返回 null（走 downloads/modpacks）</summary>
+    /// <summary>安装子目录；整合包返回 null（走 downloads/modpacks）。
+    /// 8-16 批次 54：数据包 → datapacks（1.13+ 全局数据包目录，所有世界生效）</summary>
     public static string? ResolveSubDir(ProjectType type) => type switch
     {
         ProjectType.Mod => "mods",
         ProjectType.Resourcepack => "resourcepacks",
         ProjectType.Shader => "shaderpacks",
+        ProjectType.Datapack => "datapacks",
         _ => null,
     };
 
