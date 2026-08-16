@@ -447,7 +447,8 @@ public partial class EcosystemViewModel : ViewModelBase
             : _eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
                 limit: PageSize, offset: CurrentPage * PageSize, ct);
-        var cfTask = _cf.IsEnabled
+        // 8-22 中文 query + 「全部」：CF 英文索引必 0 命中——直接跳过不白等（快一倍，且不误导）
+        var cfTask = !isChinese && _cf.IsEnabled
             ? TryCfSearchAsync(() => _cf.SearchAsync(_type, Query, gameVersion, sort, PageSize, CurrentPage * PageSize, ct))
             : Task.FromResult<CurseForgeSearchPage?>(null);
         string? mrErr = null, cfErr = null;
