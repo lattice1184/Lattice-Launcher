@@ -25,8 +25,36 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 
 # 2) 发布函数：publish → 取 exe → 移动到 发布\ 对应名字（跑两遍：自包含 + 轻量版）
+function Inject-BundledCfKey {
+    # 构建注入内置 CF key（PCL/HMCL 式：key 不进源码仓库，发布时从环境变量注入混淆值覆盖生成文件）
+    # 设 LATTICE_CF_KEY 才注入；否则生成空占位（用户自填 key 或走官网跳转平替）。
+    $genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
+    $cfKey = $env:LATTICE_CF_KEY
+    $obf = ""
+    if ($cfKey) {
+        $chars = $cfKey.ToCharArray() | ForEach-Object { [char]([int]$_ + 7) }
+        $obf = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($chars -join '')))
+    }
+    $content = @"
+namespace Launcher.Core.Services;
+
+/// <summary>构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）</summary>
+internal static class BundledCfKeyGen
+{
+    public const string Obfuscated = "$obf";
+}
+"@
+    [System.IO.File]::WriteAllText($genFile, $content, [System.Text.Encoding]::UTF8)
+    if ($cfKey) {
+        Write-Host "[cf-key] 已注入内置 CF key（来自 LATTICE_CF_KEY）" -ForegroundColor Green
+    } else {
+        Write-Host "[cf-key] 未设 LATTICE_CF_KEY → 内置 key 为空（用户自填 / 官网跳转平替）" -ForegroundColor DarkGray
+    }
+}
+
 function Publish-One([string]$finalName, [switch]$SelfContained) {
     $stage = Join-Path $out "stage"
+    Inject-BundledCfKey
     & dotnet publish (Join-Path $root "src/Launcher.App") `
         -c Release -r win-x64 --self-contained $SelfContained `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `

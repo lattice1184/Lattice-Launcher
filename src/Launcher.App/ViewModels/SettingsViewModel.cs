@@ -70,6 +70,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string JavaPathText { get; set; } = "";
 
+    /// <summary>8-16 LittleSkin OAuth client_id（皮肤库设备码流必需；留空连接时引导创建应用）</summary>
+    [ObservableProperty]
+    public partial string LittleSkinClientId { get; set; } = "";
+
     [ObservableProperty]
     public partial string ExtraJvmArgsText { get; set; } = "";
 
@@ -201,6 +205,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string CurseForgeCdnPrefixText { get; set; } = "";
 
+    /// <summary>8-16 批次 52 CF API 地址覆盖（空 = 官方；填代理地址绕开直连抖动）</summary>
+    [ObservableProperty]
+    public partial string CurseForgeApiBaseText { get; set; } = "";
+
     // ---------- 外观 ----------
 
     /// <summary>窗口透明度（0.7-1.0）</summary>
@@ -209,7 +217,7 @@ public partial class SettingsViewModel : ViewModelBase
 
     /// <summary>当前强调色（#RRGGBB）</summary>
     [ObservableProperty]
-    public partial string AccentColor { get; set; } = "#2DD4BF";
+    public partial string AccentColor { get; set; } = "#6C8CFF";
 
     /// <summary>背景色（#RRGGBB 或 #AARRGGBB，含 alpha 透明；预览不写盘）</summary>
     [ObservableProperty]
@@ -260,7 +268,7 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>预设强调色（圆点+名字；非预设颜色动态插入「自定义 #HEX」项）</summary>
     public static IReadOnlyList<AccentPresetVM> AccentPresets { get; } =
     [
-        new("青绿", "#2DD4BF"),
+        new("靛蓝", "#6C8CFF"),
         new("蓝", "#3B82F6"),
         new("紫", "#8B5CF6"),
         new("琥珀", "#F59E0B"),
@@ -293,6 +301,7 @@ public partial class SettingsViewModel : ViewModelBase
             ?? MemoryPresets[^1]; // 非预设值 → 自定义
         MemoryCustomText = s.MemoryMb > 0 ? s.MemoryMb.ToString() : "";
         JavaPathText = s.JavaPath ?? "";
+        LittleSkinClientId = s.LittleSkinClientId ?? "";
         ExtraJvmArgsText = s.ExtraJvmArgs ?? "";
         AutoChineseEnabled = s.AutoChineseEnabled;
         EcoFollowInstance = s.EcoFollowInstance;
@@ -305,6 +314,7 @@ public partial class SettingsViewModel : ViewModelBase
         ChunkCount = s.ChunkCount > 0 ? s.ChunkCount : (int)s.DownloadTier; // 老用户继承当前档位，新装默认 8
         // CF key 不回显（PasswordBox 留空）；设置里的值是 DPAPI 密文，状态区显示验证结果
         CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
+        CurseForgeApiBaseText = s.CurseForgeApiBase ?? "";
         WindowOpacity = s.WindowOpacity;
         DensityIndex = (int)s.Density;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
@@ -348,6 +358,7 @@ public partial class SettingsViewModel : ViewModelBase
         var s = LauncherSettings.Current;
         s.VersionIsolation = VersionIsolation;
         s.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
+        s.LittleSkinClientId = LittleSkinClientId.Trim(); // Save 内 DPAPI 加密落盘
         s.ExtraJvmArgs = string.IsNullOrWhiteSpace(ExtraJvmArgsText) ? null : ExtraJvmArgsText.Trim();
         s.AutoChineseEnabled = AutoChineseEnabled;
         s.EcoFollowInstance = EcoFollowInstance;
@@ -359,6 +370,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.ChunkCount = ChunkCount;
         s.CurseForgeCdnPrefix = CurseForgeCdnPrefixText.Trim();
+        s.CurseForgeApiBase = CurseForgeApiBaseText.Trim();
         // CF key：仅输入框有非空内容才覆盖（留空 = 保留现有 key，防误清空）；Save 内 DPAPI 加密落盘
         if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyInput))
         {
@@ -423,6 +435,9 @@ public partial class SettingsViewModel : ViewModelBase
     partial void OnChunkCountChanged(int value) => DebouncedSave(); // 滑块拖动防抖写盘
     partial void OnCurseForgeCdnPrefixTextChanged(string value) => Save();
 
+    /// <summary>8-16 CF API 地址覆盖：变更即落盘（ToApiBase 动态读设置，即时生效）</summary>
+    partial void OnCurseForgeApiBaseTextChanged(string value) => Save();
+
     // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
     partial void OnWindowOpacityChanged(double value) => PreviewChanged?.Invoke();
     partial void OnAccentColorChanged(string value) => PreviewChanged?.Invoke();
@@ -475,7 +490,7 @@ public partial class SettingsViewModel : ViewModelBase
         NotificationService.Success("外观已保存并应用");
     }
 
-    /// <summary>重置外观（恢复默认：0.9 / 青绿 / 标准 / 无背景）</summary>
+    /// <summary>重置外观（恢复默认：0.9 / 靛蓝 / 标准 / 无背景）</summary>
     [RelayCommand]
     private async Task ResetAppearance()
     {
@@ -486,7 +501,7 @@ public partial class SettingsViewModel : ViewModelBase
             return;
         }
         WindowOpacity = 0.9;
-        AccentColor = "#2DD4BF";
+        AccentColor = "#6C8CFF";
         BackgroundColor = BackgroundPaletteMath.DefaultBackground;
         BackgroundColorValue = Avalonia.Media.Color.Parse(BackgroundColor); // 同步 ColorPicker
         DensityIndex = 1; // 默认标准（AL7：不再默认紧凑缩小 10%）

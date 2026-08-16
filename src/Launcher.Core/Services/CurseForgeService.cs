@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using Launcher.Core.Download;
@@ -33,6 +34,19 @@ public sealed class CurseForgeService
     private string? EffectiveKey() =>
         _apiKeyOverride is not null ? _apiKeyOverride : ResolveApiKey();
 
+    /// <summary>8-16 检查结果日志（%AppData%\Launcher\logs\cf-check.log；只记状态/长度/异常，绝不记 key 内容）</summary>
+    private static void LogCfCheck(string message)
+    {
+        try
+        {
+            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "cf-check.log"),
+                $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+        }
+        catch { /* 日志失败不阻塞 */ }
+    }
+
     public CurseForgeService(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
         string? apiBase = null)
         : this(null, http, downloads, gameDirectory, apiBase) // null = 动态读设置/环境变量
@@ -45,18 +59,28 @@ public sealed class CurseForgeService
     {
         _apiKeyOverride = apiKey;
         _apiBase = apiBase ?? ApiBase;
-        _http = http ?? HttpClientPool.Create();
+        // 8-16 修复「检查 Key 超时」：共享池默认 HTTP/2，api.curseforge.com（CloudFront）的 h2 协商
+        // 在国内网络实测挂起（15s 超时；HTTP/1.1 直连 0.4s 200）——CF 强制 HTTP/1.1，连接池照复用
+        _http = http ?? new HttpClient(HttpClientPool.SharedHandler)
+        {
+            Timeout = TimeSpan.FromSeconds(15),
+            DefaultRequestVersion = HttpVersion.Version11,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+        };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
     }
 
-    /// <summary>Key 解析：设置页优先，回退环境变量；空 = 禁用</summary>
+    /// <summary>Key 解析：设置页优先（DPAPI 落盘），回退环境变量，最后内置混淆 key（开箱即用兜底）。
+    /// 三级隔离：用户自填 key 即使被内置 key 牵连也不受影响（各自独立）。空 = 禁用。</summary>
     public static string? ResolveApiKey(LauncherSettings? s = null)
     {
         var fromSettings = (s ?? LauncherSettings.Current).CurseForgeApiKey;
         if (!string.IsNullOrWhiteSpace(fromSettings)) return fromSettings.Trim();
-        return Environment.GetEnvironmentVariable("CURSEFORGE_API_KEY");
+        var fromEnv = Environment.GetEnvironmentVariable("CURSEFORGE_API_KEY");
+        if (!string.IsNullOrWhiteSpace(fromEnv)) return fromEnv.Trim();
+        return BundledCfKey.Decode();
     }
 
     /// <summary>排序方式（CF sortField 为 1 基：1=Featured 2=Popularity 3=LastUpdated 6=TotalDownloads 11=ReleasedDate）</summary>
@@ -70,12 +94,14 @@ public sealed class CurseForgeService
         _ => 1,                     // Featured ≈ 相关度
     };
 
-    /// <summary>类型 → CF classId（mod=6 / modpack=4471 / resourcepack=12 / shader=6552）</summary>
+    /// <summary>类型 → CF classId（mod=6 / modpack=4471 / resourcepack=12 / shader=6552）。
+    /// 8-16 批次 54：Datapack → 0（CF 无数据包分类，UI 层已屏蔽 CF 源；兜底搜空防误当 mod）</summary>
     public static int ClassIdFor(ProjectType type) => type switch
     {
         ProjectType.Modpack => 4471,
         ProjectType.Resourcepack => 12,
         ProjectType.Shader => 6552,
+        ProjectType.Datapack => 0,
         _ => 6,
     };
 
@@ -135,13 +161,16 @@ public sealed class CurseForgeService
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("x-api-key", EffectiveKey());
             using var resp = await _http.SendAsync(req, ct);
-            if (resp.IsSuccessStatusCode) return (true, "Key 有效");
+            if (resp.IsSuccessStatusCode) { LogCfCheck($"通过（HTTP {(int)resp.StatusCode}）"); return (true, "Key 有效"); }
             var code = (int)resp.StatusCode;
+            LogCfCheck($"拒绝（HTTP {code}，key 长度 {EffectiveKey()?.Length ?? 0}）");
             return (false, code is 401 or 403 ? $"Key 无效（HTTP {code}）" : $"验证失败（HTTP {code}）");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            return (false, "无法连接 CurseForge API，稍后再试");
+            // 8-16 诊断版：带具体异常（超时/DNS/TLS 一眼可辨），排查「连不上」时别吞细节
+            LogCfCheck($"异常（{ex.GetType().Name}: {ex.Message}）");
+            return (false, $"无法连接 CurseForge API（{ex.GetType().Name}: {ex.Message}）");
         }
     }
 
@@ -387,8 +416,19 @@ public sealed class CurseForgeService
         public int CfStatusCode { get; } = cfStatusCode;
     }
 
-    /// <summary>把静态 BuildSearchUrl 生成的官方地址切到实例 base（代理模式指向本地代理；直连模式原样）</summary>
-    private string ToApiBase(string url) => _apiBase == ApiBase ? url : _apiBase + url[ApiBase.Length..];
+    /// <summary>
+    /// 把静态 BuildSearchUrl 生成的官方地址切到目标 base（8-16 批次 52 三级优先）：
+    /// ① 构造显式注入 apiBase（测试/嵌入场景）→ ② 设置页「CF API 地址覆盖」→ ③ 官方原样。
+    /// 设置覆盖动态读取——改设置即时生效，无需重启。
+    /// </summary>
+    private string ToApiBase(string url)
+    {
+        if (_apiBase != ApiBase) return _apiBase + url[ApiBase.Length..]; // 显式注入优先
+        var overridden = LauncherSettings.Current.CurseForgeApiBase;
+        if (!string.IsNullOrWhiteSpace(overridden))
+            return overridden.TrimEnd('/') + url[ApiBase.Length..];
+        return url;
+    }
 
     // ---------- 静态工具（离线可单测） ----------
 

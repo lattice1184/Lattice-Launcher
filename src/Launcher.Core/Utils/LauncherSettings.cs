@@ -88,6 +88,12 @@ public sealed class LauncherSettings
     /// DPAPI 加密落盘——「藏」的第一层（防 grep 挖二进制级防护）。</summary>
     public string MicrosoftClientId { get; set; } = "";
 
+    /// <summary>LittleSkin OAuth 应用 client_id（8-16 批次 51 皮肤库：设备码流必需，无官方公共值，用户自建）</summary>
+    public string LittleSkinClientId { get; set; } = "";
+
+    /// <summary>8-16 批次 52 CF API 地址覆盖（空 = 官方 api.curseforge.com；填自建代理如 Cloudflare Worker 绕开直连抖动）</summary>
+    public string CurseForgeApiBase { get; set; } = "";
+
     /// <summary>CurseForge 文件 CDN 镜像前缀（空 = 官方 edge.forgecdn.net 直连；可填镜像/代理根地址）</summary>
     public string CurseForgeCdnPrefix { get; set; } = "";
 
@@ -99,8 +105,8 @@ public sealed class LauncherSettings
     /// <summary>窗口透明度（0.7-1.0；1.0 = 不透明）</summary>
     public double WindowOpacity { get; set; } = 0.9;
 
-    /// <summary>强调色（#RRGGBB；空 = 默认青绿）</summary>
-    public string AccentColor { get; set; } = "#2DD4BF";
+    /// <summary>强调色（#RRGGBB；空 = 默认靛蓝）</summary>
+    public string AccentColor { get; set; } = "#6C8CFF";
 
     /// <summary>背景色（#RRGGBB 或 #AARRGGBB，alpha 参与透明；空 = 默认 #B81D222C）</summary>
     public string? BackgroundColor { get; set; }
@@ -138,6 +144,7 @@ public sealed class LauncherSettings
                     s.CurseForgeApiKey = Secrets.Read(s.CurseForgeApiKey) ?? "";
                     s.GitHubApiToken = Secrets.Read(s.GitHubApiToken) ?? "";
                     s.MicrosoftClientId = Secrets.Read(s.MicrosoftClientId) ?? "";
+                    s.LittleSkinClientId = Secrets.Read(s.LittleSkinClientId) ?? "";
                     return s;
                 }
             }
@@ -154,9 +161,11 @@ public sealed class LauncherSettings
             var plain = CurseForgeApiKey;
             var plainGit = GitHubApiToken;
             var plainMs = MicrosoftClientId;
+            var plainLs = LittleSkinClientId;
             CurseForgeApiKey = Secrets.Protect(plain); // 落盘加密（DPAPI）
             GitHubApiToken = Secrets.Protect(plainGit);
             MicrosoftClientId = Secrets.Protect(plainMs);
+            LittleSkinClientId = Secrets.Protect(plainLs);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -167,6 +176,7 @@ public sealed class LauncherSettings
                 CurseForgeApiKey = plain; // 内存保持明文，其他调用方不受影响
                 GitHubApiToken = plainGit;
                 MicrosoftClientId = plainMs;
+                LittleSkinClientId = plainLs;
             }
         }
         catch { /* 保存失败不阻塞 */ }

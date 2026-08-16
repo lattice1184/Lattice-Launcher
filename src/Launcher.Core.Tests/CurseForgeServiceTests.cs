@@ -495,4 +495,18 @@ public class CurseForgeServiceTests
         Assert.Single(handler.RequestUrls); // 恰 1 请求
     }
 
+    /// <summary>8-14 内置 key 混淆往返：Encode → Decode 必须还原明文（填 BundledCfKey 时靠此验证）；
+    /// 空槽位/空串返回 null（不伪造 key 触发 401）</summary>
+    [Fact]
+    public void BundledCfKey_RoundTrips_Obfuscation()
+    {
+        const string key = "$2a$10$abcdefghijklmnopqrstuv";
+        var obf = BundledCfKey.EncodeForBundling(key);
+        Assert.NotNull(obf);
+        Assert.NotEqual(key, obf);                                  // 混淆后不落明文
+        Assert.Equal(key, BundledCfKey.Decode(obf)); // 解码还原
+        Assert.Null(BundledCfKey.Decode(""));     // 空槽位 = 禁用，不伪造
+        Assert.Null(BundledCfKey.Decode("@@invalid@@"));
+    }
+
 }

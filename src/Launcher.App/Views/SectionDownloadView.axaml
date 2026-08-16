@@ -88,9 +88,10 @@
                     <Path Data="M10,10 L20,20 M20,10 L10,20" Stroke="White" StrokeThickness="3"
                           StrokeLineCap="Round"/>
                 </Border>
-                <TextBlock Text="{Binding CurseForgeApiKeyStatus}" FontSize="11"
-                           Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
-                           TextWrapping="Wrap"/>
+                <!-- 8-16 可选中复制（错误/状态文字统一可选中，Ctrl+C 带走） -->
+                <SelectableTextBlock Text="{Binding CurseForgeApiKeyStatus}" FontSize="11"
+                                     Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"
+                                     TextWrapping="Wrap"/>
             </StackPanel>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
                 <TextBlock Text="CF 文件加速前缀" Classes="setting-label" VerticalAlignment="Center"/>
@@ -98,6 +99,15 @@
                          Watermark="如 https://mirror.example.com"/>
                 <Path Grid.Column="2" Classes="help-hint"
                            ToolTip.Tip="填镜像地址替换官方下载前缀。留空走官方 CDN"
+                           VerticalAlignment="Center"/>
+            </Grid>
+            <!-- 8-16 批次 52：CF API 地址覆盖（代理绕开直连抖动；动态读设置即时生效） -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="CF API 地址覆盖" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding CurseForgeApiBaseText}"
+                         Watermark="留空 = 官方 api.curseforge.com" FontFamily="Consolas" FontSize="12"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="填你自己的代理地址（如 Cloudflare Worker，教程见 docs/cf-proxy.md）可绕开官方直连抖动。留空走官方。改完即生效"
                            VerticalAlignment="Center"/>
             </Grid>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
