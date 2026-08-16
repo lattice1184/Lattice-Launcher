@@ -38,6 +38,30 @@ public class McmodSearchServiceTests
         Assert.Equal("钠 (Sodium)", entries[0].Title); // <em> 已剥
     }
 
+    [Theory]
+    // 8-22 PCL 式别名直搜：中文 query 命中映射 → 直接精准 slug
+    [InlineData("钠", "sodium")]
+    [InlineData("钠 1.21", "sodium")]     // query 含别名键
+    [InlineData("简单语音", "simple-voice-chat")]
+    [InlineData("没有这个词的模组", null)] // 无命中 → 空
+    public void ModAliasTable_Resolve_HitsKnownSlugs(string query, string? expectedSlug)
+    {
+        var slugs = ModAliasTable.Resolve(query);
+        if (expectedSlug is null)
+            Assert.Empty(slugs);
+        else
+            Assert.Contains(expectedSlug, slugs);
+    }
+
+    [Fact]
+    public void ModAliasTable_Resolve_LongestMatchWins()
+    {
+        // 「钠扩展」必须命中 sodium-extra 而不是钠→sodium（最长匹配优先）
+        var slugs = ModAliasTable.Resolve("钠扩展");
+        Assert.Contains("sodium-extra", slugs);
+        Assert.DoesNotContain("sodium", slugs);
+    }
+
     [Fact]
     public void DecodeModrinthSlug_ExtractsSlugFromBase64Link()
     {

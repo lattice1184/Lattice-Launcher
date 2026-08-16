@@ -36,13 +36,15 @@ public static class ImageLoader
             var bitmap = decodeWidth <= 96
                 ? await task
                 : await DownloadAsync(url, decodeWidth); // 大图单独解码（不污染小图缓存）
-            onLoaded(bitmap);
+            // 8-22 回调封送 UI 线程：解码/下载在后台，直接回调 = 线程池触发绑定更新——
+            // 搜索后 20 张图标同时完成 → Avalonia UI 线程排队风暴（「搜索时明显变卡」主因）
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(bitmap));
         }
         catch
         {
             // 失败也缓存 null：切 tab 反复重建视图时不再重复请求坏图（秒切换的关键）
             Cache[url] = Task.FromResult<Bitmap?>(null);
-            onLoaded(null);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(null));
         }
     }
 

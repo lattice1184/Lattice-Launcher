@@ -100,3 +100,63 @@ public sealed class McmodSearchService
         return query.Any(c => (uint)c is >= 0x4E00 and <= 0x9FFF);
     }
 }
+
+/// <summary>
+/// 常见模组中英别名表（8-22，PCL 式精准搜索）：中文查询命中内置映射 → 直接查 Modrinth slug
+/// （缓存秒回）——「钠」直接出 Sodium 本体，不依赖 MC百科解析（<em> 高亮/无外链都绕开了）。
+/// 只收录 Modrinth 上存在的项目（OptiFine 等无 Modrinth 的不收——避免 404）。
+/// </summary>
+public static class ModAliasTable
+{
+    /// <summary>中文名 → Modrinth slug（多义时多条：如「小地图」→ Xaero 两个）</summary>
+    private static readonly Dictionary<string, string[]> Map = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["钠"] = ["sodium"],
+        ["钠扩展"] = ["sodium-extra"],
+        ["虹吸"] = ["iris"],
+        ["简单语音"] = ["simple-voice-chat"],
+        ["旅行地图"] = ["journeymap"],
+        ["小地图"] = ["xaeros-minimap", "xaeros-world-map"],
+        ["世界地图"] = ["xaeros-world-map"],
+        ["苹果皮"] = ["appleskin"],
+        ["动态fps"] = ["dynamic-fps"],
+        ["帕秋莉"] = ["patchouli"],
+        ["玉"] = ["jade"],
+        ["连锁采集"] = ["vein-miner"],
+        ["一键整理"] = ["inventory-sorter"],
+        ["鼠标手势"] = ["mouse-tweaks"],
+        ["铁氧体"] = ["ferrite-core"],
+        ["锂"] = ["lithium"],
+        ["磷"] = ["phosphor"],
+        ["懒加载语言"] = ["lazy-language-loader"],
+        ["模组菜单"] = ["modmenu"],
+        ["布匹配置"] = ["cloth-config"],
+    };
+
+    /// <summary>中文 query → 命中的别名 slug 列表（最长匹配优先；无命中空）。「钠扩展」命中扩展不命中「钠」。</summary>
+    public static IReadOnlyList<string> Resolve(string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return [];
+        var best = "";
+        var result = new List<string>();
+        foreach (var (key, slugs) in Map)
+        {
+            if (query.Contains(key, StringComparison.OrdinalIgnoreCase) && key.Length > best.Length)
+            {
+                best = key;
+                result = [.. slugs];
+            }
+        }
+        return result;
+    }
+
+    /// <summary>命中时显示的中文标题（取命中的键——「钠」→「钠 (Sodium)」）</summary>
+    public static string TitleFor(string? query, string slug)
+    {
+        foreach (var (key, slugs) in Map)
+            if (slugs.Contains(slug, StringComparer.OrdinalIgnoreCase)
+                && query?.Contains(key, StringComparison.OrdinalIgnoreCase) == true)
+                return $"{key} ({slug})";
+        return slug;
+    }
+}
