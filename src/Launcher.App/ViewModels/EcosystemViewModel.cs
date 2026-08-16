@@ -342,6 +342,10 @@ public partial class EcosystemViewModel : ViewModelBase
         // 期间不清的话，屏上整页还是上一次（如 Modrinth）的结果，用户误以为「筛选 CurseForge 出 M 网」。
         // 翻页（reset=false）不清——分页需要保留当前页直到新页返回
         if (reset) Cards.Clear();
+        // 8-22 搜索中状态明示（中文链路走 MC百科 2-10s——不提示用户以为死了）
+        Status = McmodSearchService.ContainsChinese(Query)
+            ? "正在通过 MC百科搜索中文结果（较慢，请稍候）…"
+            : "正在搜索…";
         try
         {
             if (FavoritesOnly)
@@ -405,6 +409,16 @@ public partial class EcosystemViewModel : ViewModelBase
             // 8-14 CF 无 key 平替：提示填 key + 提供官网跳转入口（PCL 式「去网页下」）
             ManualBrowseUrl = "https://www.curseforge.com/minecraft";
             FinishPage(seq, 0, gameVersion, "你还没配 CurseForge API Key。去设置页填一个，或用下方按钮到官网手动下载。");
+            return;
+        }
+        if (Launcher.Core.Services.McmodSearchService.ContainsChinese(Query))
+        {
+            // 8-22 中文查询 + CF 源：CF 索引是英文标题，中文必 0 命中——明示而非白打 API
+            if (seq != _requestSeq) return;
+            Cards.Clear();
+            ManualBrowseUrl = "https://www.curseforge.com/minecraft";
+            FinishPage(seq, 0, gameVersion,
+                "CurseForge 暂不支持中文搜索（索引是英文标题）。请切换「Modrinth」或「全部」源，或用下方按钮到官网手动搜索。");
             return;
         }
         var sort = CfSortOf(SelectedSort?.Index);
