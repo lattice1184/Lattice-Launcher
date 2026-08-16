@@ -42,13 +42,31 @@ public sealed class EcosystemService
     public async Task<ModrinthSearchResponse?> SearchChineseAsync(
         ProjectType type, string query, CancellationToken ct = default)
     {
+        // 8-22 别名直搜优先（PCL 式精准）：中文 query 命中内置映射 → 直接查 Modrinth slug
+        // （缓存秒回）——「钠」直接出 Sodium 本体；MC百科结果合并去重（<em> 高亮/无外链都不再挡）
+        var hits = new List<ModrinthSearchHit>();
+        var typeName = type.ToString().ToLowerInvariant();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var aliasSlug in ModAliasTable.Resolve(query))
+        {
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                var detail = await GetProjectAsync(aliasSlug, timeout.Token);
+                if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!seen.Add(detail.Slug)) continue;
+                hits.Add(new ModrinthSearchHit(detail.Id, detail.ProjectType, detail.Slug, "",
+                    ModAliasTable.TitleFor(query, detail.Slug), detail.Description, detail.Categories, null,
+                    detail.Versions, detail.IconUrl, detail.Downloads, detail.Follows,
+                    detail.DateCreated, detail.DateModified, null));
+            }
+            catch { /* 别名单条失败跳过 */ }
+        }
         var slugs = await _mcmod.SearchSlugsAsync(query, maxResults: 10, ct);
-        if (slugs.Count == 0) return new ModrinthSearchResponse([], 0, 0, 10);
         // 8-22 并行查询（旧串行：Modrinth API 国内直连 8.6s/请求 × 10 = 86s 干等——
         // 「中文搜不到」的真相是慢到用户放弃）。门 4 + 单条 10s 超时：最坏 ~20s，
         // 常见 2-3 条有 Modrinth 外链 → 几秒出结果
-        var hits = new List<ModrinthSearchHit>();
-        var typeName = type.ToString().ToLowerInvariant();
         using var gate = new SemaphoreSlim(4);
         var tasks = slugs.Select(async item =>
         {
@@ -60,6 +78,7 @@ public sealed class EcosystemService
                 var detail = await GetProjectAsync(item.Slug, timeout.Token);
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
                     return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
+                if (!seen.Add(detail.Slug)) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); // 别名已出，去重
                 // 8-22 标题用 MC百科中文名（搜「钠」看到「钠」而不是 Sodium——用户友好）；
                 // 描述/图标/下载量仍取 Modrinth
                 return (Hit: (ModrinthSearchHit?)new ModrinthSearchHit(detail.Id, detail.ProjectType,
