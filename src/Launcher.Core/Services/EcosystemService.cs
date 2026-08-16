@@ -44,21 +44,36 @@ public sealed class EcosystemService
     {
         var slugs = await _mcmod.SearchSlugsAsync(query, maxResults: 10, ct);
         if (slugs.Count == 0) return new ModrinthSearchResponse([], 0, 0, 10);
+        // 8-22 并行查询（旧串行：Modrinth API 国内直连 8.6s/请求 × 10 = 86s 干等——
+        // 「中文搜不到」的真相是慢到用户放弃）。门 4 + 单条 10s 超时：最坏 ~20s，
+        // 常见 2-3 条有 Modrinth 外链 → 几秒出结果
         var hits = new List<ModrinthSearchHit>();
         var typeName = type.ToString().ToLowerInvariant();
-        foreach (var (slug, _) in slugs)
+        using var gate = new SemaphoreSlim(4);
+        var tasks = slugs.Select(async item =>
         {
+            await gate.WaitAsync(ct);
             try
             {
-                var detail = await GetProjectAsync(slug, ct);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(TimeSpan.FromSeconds(10));
+                var detail = await GetProjectAsync(item.Slug, timeout.Token);
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                hits.Add(new ModrinthSearchHit(detail.Id, detail.ProjectType, detail.Slug,
-                    "", detail.Title, detail.Description, detail.Categories, null, detail.Versions,
+                    return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
+                // 8-22 标题用 MC百科中文名（搜「钠」看到「钠」而不是 Sodium——用户友好）；
+                // 描述/图标/下载量仍取 Modrinth
+                return (Hit: (ModrinthSearchHit?)new ModrinthSearchHit(detail.Id, detail.ProjectType,
+                    detail.Slug, "", item.ChineseTitle, detail.Description, detail.Categories, null, detail.Versions,
                     detail.IconUrl, detail.Downloads, detail.Follows, detail.DateCreated, detail.DateModified,
-                    null));
+                    null), item.ChineseTitle);
             }
-            catch { /* 单条失败跳过——链路本身有兜底 */ }
+            catch { return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); }
+            finally { gate.Release(); }
+        }).ToArray();
+        foreach (var t in tasks)
+        {
+            var (hit, _) = await t;
+            if (hit is not null) hits.Add(hit);
         }
         return new ModrinthSearchResponse(hits, hits.Count, 0, 10);
     }
