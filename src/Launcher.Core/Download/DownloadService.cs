@@ -1297,6 +1297,13 @@ public sealed class DownloadService
         var maxChunks = Math.Max(1, _options.ChunkCount);
         if (totalSize < ProbeBytes) return maxChunks; // 小文件（<1MB）保持旧满片行为——按连接限速源（Modrinth 单连几十 KB/s）
                                                       // 的 MC 小库文件需要分片；探测对它们无意义（探测段≈整个文件）
+        // 8-22 域特征快速路径（看请求对象直接决策，免探测）：渐进限速 CDN（Modrinth/GitHub）+ ≤8MB
+        // 决策恒为 4 并发（每连接传输量摊在 CDN「前几 MB 快窗口」内）——探测 1MB 对这类文件是纯浪费
+        // （白下 1MB + 白等窗口；Fabric API 1.6MB 探测占 60% 流量）。>8MB 大文件仍走探测
+        // （快/慢源分档对大文件有决策价值——满并发 vs 保底 4 差 4 个连接）。
+        // 后续可加「按域经验记忆」（同域判死/成功记录复用决策）——静态特征先行，探测兜底仍在
+        if (totalSize <= 8 * 1024 * 1024 && IsProgressiveThrottleCdn(url))
+            return Math.Min(4, maxChunks);
 
         // 8-15 GitHub CDN 档位：更大探测窗口让渐进式限速暴露（默认档会误判高速给 1 片 → 大文件掉速）
         var probeLimit = IsGitHubCdn(url) ? ProbeBytesGitHub : ProbeBytes;
