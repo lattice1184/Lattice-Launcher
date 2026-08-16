@@ -59,6 +59,42 @@ public class AutoRepairServiceTests
         Assert.DoesNotContain(report.MissingFiles, p => p.Contains("lwjgl-glfw-3.2.2"));
     }
 
+    /// <summary>8-14 natives（classifier）文件参与校验：natives jar 缺失应如实报不完整——
+    /// 删了 natives jar「修复」却报已完整，会在启动解压时报错（BUGS.md:55-59）</summary>
+    [Fact]
+    public async Task VerifyFiles_MissingNativesJar_ReportsIncomplete()
+    {
+        var gameDir = Path.Combine(Path.GetTempPath(), $"verify-native-{Guid.NewGuid():N}");
+        var nativeLib = new LibraryJson(
+            "org.lwjgl:lwjgl:3.3.1", null, null, null,
+            new LibraryDownloads(null, new Dictionary<string, DownloadFileInfo>
+            {
+                ["natives-windows"] = new DownloadFileInfo("https://x/natives.jar", "aa", 5),
+            }),
+            null,
+            new Dictionary<string, string> { ["windows"] = "natives-windows" },
+            null);
+        var version = new VersionJson("1.21.11", "release", "net.minecraft.client.main.Main",
+            null, null, null, null, [nativeLib], null, null, null, null);
+
+        // 目录全空：client jar + lwjgl artifact + lwjgl natives 都缺
+        var report = await AutoRepairService.VerifyFilesAsync(version, gameDir);
+        Assert.Equal(3, report.Missing);
+        Assert.False(report.IsComplete);
+        Assert.Contains(report.MissingFiles, p => p.Contains("lwjgl-3.3.1-natives-windows.jar"));
+
+        // 补齐 natives 后完整
+        Directory.CreateDirectory(Path.Combine(gameDir, "versions", "1.21.11"));
+        File.WriteAllText(Path.Combine(gameDir, "versions", "1.21.11", "1.21.11.jar"), "x");
+        Directory.CreateDirectory(Path.Combine(gameDir, "libraries", "org", "lwjgl", "lwjgl", "3.3.1"));
+        File.WriteAllText(Path.Combine(gameDir, "libraries", "org", "lwjgl", "lwjgl", "3.3.1", "lwjgl-3.3.1.jar"), "x");
+        File.WriteAllText(Path.Combine(gameDir, "libraries", "org", "lwjgl", "lwjgl", "3.3.1", "lwjgl-3.3.1-natives-windows.jar"), "x");
+
+        var filled = await AutoRepairService.VerifyFilesAsync(version, gameDir);
+        Assert.True(filled.IsComplete);
+        Assert.Equal(3, filled.Present);
+    }
+
     /// <summary>AL62 哈希质检：client jar 的 sha1 元数据 → 验证通过计数；内容不符 → 不通过</summary>
     [Fact]
     public async Task VerifyFiles_HashVerification_CountsMatches()
