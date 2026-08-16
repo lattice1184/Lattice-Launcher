@@ -186,7 +186,17 @@ public partial class VersionBrowseViewModel : ViewModelBase
         }
         else
         {
+            // 8-22 消失必有反馈：磁盘态变化把选中的版本滤掉时静默清空 = 「点一下版本就没了」的
+            // 幽灵体验（真机 26.2 原版消失：json 残件被重标 .prefetched → 按预取残留隐藏）。
+            // 先查磁盘区分「预取隐藏」和「真被删」，别给删版本的用户误报预取文案
+            var keepGameDir = SelectedVersion?.GameDir ?? "";
+            var diskGone = !Directory.Exists(Path.Combine(keepGameDir, "versions", keep))
+                           || !File.Exists(Path.Combine(keepGameDir, "versions", keep, $"{keep}.json"));
             Detail.ClearSelection(); // 版本被删 → 详情清空
+            if (diskGone)
+                NotificationService.Error($"{keep} 已被删除");
+            else
+                NotificationService.Error($"{keep} 已从列表移除：磁盘状态变为「预取残留」（仅供加载器继承，不单独显示）。如需保留请重新下载。");
         }
     }
 
