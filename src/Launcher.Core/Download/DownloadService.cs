@@ -1327,11 +1327,28 @@ public sealed class DownloadService
         // 8-19 快源大文件保底 4 并发（RTT 摊薄；小文件 ≤8MB 保持 1——限并发源不受影响）；
         // 8-13 GitHub CDN 大文件直接满并发：连接级累积限速按「每连接传输量」——满并发把 271MB
         // 摊到 8 连接（每连接 34MB），每连接尽量留在「前几 MB 快」窗口内
+        // 8-22 Fabric API 治本：渐进限速 CDN（Modrinth/GitHub）小文件快源也保底 4——CDN 开局全速
+        // （探测 1MB 显示快）后按连接累积量掉到几十 KB/s，1 连接 1.6MB 文件全程磨；
+        // 升片守卫（剩余 ≥8MB）对小文件永不触发，探测阶段必须决策正确
         return speed >= FastSingleBps
-            ? totalSize <= 8 * 1024 * 1024 ? 1
+            ? totalSize <= 8 * 1024 * 1024
+                ? IsProgressiveThrottleCdn(url) ? Math.Min(4, maxChunks) : 1
               : IsGitHubCdn(url) ? maxChunks : Math.Min(4, maxChunks)
             : speed >= SlowSingleBps ? Math.Min(4, maxChunks)
             : maxChunks;
+    }
+
+    /// <summary>渐进限速 CDN（按连接累积传输量掉速——前几 MB 快、之后被 throttle）：GitHub CDN 之外，
+    /// Modrinth 文件 CDN 同特征（8-22 真机 Fabric API：开局爆速后掉到几十 KB/s）。此类源需要分片
+    /// 把每连接传输量摊在「快窗口」内，小文件也不例外。</summary>
+    public static bool IsProgressiveThrottleCdn(string url)
+    {
+        try
+        {
+            var host = new Uri(url).Host;
+            return IsGitHubCdn(url) || host == "cdn.modrinth.com" || host == "api.modrinth.com";
+        }
+        catch { return false; }
     }
 
     private async Task DownloadChunkAsync(string url, string partPath, long start, long end, CancellationToken ct,

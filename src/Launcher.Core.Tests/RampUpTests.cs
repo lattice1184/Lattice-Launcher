@@ -104,6 +104,31 @@ public class RampUpTests
         }
     }
 
+    [Theory]
+    // 8-22 Fabric API 治本：渐进限速 CDN（Modrinth/GitHub）小文件（≤8MB）快源也保底 4——
+    // 探测开局全速 → 旧逻辑给 1 连接 → CDN 按连接累积量掉到几十 KB/s 全程磨（升片守卫 8MB 对小文件永不触发）
+    [InlineData("https://cdn.modrinth.com/data/x/fabric-api.jar", 4)]
+    [InlineData("https://github.com/user/repo/f.jar", 4)]
+    // 普通域小文件快源保持 1（限并发源不受影响——回归保护）
+    [InlineData("https://example.com/f.jar", 1)]
+    public async Task Probe_FastSource_SmallFile_ThrottleCdnFloorsConcurrency(string url, int expected)
+    {
+        var handler = new RangeHandler { Delay = TimeSpan.FromMilliseconds(50) }; // 1MB/50ms ≈ 20MB/s 快源
+        var svc = CreateService(handler);
+        var partDir = Path.Combine(Path.GetTempPath(), $"probe3-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(partDir);
+        try
+        {
+            var concurrency = await svc.ProbeAndDecideConcurrencyAsync(url, 1536 * 1024, partDir, CancellationToken.None,
+                new DownloadService.ThrottleState());
+            Assert.Equal(expected, concurrency);
+        }
+        finally
+        {
+            try { Directory.Delete(partDir, true); } catch { }
+        }
+    }
+
     [Fact]
     public async Task SmallFile_NoProbe_ChunksByFixedSize()
     {
