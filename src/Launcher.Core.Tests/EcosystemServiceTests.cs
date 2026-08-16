@@ -346,20 +346,32 @@ public class EcosystemServiceTests
         """;
 
     [Fact]
-    public async Task GetVersionsAsync_YearFormatEmpty_FallsBack_TwoRequests_LoaderPreserved()
+    public async Task GetVersionsAsync_YearFormat_QueriesFullListOnce_LoaderPreserved()
     {
+        // 8-22 改：年份号直接全量一次（旧实现先查空再降级 = 2 次串行）——安装链卡半分钟的主因
         var handler = new RouteHandler();
-        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D&loaders=%5B%22fabric%22%5D", "[]");
         handler.Route("/v2/project/abc/version?loaders=%5B%22fabric%22%5D", VersionsJson);
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
         var list = await svc.GetVersionsAsync("abc", "26.2", "fabric");
 
         Assert.NotEmpty(list);
-        Assert.Equal(2, handler.Urls.Count);                     // 年份号空 → 去版本重查恰 1 次
-        Assert.Contains("game_versions", handler.Urls[0]);
-        Assert.DoesNotContain("game_versions", handler.Urls[1]);
-        Assert.Contains("loaders", handler.Urls[1]);             // loader 保留
+        Assert.Single(handler.Urls);                         // 恰 1 次全量
+        Assert.DoesNotContain("game_versions", handler.Urls[0]);
+        Assert.Contains("loaders", handler.Urls[0]);         // loader 保留
+    }
+
+    [Fact]
+    public async Task GetVersionsAsync_YearFormat_EmptyFullList_ReturnsEmptyOnce()
+    {
+        var handler = new RouteHandler();
+        handler.Route("/v2/project/abc/version", "[]");
+        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
+
+        var list = await svc.GetVersionsAsync("abc", "26.2");
+
+        Assert.Empty(list);
+        Assert.Single(handler.Urls);                         // 全量也空 → 1 次返回，防循环
     }
 
     [Fact]
@@ -376,29 +388,15 @@ public class EcosystemServiceTests
     }
 
     [Fact]
-    public async Task GetVersionsAsync_YearFormatNonEmpty_NoFallback()
+    public async Task GetVersionsAsync_TraditionalNonEmpty_NoFallback()
     {
         var handler = new RouteHandler();
-        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", VersionsJson);
+        handler.Route("/v2/project/abc/version?game_versions=%5B%221.21.1%22%5D", VersionsJson);
         var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
 
-        var list = await svc.GetVersionsAsync("abc", "26.2");
+        var list = await svc.GetVersionsAsync("abc", "1.21.1");
 
         Assert.NotEmpty(list);
-        Assert.Single(handler.Urls);    // 有结果不降级
-    }
-
-    [Fact]
-    public async Task GetVersionsAsync_YearFormatFallbackAlsoEmpty_ReturnsEmptyTwoRequests()
-    {
-        var handler = new RouteHandler();
-        handler.Route("/v2/project/abc/version?game_versions=%5B%2226.2%22%5D", "[]");
-        handler.Route("/v2/project/abc/version", "[]");
-        var svc = new EcosystemService(new HttpClient(handler), cacheDir: Path.Combine(Path.GetTempPath(), "eco-test-" + Guid.NewGuid().ToString("N")));
-
-        var list = await svc.GetVersionsAsync("abc", "26.2");
-
-        Assert.Empty(list);             // 降级也空 → 返回空，防循环恰 2 请求
-        Assert.Equal(2, handler.Urls.Count);
+        Assert.Single(handler.Urls);    // 传统版本正常路径不变
     }
 }

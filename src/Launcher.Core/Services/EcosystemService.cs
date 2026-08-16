@@ -131,14 +131,15 @@ public sealed class EcosystemService
     }
 
     /// <summary>版本列表（手动选择用，懒加载）。8-19：年份号（26.2）Modrinth versions API 不认（search facet 认、versions 参数不认）
-    /// → 空结果自动去 gameVersion 重查一次（保留 loader；传统 1.x 空结果不降级——真实语义）</summary>
+    /// → 空结果自动去 gameVersion 重查一次（保留 loader；传统 1.x 空结果不降级——真实语义）。
+    /// 8-22 改：年份号直接全量一次——旧实现「先查空再降级」= 8.6s×2 串行（安装链 Fabric API 查询
+    /// 卡半分钟的主因）；且全量 URL 无 game_versions 参数 → 缓存键跨年份号共享，第二次直接秒回。</summary>
     public async Task<List<ModrinthVersion>> GetVersionsAsync(
         string projectId, string? gameVersion = null, string? loader = null, CancellationToken ct = default)
     {
-        var list = await GetVersionsCoreAsync(projectId, gameVersion, loader, ct);
-        if (list.Count == 0 && IsYearFormatVersion(gameVersion))
-            list = await GetVersionsCoreAsync(projectId, null, loader, ct);
-        return list;
+        if (IsYearFormatVersion(gameVersion))
+            return await GetVersionsCoreAsync(projectId, null, loader, ct);
+        return await GetVersionsCoreAsync(projectId, gameVersion, loader, ct);
     }
 
     private async Task<List<ModrinthVersion>> GetVersionsCoreAsync(

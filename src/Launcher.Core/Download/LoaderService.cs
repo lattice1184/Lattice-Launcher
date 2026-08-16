@@ -242,6 +242,11 @@ public sealed class LoaderService
         DownloadGroupContext? ctx, CancellationToken ct)
     {
         _lastInstalledVersionId = null;
+        // 8-22 Fabric API 并行预取：安装主链一开始就查 fabric-api 元数据（写磁盘缓存）——
+        // 客户端 jar/加载器下载期间（10s+）查询完成（8.6s 被下载时间掩盖），
+        // 到附带安装阶段直接读缓存零等待——消灭「进度 100% 后卡查询」的观感
+        if (plan is { Kind: LoaderKind.Fabric, InstallFabricApi: true })
+            PrefetchFabricApiAsync(plan.McVersion);
         switch (plan.Kind)
         {
             case LoaderKind.Fabric:
@@ -268,12 +273,12 @@ public sealed class LoaderService
                     // （真机 8-11 用户误以为引擎坏了）；子任务 weight=0 不定条 + 下载速度可见
                     await ctx.AddChild("Fabric API", 0,
                         (p, c) => InstallFabricApiAsync(id, plan.McVersion, c,
-                            new ProgressReporter("正在下载 Fabric API…", p))).Completion;
+                            new ProgressReporter("正在准备 Fabric API…", p))).Completion;
                 }
                 else
                 {
                     // AL46.1：非组路径的进度表达——主文件 100% 后不静默（Modrinth 查询/下载 30s 兜底）
-                    progress?.Invoke(new DownloadProgress("正在附带安装 Fabric API…", null, 0, 0, 0));
+                    progress?.Invoke(new DownloadProgress("正在准备 Fabric API…", null, 0, 0, 0));
                     await InstallFabricApiAsync(id, plan.McVersion, ct);
                 }
             }
@@ -285,6 +290,7 @@ public sealed class LoaderService
     /// 选最新 → 下载主文件到本加载器版本目录的 mods/（ResolveInstallPath 命中已写入的 versions/{id}）。
     /// 任何失败/无版本都静默（Debug.WriteLine）——26.2 等新版本 Modrinth 可能还没有 fabric-api 发布。
     /// 不用 ctx.AddChild：失败子任务会把下载组置 Failed（LoaderServiceTests 已验证该语义）。
+    /// 元数据大多已被 PrefetchFabricApiAsync 预热（缓存命中秒回）；未命中时此处仍兜底直查。
     /// </summary>
     private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct,
         ProgressReporter? rep = null)
@@ -317,6 +323,21 @@ public sealed class LoaderService
         {
             Debug.WriteLine($"[Loader] Fabric API 安装失败（不阻断）：{ex.Message}");
         }
+    }
+
+    /// <summary>预取 fabric-api 元数据到磁盘缓存（安装主链并行预热；失败静默——正式阶段仍会兜底直查）</summary>
+    private async void PrefetchFabricApiAsync(string mcVersion)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken.None);
+            timeout.CancelAfter(TimeSpan.FromSeconds(25));
+            var eco = new EcosystemService(_http, _downloads, _gameDirectory, cacheDir: _ecoCacheDir);
+            var project = await eco.GetProjectAsync("fabric-api", timeout.Token);
+            if (project is null) return;
+            await eco.GetVersionsAsync(project.Id, mcVersion, "fabric", timeout.Token);
+        }
+        catch { /* 预取失败无妨——InstallFabricApiAsync 会再查（缓存未命中走原路径） */ }
     }
 
     /// <summary>Fabric/Quilt：拉 profile json（inheritsFrom 原版）→ 写版本目录 → 全量下载（链解析下载 client jar 与库）</summary>
