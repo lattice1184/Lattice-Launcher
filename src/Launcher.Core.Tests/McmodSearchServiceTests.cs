@@ -22,6 +22,23 @@ public class McmodSearchServiceTests
     }
 
     [Fact]
+    public void ParseSearchResults_EmHighlightedTitle_NotSkipped()
+    {
+        // 8-22 修复回归：MC百科对命中词用 <em> 包裹——搜「钠」时 Sodium 本体标题为
+        // `<em>钠</em> (Sodium)`，旧正则（首字符非 <）整条跳过 → 钠本体永不出现。
+        // 真实抓取格式（08-16 实测 /s?key=钠 第 1 条即 2785）
+        var html = """
+            <div class="b"><a target="_blank" href="https://www.mcmod.cn/class/2785.html"><em>钠</em> (Sodium)</a></div>
+            <div class="b"><a target="_blank" href="https://www.mcmod.cn/class/5608.html">铷 (Rubidium)</a></div>
+            """;
+        var entries = McmodSearchService.ParseSearchResults(html);
+
+        Assert.Equal(2, entries.Count); // 钠本体不能被跳过
+        Assert.Equal("2785", entries[0].ClassId);
+        Assert.Equal("钠 (Sodium)", entries[0].Title); // <em> 已剥
+    }
+
+    [Fact]
     public void DecodeModrinthSlug_ExtractsSlugFromBase64Link()
     {
         // 真实页面结构：href="//link.mcmod.cn/target/{base64(完整 URL)}"
