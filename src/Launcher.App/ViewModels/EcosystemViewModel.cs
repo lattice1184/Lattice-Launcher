@@ -36,7 +36,9 @@ public partial class EcosystemViewModel : ViewModelBase
         SelectedGameVersion = GameVersionOptions[0];
         BuildSourceOptions();
         _suppressSearch = true; // 构造期不搜——预加载 4 个标签只建 VM 不请求，首次激活才搜
-        SelectedSource = SourceOptions[1]; // 默认 Modrinth 单源——CF 慢不拖首屏；用户可手动切「全部」
+        // 默认 Modrinth 单源——CF 慢不拖首屏；datapack 源只有 Modrinth 一个（8-22 修复：
+        // 批次 54 曾硬编码 [1]，datapack 分支单元素列表 → 预加载 IndexOutOfRange 崩）
+        SelectedSource = SourceOptions[Math.Min(1, SourceOptions.Count - 1)];
         _suppressSearch = false;
         // 全局版本绑定：主页切换版本 → 本页实例下拉跟随（AF1）
         if (MainViewModel.Current is { } main)
@@ -336,6 +338,10 @@ public partial class EcosystemViewModel : ViewModelBase
         IsError = false;
         IsEmpty = false;
         ManualBrowseUrl = null; // 每次搜索重置官网跳转入口
+        // 8-22 防旧结果误导：reset 搜索立即清列表——切到 CurseForge 后 CF 请求挂起（15s 超时窗口）
+        // 期间不清的话，屏上整页还是上一次（如 Modrinth）的结果，用户误以为「筛选 CurseForge 出 M 网」。
+        // 翻页（reset=false）不清——分页需要保留当前页直到新页返回
+        if (reset) Cards.Clear();
         try
         {
             if (FavoritesOnly)
