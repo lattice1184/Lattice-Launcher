@@ -16,10 +16,16 @@ public sealed class McmodSearchService
 {
     private static readonly HttpClient Http = HttpClientPool.Create();
 
-    /// <summary>搜索结果条目：&lt;a target="_blank" href="https://www.mcmod.cn/class/{id}.html"&gt;{中文标题}&lt;/a&gt;</summary>
+    /// <summary>搜索结果条目：&lt;a target="_blank" href="https://www.mcmod.cn/class/{id}.html"&gt;{中文标题，可能含 &lt;em&gt; 高亮}&lt;/a&gt;。
+    /// 8-22 修复：旧正则要求标题首个字符非 &lt;（`[^&lt;]{1,60}`）——MC百科对命中词用 &lt;em&gt; 包裹，
+    /// 搜「钠」时 Sodium 本体标题是 `&lt;em&gt;钠&lt;/em&gt; (Sodium)` → 首字符是 &lt; → 整条被跳过
+    /// （真机：钠本体永远不出现在结果里）。改为捕获到 &lt;/a&gt; 前再剥标签。</summary>
     private static readonly Regex EntryRegex = new(
-        @"href=""https://www\.mcmod\.cn/class/(\d+)\.html""[^>]*>([^<]{1,60})<",
+        @"href=""https://www\.mcmod\.cn/class/(\d+)\.html""[^>]*>(.{1,120}?)</a>",
         RegexOptions.Compiled);
+
+    /// <summary>剥 HTML 标签（&lt;em&gt; 高亮等）</summary>
+    private static readonly Regex HtmlTagRegex = new(@"<[^>]+>", RegexOptions.Compiled);
 
     /// <summary>详情页 Modrinth 外链：data-original-title="Modrinth" ... href="//link.mcmod.cn/target/{base64}"</summary>
     private static readonly Regex ModrinthLinkRegex = new(
@@ -31,7 +37,11 @@ public sealed class McmodSearchService
     {
         var list = new List<(string, string)>();
         foreach (Match m in EntryRegex.Matches(html))
-            list.Add((m.Groups[1].Value, m.Groups[2].Value.Trim()));
+        {
+            var title = HtmlTagRegex.Replace(m.Groups[2].Value, "").Trim();
+            if (title.Length == 0) continue;
+            list.Add((m.Groups[1].Value, title));
+        }
         return list;
     }
 
