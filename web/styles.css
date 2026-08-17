@@ -254,6 +254,60 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   transition: background .3s var(--ease-out), color .3s var(--ease-out);
 }
 .feature-icon svg { width: 22px; height: 22px; }
+/* ---------- 功能卡片 hover 流程动画（8-22 第二轮：悬浮触发、移开淡出灵动回退） ---------- */
+.feature-icon { position: relative; }
+.fx-anim {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s var(--ease-out);
+}
+.feature-card:hover .feature-icon > svg { opacity: 0; transition: opacity .25s var(--ease-out); }
+.feature-card:hover .fx-anim { opacity: 1; }
+
+/* 动画元素基础态 */
+.fx-anim .fx-line, .fx-anim .fx-flow, .fx-anim .fx-term { stroke-dasharray: 100; stroke-dashoffset: 100; }
+.fx-anim .fx-arrow, .fx-anim .fx-check, .fx-anim .fx-caret, .fx-anim .fx-scan { opacity: 0; }
+.fx-anim .fx-node, .fx-anim .fx-tile, .fx-anim .fx-ring, .fx-anim .fx-scan { transform-box: fill-box; transform-origin: center; }
+
+/* 触发：hover 期间播 1 次、fill both 停终态；移开 opacity 过渡 = 灵动回退 */
+.feature-card:hover .fx-line { animation: fx-draw .4s var(--ease-out) both; }
+.feature-card:hover .fx-node { animation: fx-pop .3s var(--ease-emphasized) both; }
+.feature-card:hover .fx-node:nth-of-type(1) { animation-delay: .15s; }
+.feature-card:hover .fx-node:nth-of-type(2) { animation-delay: .3s; }
+.feature-card:hover .fx-node:nth-of-type(3) { animation-delay: .45s; }
+.feature-card:hover .fx-arrow { animation: fx-fade .3s var(--ease-out) .55s both; }
+
+.feature-card:hover .fx-tile { animation: fx-tile-in .3s var(--ease-emphasized) both; }
+.feature-card:hover .fx-tile:nth-of-type(1) { animation-delay: 0s; }
+.feature-card:hover .fx-tile:nth-of-type(2) { animation-delay: .12s; }
+.feature-card:hover .fx-tile:nth-of-type(3) { animation-delay: .24s; }
+.feature-card:hover .fx-tile:nth-of-type(4) { animation-delay: .36s; }
+
+.feature-card:hover .fx-term { animation: fx-draw .35s var(--ease-out) both; }
+.feature-card:hover .fx-term:nth-of-type(1) { animation-delay: .05s; }
+.feature-card:hover .fx-term:nth-of-type(2) { animation-delay: .25s; }
+.feature-card:hover .fx-term:nth-of-type(3) { animation-delay: .45s; }
+.feature-card:hover .fx-caret { animation: fx-caret .8s steps(2) .6s infinite; }
+
+.feature-card:hover .fx-flow { animation: fx-draw .4s var(--ease-out) both; }
+.feature-card:hover .fx-check { animation: fx-draw .25s var(--ease-out) .6s both; }
+
+/* fx-ring 是 circle——nth-of-type 按 circle 计数（主圆第 1、ring 第 2/3） */
+.feature-card:hover .fx-ring { animation: fx-ring .7s var(--ease-out) both; }
+.feature-card:hover .fx-ring:nth-of-type(2) { animation-delay: 0s; }
+.feature-card:hover .fx-ring:nth-of-type(3) { animation-delay: .35s; }
+
+.feature-card:hover .fx-scan { animation: fx-scan .8s var(--ease-in-out) both; }
+.feature-card:hover .fx-broken { animation: fx-fix .3s var(--ease-out) .7s both; }
+
+@keyframes fx-draw { to { stroke-dashoffset: 0; } }
+@keyframes fx-pop { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes fx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fx-tile-in { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes fx-caret { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes fx-ring { from { transform: scale(1); opacity: .6; } to { transform: scale(2.4); opacity: 0; } }
+@keyframes fx-scan { from { transform: translateY(0); opacity: 0; } 15% { opacity: 1; } to { transform: translateY(34px); opacity: 0; } }
+@keyframes fx-fix { from { stroke: var(--c-danger); } to { stroke: var(--c-accent); } }
 .feature-card:hover .feature-icon { background: var(--c-accent); color: var(--c-on-accent); }
 .feature-card h3 { font-family: var(--font-display); font-size: var(--t-h3); font-weight: 700; margin-bottom: 8px; }
 .feature-card p { font-size: var(--t-small); color: var(--c-text-2); }
@@ -361,6 +415,9 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   border-radius: var(--r-pill); padding: 6px 14px; color: var(--c-text-2);
 }
 .footer-line { width: 60%; height: 1px; background: linear-gradient(90deg, transparent, var(--c-border-strong), transparent); }
+.footer-license { color: var(--c-text-3); font-size: var(--t-small); }
+.footer-license a { color: var(--c-text-2); transition: color .2s var(--ease-out); }
+.footer-license a:hover { color: var(--c-accent); }
 .footer-copy { color: var(--c-text-3); font-size: var(--t-small); }
 .footer-disclaimer { color: var(--c-text-3); font-size: var(--t-caption); }
 
@@ -413,4 +470,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   .lat-pulses path { animation: none; stroke-dashoffset: 0; }
   .ripple { display: none; }
   .hero::before { animation: none; }
+  /* 8-22 功能卡片 hover 动画降级：隐藏动画层，静态图标照常 */
+  .fx-anim { display: none; }
+  .feature-card:hover .feature-icon > svg { opacity: 1; }
 }
