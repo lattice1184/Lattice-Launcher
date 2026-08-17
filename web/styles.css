@@ -261,7 +261,8 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
   opacity: 0; pointer-events: none;
   transition: opacity .3s var(--ease-out);
 }
-.feature-card:hover .feature-icon > svg { opacity: 0; transition: opacity .25s var(--ease-out); }
+/* 8-22 修复：> svg 会同时命中 .fx-anim 且特异性更高把动画层压透明——:not(.fx-anim) 只隐静态图标 */
+.feature-card:hover .feature-icon > svg:not(.fx-anim) { opacity: 0; transition: opacity .25s var(--ease-out); }
 .feature-card:hover .fx-anim { opacity: 1; }
 
 /* 动画元素基础态 */
