@@ -33,6 +33,29 @@ public class DownloadSpeedTests
     }
 
     [Fact]
+    public async Task Speed_DoesNotExplode_WhenTailBurstsIntoWindow()
+    {
+        // AL70 防爆表：竞速完成瞬间剩余字节挤进窗口尾部 → 旧逻辑窗口瞬时虚高数倍
+        // （实机 19MB 真下 10s 显示几百 MB/s）。点列：t≈0 报 3MB → 1.95s 报 4MB（慢速）→
+        // 2.1s 跳 20MB（竞速赢家完成）——2s 窗口裁剪掉首点后只剩尾部两点：
+        // 旧窗口瞬时 = 16MB/0.15s ≈ 107MB/s；新逻辑封顶 = 全程平均×1.5 ≈ 14MB/s。
+        var mgr = new DownloadManager(null);
+        var task = mgr.Enqueue("t", (p, c) =>
+        {
+            p(P(3 * 1024 * 1024, 20 * 1024 * 1024));
+            Thread.Sleep(1950);
+            p(P(4 * 1024 * 1024, 20 * 1024 * 1024));
+            Thread.Sleep(150);
+            p(P(20 * 1024 * 1024, 20 * 1024 * 1024));
+            return Task.CompletedTask;
+        });
+        await task.Completion;
+        // 全程平均 ≈ 20MB/2.1s ≈ 9.5MB/s → 封顶 ≈ 14.3MB/s；旧逻辑窗口瞬时 ≈ 107MB/s
+        Assert.True(task.SpeedBps < 30 * 1024 * 1024,
+            $"尾部爆表应被封顶，实为 {task.SpeedBps / 1024 / 1024:0.0} MB/s（旧逻辑窗口瞬时 ~107MB/s）");
+    }
+
+    [Fact]
     public async Task GroupAggregate_PercentDoesNotDip_WhenChildMounted()
     {
         // 新子任务挂载（0% 起步）不拉低聚合 percent——旧实现加权回落 → 进度条回跳

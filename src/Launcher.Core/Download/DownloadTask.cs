@@ -645,8 +645,13 @@ public partial class DownloadTask : ObservableObject
                 _speedSamples.Clear(); // 文件切换/回退：清窗口重采样
                 _lastBytes = -1;
             }
-            speed = SampleSpeed(now, p.FileBytesDone);
+            var inst = SampleSpeed(now, p.FileBytesDone);
             _lastBytes = p.FileBytesDone;
+            // AL70 防爆表：竞速完成瞬间剩余字节挤进窗口尾部 → 窗口瞬时虚高数倍（实机 19MB 真下 10s 显示几百 MB/s）。
+            // 封顶 = 全程平均×1.5（允许多源并发短期增益，但压住数倍爆表）——纯截断不动窗口语义：
+            // 慢速时窗口如实显示慢速，只在瞬时远超全程平均时截断。
+            var avg = now > 0.5 ? p.FileBytesDone / now : inst;
+            speed = Math.Min(inst, avg * 1.5);
 
             stage = string.IsNullOrEmpty(p.Stage) ? "下载中…" : p.Stage;
             done = p.FileBytesDone;
