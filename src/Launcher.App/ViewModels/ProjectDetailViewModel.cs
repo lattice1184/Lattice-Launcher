@@ -228,7 +228,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 loader = _card.Type == ProjectType.Mod ? EcosystemService.GuessLoader(captured.Name) : null;
             }
             // PCL 式：一次请求拿全量版本——匹配（SelectBestVersion）与直显列表（最新 10 条）共用
-            var all = await _eco.GetVersionsAsync(_card.Id, gameVersion, loader);
+            var all = await SlowQueryNotifier.WatchAsync(_eco.GetVersionsAsync(_card.Id, gameVersion, loader),
+                "仍在查询版本信息（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             if (!ReferenceEquals(_instance, captured)) return; // 实例已切换 → 放弃旧实例结果
             var version = EcosystemService.SelectBestVersion(all);
             FillVersionRows(all, version?.Id);
@@ -250,7 +251,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
             // 项目详情（截图/许可证）
             try
             {
-                var detail = await _eco.GetProjectAsync(_card.Id);
+                var detail = await SlowQueryNotifier.WatchAsync(_eco.GetProjectAsync(_card.Id),
+                    "仍在查询项目详情（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                 if (detail is not null)
                 {
                     License = detail.License?.Name is { } ln ? $"许可: {ln}" : "";
@@ -292,7 +294,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
             // PCL 式：一次请求拿全量文件——匹配（SelectBestFile）与直显列表（最新 10 条）共用。
             // 8-19：GetFilesWithFallbackAsync 带 dropped——26.2 年份号 CF 返回空已降级全量，不能再按 26.2 过滤
-            var (files, dropped) = await _cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader);
+            var (files, dropped) = await SlowQueryNotifier.WatchAsync(_cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader),
+                "仍在查询 CurseForge 文件（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             if (!ReferenceEquals(_instance, capturedInstance)) return; // 实例已切换 → 放弃旧实例结果（否则旧变体装进新实例目录）
             var file = CurseForgeService.SelectBestFile(files, dropped ? null : gameVersion, loader);
             FillVersionRowsCf(files, file?.id.ToString());
@@ -316,7 +319,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
             try
             {
-                var detail = await _cf.GetProjectAsync(modId);
+                var detail = await SlowQueryNotifier.WatchAsync(_cf.GetProjectAsync(modId),
+                    "仍在查询 CurseForge 项目（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                 if (detail is not null)
                 {
                     Title = detail.name;
@@ -349,7 +353,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
     {
         try
         {
-            var detail = await _cf.GetFileAsync(modId, fileId);
+            var detail = await SlowQueryNotifier.WatchAsync(_cf.GetFileAsync(modId, fileId),
+                "仍在查询文件详情（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             var depCount = (detail?.dependencies ?? []).Count(d => d.relationType == 1);
             if (depCount > 0) { DependencyHint = $"将安装 {depCount} 个前置依赖"; return; }
             var m = await CountModrinthRequiredDepsAsync(gameVersion, loader);
@@ -365,10 +370,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
     {
         try
         {
-            var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 1);
+            var page = await SlowQueryNotifier.WatchAsync(_eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 1),
+                "仍在跨源查找项目（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             var hit = page?.Hits?.FirstOrDefault();
             if (hit is null) return -1;
-            var versions = await _eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader);
+            var versions = await SlowQueryNotifier.WatchAsync(_eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader),
+                "仍在查询 Modrinth 版本（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             return (versions?.FirstOrDefault()?.Dependencies ?? [])
                 .Count(d => d.DependencyType == "required");
         }
@@ -453,7 +460,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
     {
         try
         {
-            var names = await Task.Run(() => _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None));
+            var names = await SlowQueryNotifier.WatchAsync(Task.Run(() => _eco.ResolveDependencyNamesAsync(version, gameVersion, loader, CancellationToken.None)),
+                "仍在查询前置依赖（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
             if (names.Count == 0)
             {
                 DependencyHint = "无需前置依赖";
@@ -817,12 +825,14 @@ public partial class ProjectDetailViewModel : ViewModelBase
             {
                 try
                 {
-                    var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 5);
+                    var page = await SlowQueryNotifier.WatchAsync(_eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 5),
+                        "仍在跨源查找项目（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                     var hit = page?.Hits?.FirstOrDefault(h => h.Title.Equals(_card.Title, StringComparison.OrdinalIgnoreCase))
                               ?? page?.Hits?.FirstOrDefault();
                     if (hit is not null)
                     {
-                        var mrVersions = await _eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader);
+                        var mrVersions = await SlowQueryNotifier.WatchAsync(_eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader),
+                            "仍在查询 Modrinth 版本（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                         var mrVersion = mrVersions?.FirstOrDefault();
                         if (mrVersion is not null && DialogService.MainWindow() is { } fallbackOwner)
                         {

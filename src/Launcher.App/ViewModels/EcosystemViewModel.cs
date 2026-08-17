@@ -390,10 +390,12 @@ public partial class EcosystemViewModel : ViewModelBase
     {
         // AL63 中文分流：查询含中文 → MC百科汉化链路（Modrinth 索引是英文标题，中文查询 0 命中）
         var resp = McmodSearchService.ContainsChinese(Query)
-            ? await _eco.SearchChineseAsync(_type, Query, ct)
-            : await _eco.SearchAsync(_type, Query, gameVersion, loader, category,
+            ? await SlowQueryNotifier.WatchAsync(_eco.SearchChineseAsync(_type, Query, ct),
+                "正在通过 MC百科搜索中文结果（较慢），请稍候…", TimeSpan.FromSeconds(3))
+            : await SlowQueryNotifier.WatchAsync(_eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
-                limit: PageSize, offset: CurrentPage * PageSize, ct);
+                limit: PageSize, offset: CurrentPage * PageSize, ct),
+                "仍在搜索（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
         if (seq != _requestSeq) return; // 竞态：旧响应直接丢弃
         Cards.Clear(); // 服务器分页：每次重建当前页
         AddCards(resp?.Hits ?? [], h => h.Title, h => h.Description, h => new ProjectCardVM(h));
@@ -550,7 +552,8 @@ public partial class EcosystemViewModel : ViewModelBase
                 if (source == "curseforge")
                 {
                     if (!int.TryParse(rawId, out var modId)) continue;
-                    var p = await _cf.GetProjectAsync(modId, ct);
+                    var p = await SlowQueryNotifier.WatchAsync(_cf.GetProjectAsync(modId, ct),
+                        "仍在查询 CurseForge 项目（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                     if (p is not null)
                     {
                         var card = new ProjectCardVM(p);
@@ -559,7 +562,8 @@ public partial class EcosystemViewModel : ViewModelBase
                 }
                 else
                 {
-                    var detail = await _eco.GetProjectAsync(id, ct);
+                    var detail = await SlowQueryNotifier.WatchAsync(_eco.GetProjectAsync(id, ct),
+                        "仍在查询项目详情（网络较慢），请稍候…", TimeSpan.FromSeconds(3));
                     if (detail is not null && TypeMatches(detail.ProjectType))
                         Cards.Add(new ProjectCardVM(detail));
                 }
