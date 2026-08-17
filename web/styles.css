@@ -7,9 +7,7 @@
   --c-canvas: #0D1017;
   --c-base: #14181F;
   --c-surface: #1D222C;
-  --c-raised: #242A36;
   --c-hover: #2C3544;
-  --c-active: #2A3240;
 
   /* 描边 */
   --c-border: #2F3745;
@@ -26,7 +24,6 @@
   --c-accent-hover: #45E3CF;
   --c-on-accent: #0B1F1C;
   --c-accent-glass: rgba(45,212,191,.10);
-  --c-accent-glow: rgba(45,212,191,.25);
   --c-accent-grad: linear-gradient(135deg, #2DD4BF 0%, #0EA5A0 100%);
 
   /* 语义 */
@@ -39,29 +36,28 @@
   --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'Consolas', monospace;
 
   /* 字号 */
-  --t-hero: clamp(2.75rem, 6vw, 4.5rem);
+  /* 8-22 改版：双栏左栏标题（536px 栏内 4.5rem 过满——14 字折 7+7 两行） */
+  --t-hero-l: clamp(2.25rem, 3.8vw, 3.5rem);
   --t-hero-sub: clamp(1rem, 2vw, 1.25rem);
   --t-h2: clamp(1.75rem, 3vw, 2.25rem);
   --t-h3: 1.125rem;
   --t-body: 1rem;
   --t-small: .875rem;
   --t-caption: .75rem;
-  --t-data-lg: clamp(1.5rem, 3vw, 2rem);
   --t-data: 1.25rem;
 
   /* 间距 */
-  --s-4: 16px; --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px; --s-20: 80px; --s-24: 96px;
+  --s-4: 16px; --s-6: 24px; --s-8: 32px; --s-12: 48px; --s-16: 64px;
   --space-section: clamp(80px, 12vh, 128px);
 
   /* 圆角 */
-  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
+  --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
 
   /* 栅格 */
   --max-w: 1120px;
 
   /* 动效 */
   --ease-out: cubic-bezier(.16,1,.3,1);
-  --ease-in: cubic-bezier(.4,0,.6,1);
   --ease-emphasized: cubic-bezier(.2,.9,.24,1.04);
   --ease-in-out: cubic-bezier(.45,.05,.55,.95);
 }
@@ -124,17 +120,38 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .nav-links a:hover { color: var(--c-text); }
 .nav-cta { margin-left: 8px; padding: 9px 20px; }
 
-/* ---------- Hero ---------- */
+/* ---------- Hero（8-22 改版：双栏官方化 + 晶格动画 + 透光背景） ---------- */
 .hero {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   padding: 120px 24px 80px;
   position: relative; overflow: hidden;
-  background:
-    radial-gradient(ellipse 60% 45% at 18% 22%, rgba(45,212,191,.13) 0%, transparent 60%),
-    radial-gradient(ellipse 45% 40% at 82% 74%, rgba(45,212,191,.05) 0%, transparent 55%),
-    var(--c-canvas);
+  /* 透光面纱：中段最透（光斑透出），底部 .97 收口溶入页面 */
+  background: linear-gradient(180deg,
+    rgba(13,16,23,.62) 0%, rgba(13,16,23,.48) 45%,
+    rgba(13,16,23,.62) 72%, rgba(13,16,23,.97) 100%);
 }
+/* 透光层：网格线（56px 与晶格 sx 同构）+ 双青色光斑 + 冷灰微光（z-index 0，grain 之上之下依序） */
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px),
+    radial-gradient(ellipse 55% 45% at 68% 30%, rgba(45,212,191,.13) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 35% at 22% 72%, rgba(45,212,191,.07) 0%, transparent 55%),
+    radial-gradient(ellipse 30% 22% at 84% 82%, rgba(148,163,184,.04) 0%, transparent 60%);
+  /* 光斑层 size 120%（size=100% 时 background-position 百分比位移恒为 0——光斑漂移不生效） */
+  background-size: 56px 56px, 56px 56px, 120% 120%, 120% 120%, 120% 120%;
+  /* 漂移 20s（网格缓慢平移 + 光斑 ±3~6%）+ 呼吸 9s（±10%，察觉不到为界）——全站循环豁免 #2。
+     呼吸必须 alternate（否则 opacity 每 9s 从 .8 跳回 1 = 闪烁） */
+  animation: hero-drift 20s ease-in-out infinite alternate, hero-breathe 9s ease-in-out infinite alternate;
+}
+@keyframes hero-drift {
+  from { background-position: 0 0, 0 0, 68% 30%, 22% 72%, 84% 82%; }
+  to   { background-position: 24px 18px, 18px 24px, 71% 32%, 17% 67%, 88% 77%; }
+}
+@keyframes hero-breathe { from { opacity: 1; } to { opacity: .8; } }
+
 .grain::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -143,9 +160,11 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .hero-inner {
   position: relative; z-index: 2;
   max-width: var(--max-w); width: 100%;
-  display: flex; flex-direction: column; align-items: center; text-align: center;
-  gap: var(--s-6);
+  display: grid; grid-template-columns: repeat(12, 1fr);
+  gap: clamp(32px, 4vw, 64px); align-items: center;
 }
+/* 左栏：官方化文字，居中于栏轴 */
+.hero-text { grid-column: 1 / span 6; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .hero-badge {
   font-family: var(--font-mono); font-size: var(--t-caption); font-weight: 600;
   letter-spacing: .02em;
@@ -153,64 +172,55 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 }
 .hero-title {
   font-family: var(--font-display);
-  font-size: var(--t-hero); font-weight: 900; line-height: 1.08; letter-spacing: -.02em;
+  font-size: var(--t-hero-l); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; /* 1.25：CJK（YaHei/Noto）下 1.15 偏挤 */
+  margin-top: var(--s-6);
 }
 .hero-sub {
-  max-width: 640px; font-size: var(--t-hero-sub); color: var(--c-text-2);
+  max-width: 26em; font-size: var(--t-hero-sub); color: var(--c-text-2);
+  margin-top: var(--s-4);
 }
-.hero-cta { display: flex; gap: var(--s-4); margin-top: var(--s-4); }
+.hero-cta { display: flex; gap: var(--s-4); margin-top: var(--s-8); }
 .hero-stats {
-  display: flex; gap: clamp(24px, 6vw, 64px); margin-top: var(--s-8);
+  display: flex; gap: var(--s-6); margin-top: var(--s-12);
 }
 .stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.stat-num { font-family: var(--font-mono); font-size: var(--t-data-lg); font-weight: 700; color: var(--c-accent); }
-.stat-label { font-size: var(--t-caption); color: var(--c-text-3); letter-spacing: .02em; }
+.stat + .stat { border-left: 1px solid var(--c-border); padding-left: var(--s-6); }
+.stat-num { font-family: var(--font-mono); font-size: var(--t-data); font-weight: 700; color: var(--c-accent); font-variant-numeric: tabular-nums; }
+.stat-label { font-size: var(--t-caption); color: var(--c-text-2); letter-spacing: .02em; }
+
+/* 右栏：晶格网络动画（全站循环动画豁免 #1——只此 SVG 内允许循环） */
+.hero-lattice { grid-column: 7 / span 6; transition-delay: .15s; }
+.lattice-net { width: 100%; height: auto; display: block; }
+.lat-grid { stroke: rgba(45,212,191,.14); stroke-width: 1; fill: none; }
+.lat-nodes circle { fill: rgba(45,212,191,.30); }
+.lat-core .core { fill: var(--c-accent); }
+.lat-hi .hi { fill: var(--c-accent); }
+/* 脉冲流动线：dash 匀速过场（pathLength=100，dash 8 长缝 92，offset 100→-100 无缝循环） */
+.lat-pulses path {
+  stroke: var(--c-accent); stroke-width: 1.5; fill: none;
+  stroke-dasharray: 8 92; opacity: .55;
+  animation: lat-flow linear infinite;
+}
+.lat-pulses path:nth-child(1) { animation-duration: 4.5s; animation-delay: 0s; }
+/* 负延迟=相位从一开始错开（正延迟会让 dash 前 1.2/2.4s 静止停在起点） */
+.lat-pulses path:nth-child(2) { animation-duration: 5.5s; animation-delay: -1.2s; }
+.lat-pulses path:nth-child(3) { animation-duration: 6.5s; animation-delay: -2.4s; }
+@keyframes lat-flow { from { stroke-dashoffset: 100; } to { stroke-dashoffset: -100; } }
+/* 涟漪环：只动 transform/opacity（绝不动 r）——同周期最多 3 环并发。
+   各环延迟在 HTML 内联 style（负延迟=相位从一开始错开；nth-of-type 在 .lat-hi 内会命中 .hi 节点，弃用） */
+.ripple {
+  fill: none; stroke: var(--c-accent); stroke-width: 1.5;
+  transform-box: fill-box; transform-origin: center;
+  animation: lat-ripple 3.6s ease-out infinite;
+}
+@keyframes lat-ripple {
+  0% { transform: scale(1); opacity: .5; }
+  100% { transform: scale(3.8); opacity: 0; }
+}
 
 /* 通用滚动 reveal（一次性，方向性上移） */
 [data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity .6s var(--ease-out), transform .6s var(--ease-out); }
 [data-reveal].revealed { opacity: 1; transform: translateY(0); }
-
-/* Hero 实机截图 mockup（window chrome 框 + 玻璃投影） */
-.hero-mockup {
-  width: min(860px, 100%); margin-top: var(--s-12);
-  border-radius: var(--r-xl);
-  border: 1px solid var(--c-border-soft);
-  box-shadow: 0 32px 80px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.04);
-  background: var(--c-base); overflow: hidden;
-}
-.mock-chrome {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px;
-  background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border-soft);
-}
-.mock-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c-border-strong); }
-.mock-dot:first-child { background: #E05A5A; }
-.mock-dot:nth-child(2) { background: #E3B341; }
-.mock-dot:nth-child(3) { background: #5AD07C; }
-.mock-title { margin-left: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--c-text-3); }
-.hero-mockup img { width: 100%; display: block; }
-
-/* ---------- Hero 启动流程线（动画 A） ---------- */
-.launch-rail { width: min(720px, 100%); margin-top: var(--s-12); }
-.rail-label { fill: var(--c-text-3); font-size: 11px; font-family: var(--font-body); text-anchor: middle; }
-.rail-line { stroke-dasharray: 100; stroke-dashoffset: 100; }
-.launch-rail.is-played .rail-line { animation: draw-rail 900ms var(--ease-out) both; }
-.node { transform-box: fill-box; transform-origin: center; }
-.launch-rail.is-played .node { animation: node-pop .45s var(--ease-emphasized) both; }
-.launch-rail.is-played .node:nth-of-type(1) { animation-delay: .90s; }
-.launch-rail.is-played .node:nth-of-type(2) { animation-delay: .95s; }
-.launch-rail.is-played .node:nth-of-type(3) { animation-delay: 1.00s; }
-.launch-rail.is-played .node:nth-of-type(4) { animation-delay: 1.05s; }
-.launch-rail.is-played .node:nth-of-type(5) { animation-delay: 1.10s; }
-.carriage { transform-box: fill-box; transform-origin: 0 50%; }
-.launch-rail.is-played .carriage { animation: rail-ride .9s var(--ease-in-out) 1.4s both; }
-.goal-ring { opacity: 0; transform-box: fill-box; transform-origin: center; }
-.launch-rail.is-played .goal-ring { animation: goal-glow .6s var(--ease-out) 2.3s both; }
-@keyframes draw-rail { to { stroke-dashoffset: 0; } }
-@keyframes node-pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
-@keyframes rail-ride { from { transform: translateX(0); } to { transform: translateX(640px); } }
-@keyframes goal-glow { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
 
 /* ---------- 章节通用 ---------- */
 .section { max-width: var(--max-w); margin: 0 auto; padding: 0 24px; position: relative; }
@@ -367,6 +377,12 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 .back-top:hover { background: var(--c-hover); color: var(--c-text); }
 
 /* ---------- 响应式 ---------- */
+@media (max-width: 900px) {
+  .hero { padding: 112px 24px 64px; }
+  .hero-inner { grid-template-columns: 1fr; }
+  .hero-text { grid-column: auto; }
+  .hero-lattice { grid-column: auto; max-width: 480px; margin: 56px auto 0; }
+}
 @media (max-width: 1024px) {
   .feature-grid { grid-template-columns: 1fr 1fr; }
   .why-grid { grid-template-columns: 1fr 1fr; }
@@ -378,7 +394,8 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
 @media (max-width: 640px) {
   .feature-grid { grid-template-columns: 1fr; }
   .why-grid { grid-template-columns: 1fr; }
-  .hero-stats { gap: var(--s-6); flex-wrap: wrap; }
+  .hero-stats { gap: var(--s-4); flex-wrap: wrap; }
+  .stat + .stat { border-left: none; padding-left: 0; }
   .nav-links { display: none; }
   .section { padding: 0 16px; }
 }
@@ -391,5 +408,9 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
-  .launch-rail *, .repair-emblem *, .shot { opacity: 1 !important; transform: none !important; stroke-dashoffset: 0 !important; }
+  .repair-emblem *, .shot { opacity: 1 !important; transform: none !important; stroke-dashoffset: 0 !important; }
+  /* 8-22 晶格降级：静态点线图（脉冲线静态虚线完整、涟漪隐藏、背景层停静态） */
+  .lat-pulses path { animation: none; stroke-dashoffset: 0; }
+  .ripple { display: none; }
+  .hero::before { animation: none; }
 }

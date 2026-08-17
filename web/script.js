@@ -12,7 +12,7 @@
     }
   }, { threshold: 0.25 });
 
-  document.querySelectorAll('.launch-rail, .repair-emblem, .shot, [data-reveal]').forEach((el) => io.observe(el));
+  document.querySelectorAll('.repair-emblem, .shot, [data-reveal]').forEach((el) => io.observe(el));
 
   // 自修复 emblem：扫描线播完后加 .repaired（描边红→青，一次性终态）
   const emblem = document.querySelector('.repair-emblem');
