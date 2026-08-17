@@ -112,10 +112,11 @@
                                                     <ContentControl Content="{Binding}" ContentTemplate="{StaticResource TaskRow}"/>
                                                     <TextBlock Grid.Row="1" Text="{Binding Stage}" Foreground="#7E8BA0" FontSize="12"
                                                                TextTrimming="CharacterEllipsis"/>
-                                                    <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                                    <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="14">
                                                         <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                         <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                         <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding ElapsedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                     </Grid>
                                                 </Grid>
                                             </Expander.Header>
@@ -143,10 +144,11 @@
                                                        TextTrimming="CharacterEllipsis"/>
                                             <ProgressBar Value="{Binding ProgressPercent}" Maximum="100" Height="5"
                                                          IsIndeterminate="{Binding !HasProgress}"/>
-                                            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="14">
                                                 <TextBlock Text="{Binding SpeedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                 <TextBlock Grid.Column="1" Text="{Binding EtaText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                                 <TextBlock Grid.Column="2" Text="{Binding BytesText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding ElapsedText}" Foreground="{DynamicResource TextDim}" FontSize="11"/>
                                             </Grid>
                                         </StackPanel>
                                     </Grid>

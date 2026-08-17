@@ -150,6 +150,19 @@ public partial class DownloadTask : ObservableObject
 
     public string BytesText => $"{FormatBytes(BytesDone)} / {FormatBytes(TotalBytes)}";
 
+    /// <summary>已用/总耗时（不含挂起时间；API 查询阶段等无速度段的时间一眼可见——下载页第四列）</summary>
+    public string ElapsedText
+    {
+        get
+        {
+            var ts = TimeSpan.FromSeconds(_watch.Elapsed.TotalSeconds);
+            var text = ts.TotalMinutes >= 1 ? $"{ts.Minutes}分{ts.Seconds:00}秒" : $"{ts.Seconds}秒";
+            return State == DownloadTaskState.Completed || State == DownloadTaskState.Failed
+                ? $"总耗时 {text}"
+                : $"已用 {text}";
+        }
+    }
+
     /// <summary>子任务迷你行文本（叶子任务的百分比文字）</summary>
     public string ChildProgressText => HasProgress ? $"{ProgressPercent:0}%" : "…";
 
@@ -649,8 +662,9 @@ public partial class DownloadTask : ObservableObject
             _lastBytes = p.FileBytesDone;
             // AL70 防爆表：竞速完成瞬间剩余字节挤进窗口尾部 → 窗口瞬时虚高数倍（实机 19MB 真下 10s 显示几百 MB/s）。
             // 封顶 = 全程平均×1.5（允许多源并发短期增益，但压住数倍爆表）——纯截断不动窗口语义：
-            // 慢速时窗口如实显示慢速，只在瞬时远超全程平均时截断。
-            var avg = now > 0.5 ? p.FileBytesDone / now : inst;
+            // 慢速时窗口如实显示慢速，只在瞬时远超全程平均时截断。开局（0.05s 内）也封——多源首字节并发
+            // 瞬间的"爆发"同样会骗人（100MB 总量下 6s，开局窜 100+MB/s 即此）。
+            var avg = now > 0.05 ? p.FileBytesDone / now : inst;
             speed = Math.Min(inst, avg * 1.5);
 
             stage = string.IsNullOrEmpty(p.Stage) ? "下载中…" : p.Stage;
@@ -675,6 +689,7 @@ public partial class DownloadTask : ObservableObject
             OnPropertyChanged(nameof(SpeedText));
             OnPropertyChanged(nameof(EtaText));
             OnPropertyChanged(nameof(BytesText));
+            OnPropertyChanged(nameof(ElapsedText));
             OnPropertyChanged(nameof(ChildProgressText));
         });
     }
@@ -689,6 +704,7 @@ public partial class DownloadTask : ObservableObject
             OnPropertyChanged(nameof(IsActive));
             OnPropertyChanged(nameof(IsPaused));
             OnPropertyChanged(nameof(IsFailed));
+            OnPropertyChanged(nameof(ElapsedText)); // 完成/失败切换"已用"→"总耗时"文案
         });
     }
 
@@ -699,7 +715,11 @@ public partial class DownloadTask : ObservableObject
     public void SetStage(string stage)
     {
         if (IsGroup) _selfStage = stage; // 同步记录——推导 Post 可能晚于本 Post，读 _selfStage 拿最新
-        Post(() => Stage = stage);
+        Post(() =>
+        {
+            Stage = stage;
+            OnPropertyChanged(nameof(ElapsedText)); // API 查询等无字节阶段也刷新耗时（否则时间停摆）
+        });
     }
 
     private void Post(Action action)
