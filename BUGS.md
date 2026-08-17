@@ -115,3 +115,79 @@
 - 心跳（ReadWithStallAsync）与 throttle 的交互：throttle 每 64KB 块最大延迟（下限 8KB/s → 8s/块）远小于 30s 心跳窗口，无假阳性。
 - [flaky 8-16] PaceRunnerTests.Takeover_OvertakerStableLead_DethronesWinner：全量并发跑时偶发「进度回退 145285→141762」（6s 挂）；单跑 12/12 稳定——250ms 陪跑节拍 + 段表脚本时序，机器负载抖动触发。疑似 RaceProgress.Wrap 单调转发断言对时钟敏感
 - [flaky 8-16] FixedChunkResumeTests.RetryAttempt_ReusesCompletedChunks：全量并发跑时偶发「探测次数 Expected 3 / Actual 2」——判死窗口 100ms 级时序 + 全量机器负载抖动；单跑 2/2 稳定。与 PaceRunner flaky 同族（慢速判死时序敏感）
+
+---
+
+# 8-22 CF 匹配链路 + 下载引擎竞态定向扫描（git 71b01b8..HEAD）
+
+审查范围：CurseForgeService / EcosystemDependencyAdapter / ProjectDetailViewModel / ProjectDetailView.axaml（今日改动）+ DownloadTask（R-01 代际）/ DownloadGroupContext / FileConfigStorage（已知风险点复核）。
+
+## 高
+
+### 17. Suspend→Resume 后旧执行泄漏：旧 RunAsync 的 catch/finally 未被代际守卫，OCE 迟达时完成 TCS 并幽灵重跑
+- 文件: src/Launcher.Core/Download/DownloadTask.cs:218-227（旧 run 第二 catch）、247（叶子 finally）、333（组 finally）、341-347（Suspend）、434-446（Resume）
+- 问题: R-01 代际守卫只保护「已排程的自动重试」（ScheduleAutoRetry 内 `_retryGeneration != gen` 作废），不保护**正在执行的旧 run**。Suspend() 取消 `_cts` 后，若用户迅速 Resume（`_suspendRequested=false`、`_cts` 换新、Run2 启动），旧 run 的 OCE 才到达 catch：`catch (OCE) when (_cts.IsCancellationRequested)` 读到的已是**新** cts（未取消）→ 落入第二 catch（AL34 分支）→ 误判「token 未被请求的中断」→ SetState(Failed) + ScheduleAutoRetry → 排程的 Retry 在 gen 校验后照常执行（gen 快照取的是 Resume 后的值）→ Run3 与 Run2 并发下载同一文件（双写）；同时旧 run finally 因 `_suspendRequested=false` 且（Run2 尚在跑时）`_retryPending` 未置位 → `_completionTcs.TrySetResult()` 提前完成 → 调用方（ExecuteInstallAsync `await task.Completion`、`child.Completion.WaitAsync`、自动移除/历史记录）在下载仍在进行时就收尾。组任务同理（333 行）：编排器用无 token 的 WhenAll 等子任务时（VersionDownloadPipeline 2000 assets 场景），Suspend 后组 run 永远挂起，Resume 后旧 run 变僵尸续延。
+- 复现: 叶子下载中快速「暂停→继续」（OCE 传播晚于 Resume 即可，网络读块间隙/写盘期间最易触发）→ 状态被旧 run 覆写为「失败」且进度仍在走，或提前完成；组任务 2000 文件下载「暂停→继续」循环多次后出现悬挂的组任务。
+- 严重级别: 高（与 R-01 要防的幽灵重跑同根因，代际守卫覆盖面不全；建议 run 开始时快照 gen，catch/finally 前校验 `gen != 当前` 则直接 return 不碰共享状态）
+
+### 18. LoadCfAsync 无实例切换守卫（REVIEW-C 只修了 Modrinth 路径，CF 路径漏了）
+- 文件: src/Launcher.App/ViewModels/ProjectDetailViewModel.cs:294（await GetFilesWithFallbackAsync 用 default ct 不可取消）、275-342（LoadCfAsync 整体）
+- 问题: Modrinth 路径 LoadAsync:232 有 `if (!ReferenceEquals(_instance, captured)) return;` 守卫，CF 路径完全没有：LoadCfAsync 开头没捕获 `_instance`，请求也传 `default` 取消令牌。UpdateContext 切换实例后，旧实例的在途请求完成后照常写 `_cfFile`/`_cfGameVersion`/`VersionHint`/`CanInstall`/MatchedFileText → 与新的 `_instance` 错配 → 「安装」把旧实例的变体（fabric/neoforge、旧游戏版本）装进新实例目录，正是 REVIEW-C 要防的「装错目录」；且旧实例的 RefreshCfDependenciesAsync 也会以旧 gameVersion/loader 覆盖 DependencyHint。
+- 复现: 详情页先选 Fabric 实例（加载中），切到 NeoForge 实例（加载中），若 Fabric 的 CF 响应后到 → 页面显示/可装 Fabric 变体而 _instance 是 NeoForge。
+- 严重级别: 高（同类竞态已在 Modrinth 路径修过，CF 路径未对齐）
+
+## 中
+
+### 19. loader 参数在依赖解析主路径是死参数：GetFilesWithFallbackAsync 的 loader 从未使用，CF ToFile 置 Loaders=[]，解析器选中的变体绕过滤
+- 文件: src/Launcher.Core/Services/CurseForgeService.cs:198-207（loader 形参未在函数体引用）、309-310（id 直查命中则 SelectBestFile(loader) 兜底不执行）；src/Launcher.Core/Ecosystem/EcosystemDependencyAdapter.cs:87、109（`Loaders = []`）
+- 问题: 本次 commit 声称「依赖也要按加载器过滤」，实际链路是：resolver（CreateResolver→GetFilesWithFallbackAsync 返回**未过滤**文件列表）→ `ToFile` 置 `Loaders=[]`（resolver 的 IsCompatibleFile 对 Loaders.Count==0 直接放行）→ resolver 按 releaseType/ReleaseDate 选中变体 → InstallWithDependenciesAsync:309 `files.FirstOrDefault(f.id == dep.File.Id)` 必命中（同源同列表）→ loader 过滤的 SelectBestFile 只在 id 查不到时才执行。即双加载器依赖（malilib 等）从解析到安装全程无 loader 过滤，与 8-22 注释宣称相反。
+- 复现: Fabric 实例装 tweakeroo（依赖 malilib）：malilib 的 neoforge 变体 fileId/release 较新时被 resolver 选中并安装进 fabric 实例 → 启动报错。
+- 严重级别: 中（本轮修复的核心目标未生效；应在 resolver 侧过滤——如 ToFile 时按 loader 剔除敌对变体，或 GetFilesWithFallbackAsync 内先 SelectBestFile）
+
+### 20. IsCompatibleWithLoader「forge」分支恒放过 neoforge 变体（子串自吞）
+- 文件: src/Launcher.Core/Services/CurseForgeService.cs:496
+- 问题: `"forge" => !hasFabric && !hasQuilt && (!hasNeo || hasForge)`——任何 neoforge 文件名都含子串 "forge"（hasForge 恒真）→ `(!hasNeo || hasForge)` 恒真 → forge 实例的过滤退化为只排 fabric/quilt。NameMentionsLoader（481 行）同样把 "neoforge" 名当 "forge" 排最前 → forge 实例会选中并安装 neoforge 变体（运行时必崩），与注释「先判长词」意图相反。测试只覆盖了 fabric/neoforge 目标，forge 分支无测试。
+- 复现: Forge 实例打开 JEI（双加载器）：SelectBestFile 选中 jei-*-neoforge.jar 而非 forge 变体。
+- 严重级别: 中（应与 neoforge 分支对称：`hasForge && !hasNeo` 才放行）
+
+### 21. RefreshCfDependenciesAsync：catch 空实现使提示永久卡「正在查询前置依赖…」；m==-1（未知）也被当成「无需前置依赖」
+- 文件: src/Launcher.App/ViewModels/ProjectDetailViewModel.cs:355-357
+- 问题: ① catch 是空的，注释写「查询失败按无依赖处理」但什么都没做——GetFileAsync/网络异常时 DependencyHint 永远停在 311 行设的「正在查询前置依赖…」，后续安装确认弹窗（821-825 行）会把这个占位文案当依赖提示展示；② 355 行 `DependencyHint = m == 0 ? "无需前置依赖" : "无需前置依赖";` 是恒真式——CountModrinthRequiredDepsAsync 返回 -1（搜不到/网络失败=未知）时也显示「无需前置依赖」，用户被误导为确认无依赖。
+- 复现: 打开任意 CF mod 详情页后断网 → 提示卡「正在查询前置依赖…」永不变；弱网下安装弹窗显示占位文案。
+- 严重级别: 中（状态不一致 + 误导；catch 应复位为「依赖未知」文案，m<0 应单独处理）
+
+### 22. 跨源兜底无法区分「依赖数据缺失」与「本就无依赖」：零依赖 CF mod 全部静默改走 Modrinth 源
+- 文件: src/Launcher.App/ViewModels/ProjectDetailViewModel.cs:797-818
+- 问题: 触发条件 `(file.dependencies ?? []).Count(d => d.relationType == 1) == 0` 对「CF 真没依赖数据」与「这个 mod 本来就没前置」不可区分 → 所有零依赖 CF mod（Sodium 等）安装时都会按标题搜 Modrinth 并装 Modrinth 版，弹出误导性通知「CurseForge 无依赖数据」；搜索按 `limit:1` 只取第一条且**无项目身份校验**（无 slug/id 匹配、无用户确认）——同名不同 mod（如 CF 独有或重名项目）会被直接装进实例，且绕过 includeDeps 依赖确认弹窗、绕过 CF 侧用户所选文件。
+- 复现: 搜索页打开任意无前置的 CF mod 详情 → 安装 → 通知「已改用 Modrinth 源安装」；若 Modrinth 同名搜索第一位是重名 mod → 装错 mod。
+- 严重级别: 中（建议：仅当 CF 单文件详情端点也返回空依赖**且** Modrinth 命中项目标题/作者强匹配时才兜底，或至少弹确认）
+
+### 23. InstallVersion 选中版本行后，匹配文件块与 DependencyHint 不刷新（显示 A、下载 B）
+- 文件: src/Launcher.App/ViewModels/ProjectDetailViewModel.cs:480-501（InstallVersion）、138-152（块属性）
+- 问题: 用户点版本列表任一行后 `_cfFile`/`_matchedVersion` 被换成新选中项，但 MatchedFileText/HasMatchedFile/MatchedDownloadState 不更新（块仍显示自动匹配的旧文件），而 DownloadMatchedFile（382 行）读 `_cfFile`/`_matchedVersion` → 块显示文件 A、点「下载」实际下载 B；同时 RefreshCfDependenciesAsync 不会对新选择重跑 → DependencyHint（含安装确认弹窗）仍是旧文件的数据。
+- 复现: 详情页匹配文件 A → 版本列表点选 B → 匹配文件块仍显示 A → 点「下载」→ 下载的是 B，状态文案与块内容互相矛盾。
+- 严重级别: 中（UI 状态不一致；应在 InstallVersion 中同步刷新块文本并按需重跑依赖查询）
+
+### 24. 搜索页 CF 一键安装（EcosystemViewModel）未接 loader 与依赖详情补查——本轮修复只覆盖详情页
+- 文件: src/Launcher.App/ViewModels/EcosystemViewModel.cs:728（FindBestFileAsync 无 loader 参数）、744（InstallWithDependenciesAsync 传 loader=null）
+- 问题: 同一「安装 JEI」动作，详情页今天修了 loader + 依赖补查，搜索页卡片路径全没修：① FindBestFileAsync 内 SelectBestFile 不带 loader → 双加载器 mod 从搜索页装仍可能选中 neoforge 变体（fabric 实例）；② depCount 取自列表响应的 `file.dependencies`（恒空数组，8-22 实测）→ 依赖确认弹窗永远不弹、InstallWithDependenciesAsync 的 resolver 输入 ToDependencyReferences(file) 为空 → malilib 等前置永远不会被解析安装。
+- 复现: 搜索页直接点 CF 卡片的「安装」（不进详情页）→ 有前置依赖的 mod 装完缺前置、双加载器 mod 装错变体。
+- 严重级别: 中（与详情页行为不一致，属本轮修复遗漏的调用点）
+
+## 低
+
+### 25. DownloadMatchedFile 的 Modrinth 分支 fileName 未过 Path.GetFileName（CF 分支有）
+- 文件: src/Launcher.App/ViewModels/ProjectDetailViewModel.cs:385（CF 分支已 sanitize）vs 393（Modrinth 分支原样取 f.FileName）、399（Path.Combine）
+- 问题: CF 分支 `Path.GetFileName(cf.fileName)` 剥掉了目录成分，Modrinth 分支却直接 `fileName = f?.FileName` → 文件名含路径分隔符或 `..` 时 `Path.Combine(InstallDir, "downloads", "mods", fileName)` 可逃逸到下载目录外覆盖任意文件（Modrinth 文件名虽通常受限，但不应依赖远端约束）；CF 分支文件名含 Windows 非法字符（`<>:"|?*`）时 Path.GetFileName 不剥离 → 下载直接 IOException「下载失败」，与 MR 分支行为不一致。
+- 复现: 恶意/异常文件名（`..\..\evil.jar` 或 `a<b>.jar`）的版本文件点「下载」→ 路径逃逸或落盘失败。
+- 严重级别: 低（加固项；两分支统一 sanitize：Path.GetFileName + 非法字符清洗）
+
+---
+
+## 已复核未发现问题的点（防重复审查）
+
+- FileConfigStorage.cs（PCL.Core/App/Configuration/Storage/FileConfigStorage.cs）：Get 的清理分支已在读锁外（146-163 行先 ExitReadLock 再入队/写锁），读锁内无写树路径；写线程 Sync 与 Get 读锁互斥成立，无双锁死锁路径；Unbounded channel TryWrite 不失败，兜底写锁分支也无嵌套锁。复核结论：无死锁风险。
+- DownloadGroupContext.cs FirstFailure：子任务 IsGroupChild=true 不自动重试 → 失败即终态，PropertyChanged(State==Failed) 与 TCS 同步完成双路径都能唤醒组任务；级联取消（RunGroupAsync 272-276）覆盖了「父已取消、子后创建」（AttachChild 的 externalCancellations 注册）时序。复核结论：首败早退完整。
+- CF hashes 数组反序列化修复（CurseforgeFile.cs hashes → List?）与 `InstallAsync:236` 的 FirstOrDefault 取 SHA1：类型与用法一致，测试（FilesResponse_WithArrayHashes_Deserializes）覆盖；单对象旧格式的存量缓存无（响应不缓存）。
+- GetJsonAsync 200+非 JSON 重试（CurseForgeService.cs:382-386）：attempt==0 时 500ms 后重试一次，`using var resp` 每轮释放，无泄漏；重试路径正确再抛。
+- ProjectDetailView.axaml 新绑定：`!IsDownloadingMatched`（Avalonia 11 支持）、`DependencyHint.Length` 空串不可见——绑定目标存在，无 NRE 路径。

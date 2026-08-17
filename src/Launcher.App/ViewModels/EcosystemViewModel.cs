@@ -699,13 +699,15 @@ public partial class EcosystemViewModel : ViewModelBase
         return r;
     }
 
-    /// <summary>CurseForge 卡片一键安装：最佳文件匹配 → 依赖确认 → 全局下载中心执行 → Toast</summary>
+    /// <summary>CurseForge 卡片一键安装：最佳文件匹配 → 依赖确认 → 全局下载中心执行 → Toast
+    /// 8-22 修复：loader 传递 + 依赖补查（搜索页路径与详情页对齐——否则双加载器装错变体、前置永不解析）</summary>
     private async Task InstallCfCardAsync(ProjectCardVM card, VersionInstanceVM? instance, string? gameVersion)
     {
         if (!int.TryParse(ProjectCardVM.ParseId(card.Id).RawId, out var modId)) return;
+        var loader = instance is not null ? EcosystemService.GuessLoader(instance.Name) : null;
         try
         {
-            var file = await _cf.FindBestFileAsync(modId, gameVersion, CancellationToken.None);
+            var file = await _cf.FindBestFileAsync(modId, gameVersion, CancellationToken.None, loader);
             if (file is null)
             {
                 NotificationService.Error($"{card.Title} 没有适配当前实例的文件");
@@ -727,6 +729,13 @@ public partial class EcosystemViewModel : ViewModelBase
                 installDir = chosen;
             }
 
+            // 8-22 修复：列表响应的 dependencies 恒空（实测）——单文件详情补查真实依赖（与详情页 RefreshCfDependenciesAsync 对齐）
+            try
+            {
+                var detail = await _cf.GetFileAsync(modId, file.id);
+                if (detail is not null) file = detail;
+            }
+            catch { /* 详情拉取失败用列表数据 */ }
             var depCount = (file.dependencies ?? []).Count(d => d.relationType == 1);
             var includeDeps = true;
             if (depCount > 0 && DialogService.MainWindow() is { } owner)
@@ -741,7 +750,7 @@ public partial class EcosystemViewModel : ViewModelBase
                 if (includeDeps)
                 {
                     report = await _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type,
-                        gameVersion, null, null, ct, gameDirOverride: installDir, ctx: gctx); // AF2：装实例真实目录（8-22 可改）
+                        gameVersion, loader, null, ct, gameDirOverride: installDir, ctx: gctx); // AF2：装实例真实目录（8-22 可改）
                 }
                 else
                 {

@@ -85,6 +85,10 @@ public static class EcosystemDependencyAdapter
             {
                 if (!int.TryParse(projectId, out var modId)) return null;
                 var files = cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader).GetAwaiter().GetResult().Files;
+                // 8-22 修复：resolver 侧按加载器剔除敌对变体（ToFile 置 Loaders=[] 使解析器无法过滤——
+                // 否则双加载器依赖 malilib 等会把 neoforge 变体装进 fabric 实例）
+                if (loader is not null)
+                    files = files.Where(f => CurseForgeService.IsCompatibleWithLoader(f, loader)).ToList();
                 if (files.Count == 0) return null;
                 return new ModDependencyProject
                 {

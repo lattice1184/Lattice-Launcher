@@ -191,26 +191,30 @@ public partial class DownloadTask : ObservableObject
 
     private async Task RunAsync(Func<DownloadProgressHandler, CancellationToken, Task> work)
     {
+        var myCts = _cts; // 8-22 修复（BUGS#17）：快照本 run 的 cts——Suspend 取消的是它；Resume/Retry 换新 cts 后
+                          // 旧 run 靠引用比较识别自己已过期，catch/finally 一律静默退出，不碰共享状态
+                          // （否则旧 run 的 OCE 晚到会误判 Failed + 排程幽灵重试，或提前完成 TCS）
         try
         {
             await Task.Run(async () =>
             {
                 _watch.Start();
                 SetState(DownloadTaskState.Downloading);
-                await work(Report, _cts.Token);
+                await work(Report, myCts.Token);
                 // 终态先同步记录（组任务推导依赖），再 Post 到 UI（State 异步生效）
-                var final = _cts.IsCancellationRequested
+                var final = myCts.IsCancellationRequested
                     ? (_suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled)
                     : DownloadTaskState.Completed;
                 TerminalState = final;
                 SetState(final);
                 // AL62：完成文案——「已下载 19MB」替代停在「下载中…」的错觉（100% 与 Stage 同一 Post）
-                if (!_cts.IsCancellationRequested)
+                if (!myCts.IsCancellationRequested)
                     Post(() => { ProgressPercent = 100; Stage = $"已下载 {FormatBytes(BytesDone)}"; });
             });
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (myCts.IsCancellationRequested)
         {
+            if (myCts != _cts) return; // 已 Resume/Retry——旧 run 过期，静默退出（新 run 负责终态）
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
@@ -219,6 +223,7 @@ public partial class DownloadTask : ObservableObject
         {
             // AL34：token 未被请求的 OCE（HttpClient 超时等内部泄漏）→ 失败并带信息——
             // 静默"已取消"在 UI 上不可重试（RetryCommand 只认 Failed）还丢错误原因（探针 08-09 asm 即此）
+            if (myCts != _cts) return; // 8-22：旧 run 过期——不误判 Failed、不排程幽灵重试
             TerminalState = DownloadTaskState.Failed;
             var msg = $"下载中断（{ex.GetType().Name}: {ex.Message}）";
             SetState(DownloadTaskState.Failed, msg);
@@ -228,6 +233,7 @@ public partial class DownloadTask : ObservableObject
         }
         catch (Exception ex)
         {
+            if (myCts != _cts) return; // 8-22：旧 run 过期
             TerminalState = DownloadTaskState.Failed;
             // AL30：Error 与 State 同一 Post 内先 Error 后 State——PropertyChanged(State) 触发下游
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
@@ -240,11 +246,13 @@ public partial class DownloadTask : ObservableObject
         finally
         {
             _watch.Stop();
+            // 8-22 修复（BUGS#17）：旧 run（已被 Resume/Retry 取代）不碰 Completion——新 run 的 finally 负责收尾
+            // （C# 禁止 finally 内 return——用条件合并）
             // 终态（含 Paused？否——暂停只是挂起，Resume 后继续；这里 Paused 由 Suspend 的 Cancel 触发，
             // 需区分：用户暂停 → 不完成；取消 → 完成）。用 _suspendRequested 判定。
             // REVIEW-B2：自动重试排程中（_retryPending）也暂不完成——等重试最终结果，
             // 避免调用方在重试耗尽前误收尾（误报失败弹窗/历史记失败）
-            if (!_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
+            if (myCts == _cts && !_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
         }
     }
 
@@ -252,6 +260,7 @@ public partial class DownloadTask : ObservableObject
 
     private async Task RunGroupAsync(Func<DownloadGroupContext, CancellationToken, Task> groupWork)
     {
+        var myCts = _cts; // 8-22 修复（BUGS#17）：同叶子——旧 run 快照 cts，Resume/Retry 换新后静默退出
         try
         {
             await Task.Run(async () =>
@@ -259,7 +268,7 @@ public partial class DownloadTask : ObservableObject
                 _watch.Start();
                 SetState(DownloadTaskState.Downloading);
                 var ctx = new DownloadGroupContext(this, _ui);
-                await groupWork(ctx, _cts.Token);                 // 编排：创建并等待全部子任务
+                await groupWork(ctx, myCts.Token);                 // 编排：创建并等待全部子任务（本 run 快照——旧 run 取消不影响新 run）
                 // REVIEW-卡完成：首败早退——任一子任务终态失败（组内叶子无自动重试，失败即终态）
                 // 立即进失败分支（取消其余兄弟 + 组失败），不再等 2000 个 assets 全部下完才报错
                 // （BUGS#4/#5 级联取消失效/「正在完成」死寂的根治；正常全成功路径与 WhenAll 等价）
@@ -299,8 +308,9 @@ public partial class DownloadTask : ObservableObject
                 }
             });
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (myCts.IsCancellationRequested)
         {
+            if (myCts != _cts) return; // 已 Resume/Retry——旧 run 过期，静默退出
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
@@ -308,6 +318,7 @@ public partial class DownloadTask : ObservableObject
         catch (OperationCanceledException ex)
         {
             // AL34：token 未被请求的 OCE（内部泄漏）→ 失败并带信息，避免"神秘已取消"
+            if (myCts != _cts) return; // 8-22：旧 run 过期
             TerminalState = DownloadTaskState.Failed;
             var msg = $"安装中断（{ex.GetType().Name}: {ex.Message}）";
             SetState(DownloadTaskState.Failed, msg);
@@ -316,6 +327,7 @@ public partial class DownloadTask : ObservableObject
         }
         catch (Exception ex)
         {
+            if (myCts != _cts) return; // 8-22：旧 run 过期
             TerminalState = DownloadTaskState.Failed;
             // AL30：Error 与 State 同一 Post 内先 Error 后 State——PropertyChanged(State) 触发下游
             // （下载历史 Record）时错误已可见；旧写法分开 Post，Error 晚于 State 生效 → 历史记 Error=null
@@ -329,8 +341,9 @@ public partial class DownloadTask : ObservableObject
         finally
         {
             _watch.Stop();
+            // 8-22 修复（BUGS#17）：旧 run 不碰 Completion（新 run 负责收尾）
             // REVIEW-B2：同叶子——组编排层抛错排程了重试（_retryPending）时不完成，等重试最终结果
-            if (!_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
+            if (myCts == _cts && !_suspendRequested && !_retryPending) _completionTcs.TrySetResult();
         }
     }
 

@@ -216,11 +216,12 @@ public sealed class CurseForgeService
     }
 
     /// <summary>匹配最佳文件：可用 + 版本兼容优先，releaseType=1（Release）优先，fileId 降序（近似"最新"）。
-    /// 8-19 版本参数降级后不能再按原 gameVersion 过滤（CF 文件 gameVersions 不含 26.2——否则误报「没有适配文件」）。</summary>
-    public async Task<CurseforgeFile?> FindBestFileAsync(int modId, string? gameVersion = null, CancellationToken ct = default)
+    /// 8-19 版本参数降级后不能再按原 gameVersion 过滤（CF 文件 gameVersions 不含 26.2——否则误报「没有适配文件」）。
+    /// 8-22 loader：搜索页一键安装路径也要按加载器过滤（详情页已修，此调用点补齐）</summary>
+    public async Task<CurseforgeFile?> FindBestFileAsync(int modId, string? gameVersion = null, CancellationToken ct = default, string? loader = null)
     {
-        var (files, dropped) = await GetFilesWithFallbackAsync(modId, gameVersion, ct);
-        return SelectBestFile(files, dropped ? null : gameVersion);
+        var (files, dropped) = await GetFilesWithFallbackAsync(modId, gameVersion, ct, loader);
+        return SelectBestFile(files, dropped ? null : gameVersion, loader);
     }
 
     /// <summary>安装：下载文件到实例目录（mods/resourcepacks/shaderpacks），整合包到 downloads/modpacks。SHA1 幂等。
@@ -477,12 +478,18 @@ public sealed class CurseForgeService
                    .FirstOrDefault();
     }
 
-    /// <summary>8-22 文件名是否明确标注目标加载器（fabric 文件带 "fabric"；无标记的通用文件/老版本排后面）</summary>
+    /// <summary>8-22 文件名是否明确标注目标加载器（fabric 文件带 "fabric"；无标记的通用文件/老版本排后面）。
+    /// 8-22 修复：forge 目标时 neoforge 文件名也含 "forge" 子串——排除 neoforge 才对称</summary>
     private static bool NameMentionsLoader(CurseforgeFile f, string loader)
-        => (f.fileName ?? f.displayName ?? "").ToLowerInvariant().Contains(loader.ToLowerInvariant());
+    {
+        var name = (f.fileName ?? f.displayName ?? "").ToLowerInvariant();
+        var target = loader.ToLowerInvariant();
+        return target == "forge" ? name.Contains("forge") && !name.Contains("neoforge") : name.Contains(target);
+    }
 
-    /// <summary>8-22 文件名加载器判定：无标记放行；标记存在且不含目标则排除。注意 "neoforge" 含 "forge"——先判长词</summary>
-    private static bool IsCompatibleWithLoader(CurseforgeFile f, string loader)
+    /// <summary>8-22 文件名加载器判定：无标记放行；标记存在且不含目标则排除。注意 "neoforge" 含 "forge"——先判长词。
+    /// 公开：依赖解析器（EcosystemDependencyAdapter.CreateResolver）侧也按此过滤敌对变体（resolver 无 Loader 维度）</summary>
+    public static bool IsCompatibleWithLoader(CurseforgeFile f, string loader)
     {
         var name = (f.fileName ?? f.displayName ?? "").ToLowerInvariant();
         var target = loader.ToLowerInvariant();
@@ -493,7 +500,8 @@ public sealed class CurseForgeService
         return target switch
         {
             "neoforge" => !hasFabric && !hasQuilt,
-            "forge" => !hasFabric && !hasQuilt && (!hasNeo || hasForge),
+            // 8-22 修复：neoforge 文件名含 "forge" 子串（hasForge 恒真）——排除 neoforge 即对称
+            "forge" => !hasFabric && !hasQuilt && !hasNeo,
             "fabric" => !hasNeo && !hasForge && !hasQuilt,
             "quilt" => !hasNeo && !hasForge && !hasFabric,
             _ => true

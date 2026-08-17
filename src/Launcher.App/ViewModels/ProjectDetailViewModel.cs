@@ -277,21 +277,23 @@ public partial class ProjectDetailViewModel : ViewModelBase
         try
         {
             if (!int.TryParse(ProjectCardVM.ParseId(_card.Id).RawId, out var modId)) return;
+            var capturedInstance = _instance; // 8-22 实例切换守卫（对齐 Modrinth 路径 REVIEW-C）：await 后检查，旧实例结果不再覆盖
             _cfModId = modId;
             string? gameVersion = null;
             string? loader = null;
-            if (_instance is not null)
+            if (capturedInstance is not null)
             {
                 // 8-22：加载器一并解析——CF files 双加载器变体（JEI/cloth-config 等 neoforge+fabric）
                 // 不带 gameVersionTypeId 会混入敌对加载器版本
-                if (EcosystemService.TryParseGameVersion(_instance.Name, out var gv)) gameVersion = gv;
-                loader = EcosystemService.GuessLoader(_instance.Name);
+                if (EcosystemService.TryParseGameVersion(capturedInstance.Name, out var gv)) gameVersion = gv;
+                loader = EcosystemService.GuessLoader(capturedInstance.Name);
             }
             _cfGameVersion = gameVersion;
 
             // PCL 式：一次请求拿全量文件——匹配（SelectBestFile）与直显列表（最新 10 条）共用。
             // 8-19：GetFilesWithFallbackAsync 带 dropped——26.2 年份号 CF 返回空已降级全量，不能再按 26.2 过滤
             var (files, dropped) = await _cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader);
+            if (!ReferenceEquals(_instance, capturedInstance)) return; // 实例已切换 → 放弃旧实例结果（否则旧变体装进新实例目录）
             var file = CurseForgeService.SelectBestFile(files, dropped ? null : gameVersion, loader);
             FillVersionRowsCf(files, file?.id.ToString());
             _cfFile = file;
@@ -352,9 +354,10 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (depCount > 0) { DependencyHint = $"将安装 {depCount} 个前置依赖"; return; }
             var m = await CountModrinthRequiredDepsAsync(gameVersion, loader);
             if (m > 0) { DependencyHint = $"将安装 {m} 个前置依赖"; return; }
-            DependencyHint = m == 0 ? "无需前置依赖" : "无需前置依赖";
+            // 8-22 修复：m==0 确认无依赖；m<0（搜不到/网络失败=未知）不得误报「无需」——显示占位避免误导安装确认
+            DependencyHint = m == 0 ? "无需前置依赖" : "前置依赖未知（网络慢或该 mod 未在 Modrinth 收录）";
         }
-        catch { /* 查询失败按无依赖处理 */ }
+        catch { DependencyHint = "前置依赖未知"; } // 8-22 修复：catch 不得留「正在查询…」占位（安装确认弹窗会展示它）
     }
 
     /// <summary>8-22 Modrinth 按名搜 + 最新版本 required 依赖数；-1 = 搜不到/网络失败（未知）</summary>
@@ -393,6 +396,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
             fileName = f?.FileName;
             sha1 = f?.Hashes?.Sha1;
             size = f?.Size ?? 0;
+        }
+        // 8-22 修复：两分支统一消毒——剥目录成分 + 清洗 Windows 非法字符（否则路径逃逸/落盘失败）
+        if (fileName is not null)
+        {
+            fileName = Path.GetFileName(fileName);
+            foreach (var c in Path.GetInvalidFileNameChars()) fileName = fileName.Replace(c, '_');
         }
         if (url is null || string.IsNullOrEmpty(fileName)) return;
 
@@ -495,6 +504,15 @@ public partial class ProjectDetailViewModel : ViewModelBase
             _matchedVersion = null;
             VersionHint = $"已选择: {cf.fileName}";
             RefreshFilesCf(cf);
+            // 8-22 修复：匹配文件块同步刷新（否则块显示旧文件、下载按钮实际下新选的）；依赖提示重查
+            MatchedFileText = $"{cf.displayName ?? cf.fileName} · {FormatSize(cf.fileLength)} · {string.Join("/", cf.gameVersions?.Take(2) ?? [])}";
+            HasMatchedFile = true;
+            MatchedDownloadState = "";
+            _cfModId = cf.modId;
+            _cfGameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv2) ? gv2 : null;
+            DependencyHint = "正在查询前置依赖…";
+            _ = RefreshCfDependenciesAsync(cf.modId, cf.id, _cfGameVersion,
+                _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null);
         }
         else return Task.CompletedTask;
         return Install(default); // 依赖/冲突/路径确认/下载中心全走现有管线
@@ -794,19 +812,24 @@ public partial class ProjectDetailViewModel : ViewModelBase
 
             // 8-22 跨源兜底：CF 依赖数据缺失（tweakeroo/minihud 等实测全空）→ Modrinth 按名全套安装
             // （主文件 + 前置依赖一起装；搜索/版本查询失败则回落原 CF 流程）
+            // 8-22 收紧：仅当 Modrinth 命中标题强匹配（防同名不同 mod 装错）+ 用户确认后才兜底
             if ((file.dependencies ?? []).Count(d => d.relationType == 1) == 0 && _instance is not null)
             {
                 try
                 {
-                    var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 1);
-                    var hit = page?.Hits?.FirstOrDefault();
+                    var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 5);
+                    var hit = page?.Hits?.FirstOrDefault(h => h.Title.Equals(_card.Title, StringComparison.OrdinalIgnoreCase))
+                              ?? page?.Hits?.FirstOrDefault();
                     if (hit is not null)
                     {
                         var mrVersions = await _eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader);
                         var mrVersion = mrVersions?.FirstOrDefault();
-                        if (mrVersion is not null)
+                        if (mrVersion is not null && DialogService.MainWindow() is { } fallbackOwner)
                         {
-                            NotificationService.Info("CurseForge 无依赖数据，已改用 Modrinth 源安装（含前置依赖）");
+                            var ok = await DialogService.Confirm(fallbackOwner,
+                                $"CurseForge 对该 mod 无依赖数据（tweakeroo 等常见），将改用 Modrinth 源安装「{hit.Title}」并自动装入前置依赖。继续？",
+                                "改用 Modrinth 源", "继续", "取消");
+                            if (!ok) return;
                             await ExecuteInstallAsync(async (gctx, dp, t) => await _eco.InstallWithDependenciesAsync(
                                 hit.ProjectId, mrVersion, instanceName, _card.Type, gameVersion, loader, dp, t,
                                 gameDirOverride: gameDirFor, ctx: gctx), instanceName, ct);
