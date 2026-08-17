@@ -29,8 +29,8 @@ public partial class LoaderChoiceDialog : Window
     /// <summary>竞态丢弃：快速切换加载器时旧响应作废</summary>
     private int _versionGen;
 
-    /// <summary>AL28 打开对话框即后台预取 Fabric 列表（最常用）；null = 预取失败（回退现场请求）</summary>
-    private Task<List<LoaderMetaVersion>?>? _fabricPrefetch;
+    /// <summary>AL28 打开对话框即后台预取全部加载器列表（Fabric/Forge/NeoForge/Quilt）；null = 预取失败（回退现场请求）</summary>
+    private readonly Dictionary<LoaderKind, Task<List<LoaderMetaVersion>?>> _prefetch = [];
 
     public LoaderChoiceDialog()
     {
@@ -43,12 +43,14 @@ public partial class LoaderChoiceDialog : Window
     {
         var win = new LoaderChoiceDialog { _versionId = versionId };
         win.VersionTitle.Text = $"下载 {versionId}";
-        // AL28 预取 Fabric 版本列表：网络慢（meta.fabricmc.net 实测 12s+）时点 chip 直接秒出，不干等
-        win._fabricPrefetch = Task.Run(async () =>
-        {
-            try { return await win._service.GetLoaderVersionsAsync(LoaderKind.Fabric, versionId, CancellationToken.None); }
-            catch { return (List<LoaderMetaVersion>?)null; }
-        });
+        // AL28 预取全部加载器版本列表：网络慢（meta.fabricmc.net 实测 12s+、neoforged 同级别）时
+        // 点 chip 直接秒出，不干等——四种并行后台拉，不阻塞对话框
+        foreach (var kind in new[] { LoaderKind.Fabric, LoaderKind.Forge, LoaderKind.NeoForge, LoaderKind.Quilt })
+            win._prefetch[kind] = Task.Run(async () =>
+            {
+                try { return await win._service.GetLoaderVersionsAsync(kind, versionId, CancellationToken.None); }
+                catch { return (List<LoaderMetaVersion>?)null; }
+            });
         var tcs = new TaskCompletionSource<LoaderChoice?>();
         win._result = tcs;
         if (owner is not null) await win.ShowDialog(owner);
@@ -85,9 +87,9 @@ public partial class LoaderChoiceDialog : Window
         VersionBox.ItemsSource = _versions;
         try
         {
-            // Fabric：优先用打开对话框时的预取结果（失败回退现场请求）
-            var list = _kind.Value == LoaderKind.Fabric && _fabricPrefetch is { } pf
-                ? await pf ?? await _service.GetLoaderVersionsAsync(_kind.Value, _versionId, CancellationToken.None)
+            // 优先用打开对话框时的预取结果（失败回退现场请求）
+            var list = _prefetch.TryGetValue(_kind.Value, out var pf) && pf is { } p
+                ? await p ?? await _service.GetLoaderVersionsAsync(_kind.Value, _versionId, CancellationToken.None)
                 : await _service.GetLoaderVersionsAsync(_kind.Value, _versionId, CancellationToken.None);
             if (gen != _versionGen) return; // 竞态：期间切了别的加载器，丢弃旧响应
 
