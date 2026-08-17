@@ -26,7 +26,7 @@
             <TextBlock Text="加载器版本" Classes="sub" FontSize="12"/>
             <ComboBox x:Name="VersionBox" Width="260" HorizontalAlignment="Left" PlaceholderText="加载版本…"/>
             <TextBlock x:Name="VersionStatus" Classes="dim" FontSize="11"/>
-            <CheckBox x:Name="FabricApiCheck" FontSize="11">
+            <CheckBox x:Name="FabricApiCheck" FontSize="11" IsVisible="False">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="同时安装 Fabric API"/>
                     <Border Classes="help-hint"

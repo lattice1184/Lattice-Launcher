@@ -70,8 +70,9 @@ public partial class LoaderChoiceDialog : Window
 
         var tag = (string?)btn.Tag ?? "";
         _kind = tag.Length == 0 ? null : Enum.Parse<LoaderKind>(tag);
-        // Fabric API 仅对 Fabric 有意义（Quilt 自带兼容层），默认勾选
+        // Fabric API 仅对 Fabric 有意义（Quilt 自带兼容层）——勾选框只在 Fabric 下显示，其余加载器隐藏
         FabricApiCheck.IsChecked = _kind == LoaderKind.Fabric;
+        FabricApiCheck.IsVisible = _kind == LoaderKind.Fabric;
         VersionBox.SelectedItem = null;
         VersionPanel.IsVisible = _kind is not null;
         if (_kind is null)
