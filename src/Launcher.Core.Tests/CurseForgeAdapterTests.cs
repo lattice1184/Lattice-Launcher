@@ -29,7 +29,7 @@ public class CurseForgeAdapterTests
     }
 
     private static CurseforgeFile FileWithDeps(params (int ModId, int Relation)[] deps) =>
-        new(7, 432, 100, true, "a", "a.jar", 1, 1, new CurseforgeHashes("h", 1),
+        new(7, 432, 100, true, "a", "a.jar", 1, 1, [new CurseforgeHashes("h", 1)],
             "https://x/a.jar", 10, ["1.21.1"],
             deps.Select(d => new CurseforgeFileDependency(d.ModId, d.Relation)).ToList());
 
@@ -66,7 +66,7 @@ public class CurseForgeAdapterTests
         handler.RouteJson("api.curseforge.com/v1/mods/100/files",
             """
             {"data":[{"id":7,"gameId":432,"modId":100,"isAvailable":true,"displayName":"a","fileName":"a.jar",
-            "releaseType":1,"fileStatus":1,"hashes":{"value":"h","algo":1},
+            "releaseType":1,"fileStatus":1,"hashes":[{"value":"h","algo":1}],
             "downloadUrl":"https://x/a.jar","fileLength":10,"gameVersions":["1.21.1"],
             "dependencies":[{"modId":200,"relationType":1}]}]}
             """);

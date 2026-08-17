@@ -262,8 +262,20 @@ public sealed class EcosystemService
 
     private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct)
     {
-        var json = await _http.GetStringAsync(url, ct);
-        return JsonSerializer.Deserialize<T>(json);
+        string? json = null;
+        try
+        {
+            json = await _http.GetStringAsync(url, ct);
+            return JsonSerializer.Deserialize<T>(json);
+        }
+        catch (Exception ex)
+        {
+            // 8-22 CF 诊断用：Modrinth 路径失败留痕（URL + 异常类型）——详情页「匹配失败」真凶定位
+            try { System.IO.File.AppendAllText(
+                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cf-debug.log"),
+                $"[{DateTime.Now:HH:mm:ss}] modrinth GET {url} -> {ex.GetType().Name}: {ex.Message} (body={(json is null ? "<none>" : json[..Math.Min(80, json.Length)].Replace('\n', ' '))})\n"); } catch { }
+            throw;
+        }
     }
 
     /// <summary>

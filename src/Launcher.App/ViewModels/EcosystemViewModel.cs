@@ -741,7 +741,7 @@ public partial class EcosystemViewModel : ViewModelBase
                 if (includeDeps)
                 {
                     report = await _cf.InstallWithDependenciesAsync(modId, file, instanceName, card.Type,
-                        gameVersion, null, ct, gameDirOverride: installDir, ctx: gctx); // AF2：装实例真实目录（8-22 可改）
+                        gameVersion, null, null, ct, gameDirOverride: installDir, ctx: gctx); // AF2：装实例真实目录（8-22 可改）
                 }
                 else
                 {

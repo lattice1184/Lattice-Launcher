@@ -45,6 +45,30 @@
                 <StackPanel Spacing="10">
                     <TextBlock Text="{Binding VersionHint}" Foreground="#C9D2E3"/>
 
+                    <!-- 匹配文件块（8-22：单独展示匹配文件，可直接下载 jar 到下载缓存，不经过安装流程） -->
+                    <Border CornerRadius="8" Padding="12,10" IsVisible="{Binding HasMatchedFile}"
+                            Background="{DynamicResource BgRaised}">
+                        <StackPanel Spacing="6">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="匹配文件" Classes="sub" FontSize="11"/>
+                                    <TextBlock Text="{Binding MatchedFileText}" FontSize="12" Foreground="#B5F4E9"
+                                               TextWrapping="Wrap"/>
+                                    <!-- 8-22 前置依赖提示（下载时可见：该 mod 需要什么前置一目了然） -->
+                                    <TextBlock Text="{Binding DependencyHint}" FontSize="11" Foreground="#E8C97A"
+                                               TextWrapping="Wrap" IsVisible="{Binding DependencyHint.Length}"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="下载" Classes="primary" FontSize="12" Padding="18,7"
+                                        Command="{Binding DownloadMatchedFileCommand}"
+                                        IsEnabled="{Binding !IsDownloadingMatched}" VerticalAlignment="Center"/>
+                            </Grid>
+                            <ProgressBar Value="{Binding MatchedDownloadProgress}" Maximum="100" Height="5"
+                                         IsVisible="{Binding IsDownloadingMatched}"/>
+                            <TextBlock Text="{Binding MatchedDownloadState}" FontSize="11" Foreground="#5AD07C"
+                                       TextWrapping="Wrap" IsVisible="{Binding MatchedDownloadState.Length}"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- 版本列表（PCL 式：打开即直显最新 10 条，每行独立安装；命中自动匹配的行带推荐标记） -->
                     <TextBlock Text="版本列表" Classes="sub" FontSize="12" IsVisible="{Binding HasVersions}"/>
                     <ItemsControl ItemsSource="{Binding Versions}" IsVisible="{Binding HasVersions}" Margin="0,0,0,4">

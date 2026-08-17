@@ -61,7 +61,7 @@ public class CurseForgeServiceTests
 
     private const string FilesJson = """
         {"data":[{"id":7,"gameId":432,"modId":100,"isAvailable":true,"displayName":"Sodium 0.5.11","fileName":"sodium-0.5.11.jar",
-        "releaseType":1,"fileStatus":1,"hashes":{"value":"abc","algo":1},
+        "releaseType":1,"fileStatus":1,"hashes":[{"value":"abc","algo":1}],
         "downloadUrl":"https://cdn.example.com/files/sodium-0.5.11.jar","fileLength":1234,
         "gameVersions":["1.21.1","1.21.4"],"dependencies":[{"modId":200,"relationType":1}]}]}
         """;
@@ -193,7 +193,7 @@ public class CurseForgeServiceTests
 
     private static CurseforgeFile CfFile(int id, int releaseType, bool available, List<string>? versions = null)
         => new(id, 432, 100, available, $"f{id}", $"f{id}.jar", releaseType, 1,
-            new CurseforgeHashes($"h{id}", 1), $"https://cdn.example.com/f{id}.jar", id * 10, versions, null);
+            [new CurseforgeHashes($"h{id}", 1)], $"https://cdn.example.com/f{id}.jar", id * 10, versions, null);
 
     [Fact]
     public void SelectBestFile_ReleasePreferred_FileIdDesc()
@@ -271,7 +271,7 @@ public class CurseForgeServiceTests
             Path.GetTempPath());
         var svc = new CurseForgeService("k", new HttpClient(handler), downloads, Path.GetTempPath());
         var file = new CurseforgeFile(7, 432, 100, true, "Sodium", "sodium-0.5.11.jar", 1, 1,
-            new CurseforgeHashes(sha1, 1), "https://cdn.example.com/files/sodium-0.5.11.jar",
+            [new CurseforgeHashes(sha1, 1)], "https://cdn.example.com/files/sodium-0.5.11.jar",
             content.Length, ["1.21.1"], null);
 
         // 防幂等残留：上一轮运行可能已在共享 mods 留下同名文件（sha1 匹配会跳过下载 → 请求断言失败）
@@ -507,6 +507,36 @@ public class CurseForgeServiceTests
         Assert.Equal(key, BundledCfKey.Decode(obf)); // 解码还原
         Assert.Null(BundledCfKey.Decode(""));     // 空槽位 = 禁用，不伪造
         Assert.Null(BundledCfKey.Decode("@@invalid@@"));
+    }
+
+    /// <summary>8-22 回归：双加载器 mod（JEI/cloth-config 等）必须按加载器过滤——Fabric 实例不得匹配/显示 NeoForge 变体</summary>
+    [Fact]
+    public void SelectBestFile_FiltersByLoader()
+    {
+        var fabric = new CurseforgeFile(10, 432, 100, true, "jei-fabric", "jei-26.1.2-fabric.jar", 1, 1, null, "https://x/f.jar");
+        var neo = new CurseforgeFile(11, 432, 100, true, "jei-neoforge", "jei-26.1.2-neoforge.jar", 1, 1, null, "https://x/n.jar");
+        var generic = new CurseforgeFile(12, 432, 100, true, "lib", "lib-1.0.jar", 1, 1, null, "https://x/g.jar");
+        // Fabric 实例：排除 neoforge 变体，保留 fabric + 无标记通用文件
+        Assert.Equal("jei-26.1.2-fabric.jar",
+            CurseForgeService.SelectBestFile([fabric, neo, generic], loader: "fabric")!.fileName);
+        // NeoForge 实例：排除 fabric 变体
+        Assert.Equal("jei-26.1.2-neoforge.jar",
+            CurseForgeService.SelectBestFile([fabric, neo], loader: "neoforge")!.fileName);
+        // 无 loader：最新优先（不误伤）
+        Assert.Equal("jei-26.1.2-neoforge.jar",
+            CurseForgeService.SelectBestFile([fabric, neo])!.fileName);
+    }
+
+    /// <summary>8-22 回归：CF files 响应的 hashes 是数组 [{"value","algo"}]——旧单对象类型导致</summary>
+    /// 非空文件列表 Deserialize 必抛 JsonException → UI 误报「响应格式异常」（真机 3 mod 全挂）</summary>
+    [Fact]
+    public void FilesResponse_WithArrayHashes_Deserializes()
+    {
+        const string json = """{"data":[{"id":1,"gameId":432,"modId":100,"isAvailable":true,"displayName":"a","fileName":"a.jar","releaseType":1,"fileStatus":1,"hashes":[{"value":"abc","algo":1}],"downloadUrl":"https://x/a.jar","fileLength":10,"gameVersions":["1.21.1"],"dependencies":[]}]}""";
+        var resp = System.Text.Json.JsonSerializer.Deserialize<CurseforgeFilesResponse>(json);
+        Assert.NotNull(resp);
+        Assert.Single(resp!.data);
+        Assert.Equal("abc", resp.data[0].hashes![0].value);
     }
 
 }

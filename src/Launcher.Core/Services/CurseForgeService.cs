@@ -191,8 +191,11 @@ public sealed class CurseForgeService
         return files;
     }
 
-    /// <summary>文件列表 + 版本过滤是否被丢弃（8-19：26.2 年份号 CF 返回 200+空 → 降级全量，Dropped=true 时调用方不得再按原版本过滤）</summary>
-    public async Task<(List<CurseforgeFile> Files, bool Dropped)> GetFilesWithFallbackAsync(int modId, string? gameVersion, CancellationToken ct)
+    /// <summary>文件列表 + 版本过滤是否被丢弃（8-19：26.2 年份号 CF 返回 200+空 → 降级全量，Dropped=true 时调用方不得再按原版本过滤）。
+    /// 8-22 实测：CF 的 gameVersionTypeId 参数对 26.x 新版 mod 不可靠——JEI 的 fabric 文件（jei-26.1.2-fabric-*.jar）用
+    /// gameVersionTypeId=1 查询返回 0 条、neoforge 也只回远古文件（元数据未更新）→ 不再用请求参数过滤，
+    /// loader 只留作调用方上下文（本地 SelectBestFile 按文件名过滤，实测可靠）</summary>
+    public async Task<(List<CurseforgeFile> Files, bool Dropped)> GetFilesWithFallbackAsync(int modId, string? gameVersion, CancellationToken ct, string? loader = null)
     {
         return await WithVersionFallbackAsync(gameVersion, async gv =>
         {
@@ -230,7 +233,7 @@ public sealed class CurseForgeService
             throw new InvalidOperationException("该文件没有下载地址");
         var targetDir = EcosystemService.ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type);
         var destPath = Path.Combine(targetDir, Path.GetFileName(file.fileName));
-        var sha1 = file.hashes?.algo == 1 ? file.hashes.value : null; // CF algo: 1=SHA1 2=MD5
+        var sha1 = file.hashes?.FirstOrDefault(h => h.algo == 1)?.value; // CF algo: 1=SHA1 2=MD5
         await _downloads.DownloadFileAsync(ApplyCdnPrefix(file.downloadUrl), destPath, sha1, file.fileLength, progress, ct);
         return destPath;
     }
@@ -253,7 +256,7 @@ public sealed class CurseForgeService
     /// </summary>
     public async Task<DependencyInstallReport> InstallWithDependenciesAsync(
         int projectId, CurseforgeFile file, string instanceId, ProjectType type,
-        string? gameVersion,
+        string? gameVersion, string? loader = null,
         DownloadProgressHandler? progress = null, CancellationToken ct = default,
         string? gameDirOverride = null, DownloadGroupContext? ctx = null)
     {
@@ -279,7 +282,8 @@ public sealed class CurseForgeService
         {
             TargetMinecraftVersion = gameVersion ?? "",
             RequiredDependencies = EcosystemDependencyAdapter.ToDependencyReferences(file),
-            ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion),
+            // 8-22 补 loader：递归解析依赖的依赖时按加载器过滤（malilib 等双加载器库 mod 选错版本会装崩）
+            ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion, loader),
         };
         var result = resolver.Resolve(request);
 
@@ -300,9 +304,10 @@ public sealed class CurseForgeService
                         return;
                     }
                     // 8-19 补：GetFilesWithFallbackAsync 带 dropped——降级后不能再用 26.2 精确过滤（同 LoadCfAsync 修复）
-                    var (files, dropped) = await GetFilesWithFallbackAsync(depModId, gameVersion, ct);
+                    // 8-22 补：loader 传递——依赖也要按加载器过滤（双加载器 mod 依赖混装 neoforge 变体会装错）
+                    var (files, dropped) = await GetFilesWithFallbackAsync(depModId, gameVersion, ct, loader);
                     var depFile = files.FirstOrDefault(f => f.id.ToString() == dep.File.Id)
-                                  ?? SelectBestFile(files, dropped ? null : gameVersion);
+                                  ?? SelectBestFile(files, dropped ? null : gameVersion, loader);
                     if (depFile is null)
                     {
                         lock (report) report.Failed.Add(new FailedDependency(dep.ProjectId, "未找到兼容文件"));
@@ -368,6 +373,17 @@ public sealed class CurseForgeService
                 {
                     if (TryParseCfError(json, out var code, out var msg))
                         throw new CurseForgeApiException(code, $"CurseForge 请求失败：{msg}");
+                    // 8-22 诊断：格式异常必留痕（URL + 状态码 + 响应前 160 字符）——实测 CF 侧永不产「格式异常」，
+                    // 日志将暴露 App 实际请求 URL（疑似设置覆盖/中间层）与响应内容（HTML 拦截页/风控挑战页）
+                    try { System.IO.File.AppendAllText(
+                        System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cf-debug.log"),
+                        $"[{DateTime.Now:HH:mm:ss}] CF GET {url} -> {(int)resp.StatusCode} ctype={resp.Content.Headers.ContentType?.MediaType} body={json[..Math.Min(160, json.Length)].Replace('\n', ' ')}\n"); } catch { }
+                    // 8-22 200 + 非 JSON（CloudFront 边缘 HTML 错误页/WAF 拦截页）——瞬时故障重试一次自愈
+                    if (attempt == 0)
+                    {
+                        await Task.Delay(500, ct);
+                        continue;
+                    }
                     throw new HttpRequestException("CurseForge 响应格式异常，请稍后重试");
                 }
             }
@@ -445,15 +461,43 @@ public sealed class CurseForgeService
         return url;
     }
 
-    /// <summary>选最佳文件：可用 + 有下载地址；版本兼容优先（未知版本集合放行）；Release(1) 优先；fileId 降序</summary>
-    public static CurseforgeFile? SelectBestFile(IEnumerable<CurseforgeFile> files, string? gameVersion = null)
+    /// <summary>选最佳文件：可用 + 有下载地址；版本兼容优先（未知版本集合放行）；Release(1) 优先；fileId 降序。
+    /// 8-22 loader 本地兜底：文件名带敌对加载器标记则排除（双加载器 mod 变体），无标记的通用文件放行——
+    /// 与请求层 gameVersionTypeId 双保险（CF 参数语义最准，文件名兜底防参数失效）</summary>
+    public static CurseforgeFile? SelectBestFile(IEnumerable<CurseforgeFile> files, string? gameVersion = null, string? loader = null)
     {
         var pool = files.Where(f => f.isAvailable && !string.IsNullOrEmpty(f.downloadUrl));
         if (gameVersion is not null)
             pool = pool.Where(f => f.gameVersions is null || f.gameVersions.Count == 0 || f.gameVersions.Contains(gameVersion));
-        return pool.OrderByDescending(f => f.releaseType == 1)
+        if (loader is not null)
+            pool = pool.Where(f => IsCompatibleWithLoader(f, loader));
+        return pool.OrderByDescending(f => loader is not null && NameMentionsLoader(f, loader)) // 明确标注目标加载器的最优先
+                   .ThenByDescending(f => f.releaseType == 1)
                    .ThenByDescending(f => f.id)
                    .FirstOrDefault();
+    }
+
+    /// <summary>8-22 文件名是否明确标注目标加载器（fabric 文件带 "fabric"；无标记的通用文件/老版本排后面）</summary>
+    private static bool NameMentionsLoader(CurseforgeFile f, string loader)
+        => (f.fileName ?? f.displayName ?? "").ToLowerInvariant().Contains(loader.ToLowerInvariant());
+
+    /// <summary>8-22 文件名加载器判定：无标记放行；标记存在且不含目标则排除。注意 "neoforge" 含 "forge"——先判长词</summary>
+    private static bool IsCompatibleWithLoader(CurseforgeFile f, string loader)
+    {
+        var name = (f.fileName ?? f.displayName ?? "").ToLowerInvariant();
+        var target = loader.ToLowerInvariant();
+        var hasNeo = name.Contains("neoforge");
+        var hasForge = name.Contains("forge");
+        var hasFabric = name.Contains("fabric");
+        var hasQuilt = name.Contains("quilt");
+        return target switch
+        {
+            "neoforge" => !hasFabric && !hasQuilt,
+            "forge" => !hasFabric && !hasQuilt && (!hasNeo || hasForge),
+            "fabric" => !hasNeo && !hasForge && !hasQuilt,
+            "quilt" => !hasNeo && !hasForge && !hasFabric,
+            _ => true
+        };
     }
 }
 

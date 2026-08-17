@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
@@ -26,6 +27,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
     private ModrinthVersion? _matchedVersion;
     private CurseforgeFile? _cfFile;
     private int _cfModId;
+    private string? _cfGameVersion;
 
     [ObservableProperty]
     public partial string Title { get; set; }
@@ -133,6 +135,22 @@ public partial class ProjectDetailViewModel : ViewModelBase
     /// <summary>直显版本行上限（PCL 风格：最新 10 个，不翻页）</summary>
     private const int MaxVersionRows = 10;
 
+    // 匹配文件块（8-22：单独展示 + 直接下载 jar 到下载缓存，不经过安装/依赖流程）
+    [ObservableProperty]
+    public partial string MatchedFileText { get; set; } = "";
+
+    [ObservableProperty]
+    public partial bool HasMatchedFile { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsDownloadingMatched { get; set; }
+
+    [ObservableProperty]
+    public partial double MatchedDownloadProgress { get; set; }
+
+    [ObservableProperty]
+    public partial string MatchedDownloadState { get; set; } = "";
+
     // 安装状态
     [ObservableProperty]
     public partial bool CanInstall { get; set; }
@@ -215,6 +233,11 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var version = EcosystemService.SelectBestVersion(all);
             FillVersionRows(all, version?.Id);
             _matchedVersion = version;
+            // 匹配文件块：匹配版本的主文件（直接下载用；安装仍走完整依赖流程）
+            var matchedFile = version is null ? null : EcosystemService.PickPrimaryFile(version.Files);
+            MatchedFileText = matchedFile is null ? ""
+                : $"{matchedFile.FileName} · {FormatSize(matchedFile.Size)} · {string.Join("/", version.GameVersions?.Take(2) ?? [])}";
+            HasMatchedFile = matchedFile is not null;
             VersionHint = version is null
                 ? (_instance is null
                     ? "你还没选目标实例。去生态页顶部选一个。"
@@ -244,6 +267,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch (Exception ex)
         {
             VersionHint = $"匹配失败: {ex.Message}";
+            LogCfFailure(ex);
         }
     }
 
@@ -255,13 +279,20 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (!int.TryParse(ProjectCardVM.ParseId(_card.Id).RawId, out var modId)) return;
             _cfModId = modId;
             string? gameVersion = null;
-            if (_instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv))
-                gameVersion = gv;
+            string? loader = null;
+            if (_instance is not null)
+            {
+                // 8-22：加载器一并解析——CF files 双加载器变体（JEI/cloth-config 等 neoforge+fabric）
+                // 不带 gameVersionTypeId 会混入敌对加载器版本
+                if (EcosystemService.TryParseGameVersion(_instance.Name, out var gv)) gameVersion = gv;
+                loader = EcosystemService.GuessLoader(_instance.Name);
+            }
+            _cfGameVersion = gameVersion;
 
             // PCL 式：一次请求拿全量文件——匹配（SelectBestFile）与直显列表（最新 10 条）共用。
             // 8-19：GetFilesWithFallbackAsync 带 dropped——26.2 年份号 CF 返回空已降级全量，不能再按 26.2 过滤
-            var (files, dropped) = await _cf.GetFilesWithFallbackAsync(modId, gameVersion, default);
-            var file = CurseForgeService.SelectBestFile(files, dropped ? null : gameVersion);
+            var (files, dropped) = await _cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader);
+            var file = CurseForgeService.SelectBestFile(files, dropped ? null : gameVersion, loader);
             FillVersionRowsCf(files, file?.id.ToString());
             _cfFile = file;
             VersionHint = file is null
@@ -269,11 +300,16 @@ public partial class ProjectDetailViewModel : ViewModelBase
                     ? "你还没选目标实例。去生态页顶部选一个。"
                     : $"未匹配到 {_instance.Name} 的版本，在下面列表里选一个试试")
                 : $"匹配文件: {file.fileName}";
+            MatchedFileText = file is null ? ""
+                : $"{file.displayName ?? file.fileName} · {FormatSize(file.fileLength)} · {string.Join("/", file.gameVersions?.Take(2) ?? [])}";
+            HasMatchedFile = file is not null;
             CanInstall = file is not null;
             if (file is not null)
             {
-                var depCount = (file.dependencies ?? []).Count(d => d.relationType == 1);
-                DependencyHint = depCount == 0 ? "无需前置依赖" : $"将安装 {depCount} 个前置依赖";
+                // 8-22 修复：CF files 列表响应的 dependencies 恒为空数组（tweakeroo/minihud 实测）——
+                // 依赖只在单文件详情端点返回 → 后台补查，提示从「正在查询」更新为真实依赖数
+                DependencyHint = "正在查询前置依赖…";
+                _ = RefreshCfDependenciesAsync(modId, file.id, gameVersion, loader);
             }
 
             try
@@ -301,7 +337,106 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch (Exception ex)
         {
             VersionHint = $"匹配失败: {ex.Message}";
+            LogCfFailure(ex);
         }
+    }
+
+    /// <summary>8-22 后台补查前置依赖：CF 三端点（列表/单文件详情/项目 latestFiles）对 tweakeroo/minihud 等
+    /// 依赖数据全空（实测）——CF 有数据用 CF，否则按名搜 Modrinth 拿最新版本依赖计数</summary>
+    private async Task RefreshCfDependenciesAsync(int modId, int fileId, string? gameVersion, string? loader)
+    {
+        try
+        {
+            var detail = await _cf.GetFileAsync(modId, fileId);
+            var depCount = (detail?.dependencies ?? []).Count(d => d.relationType == 1);
+            if (depCount > 0) { DependencyHint = $"将安装 {depCount} 个前置依赖"; return; }
+            var m = await CountModrinthRequiredDepsAsync(gameVersion, loader);
+            if (m > 0) { DependencyHint = $"将安装 {m} 个前置依赖"; return; }
+            DependencyHint = m == 0 ? "无需前置依赖" : "无需前置依赖";
+        }
+        catch { /* 查询失败按无依赖处理 */ }
+    }
+
+    /// <summary>8-22 Modrinth 按名搜 + 最新版本 required 依赖数；-1 = 搜不到/网络失败（未知）</summary>
+    private async Task<int> CountModrinthRequiredDepsAsync(string? gameVersion, string? loader)
+    {
+        try
+        {
+            var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 1);
+            var hit = page?.Hits?.FirstOrDefault();
+            if (hit is null) return -1;
+            var versions = await _eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader);
+            return (versions?.FirstOrDefault()?.Dependencies ?? [])
+                .Count(d => d.DependencyType == "required");
+        }
+        catch { return -1; }
+    }
+
+    /// <summary>8-22 直接下载匹配文件：jar 落到下载缓存 {游戏目录}/downloads/mods（不装进实例、不解析依赖）。
+    /// CF 用 SHA1 校验（幂等：已下载过直接跳过）；Modrinth 主文件同路径</summary>
+    [RelayCommand]
+    private async Task DownloadMatchedFile()
+    {
+        string? url = null, fileName = null, sha1 = null;
+        long size = 0;
+        if (_cfFile is { downloadUrl.Length: > 0 } cf)
+        {
+            url = cf.downloadUrl;
+            fileName = Path.GetFileName(cf.fileName);
+            sha1 = cf.hashes?.FirstOrDefault(h => h.algo == 1)?.value;
+            size = cf.fileLength;
+        }
+        else if (_matchedVersion?.Files is { Count: > 0 })
+        {
+            var f = EcosystemService.PickPrimaryFile(_matchedVersion.Files);
+            url = f?.Url;
+            fileName = f?.FileName;
+            sha1 = f?.Hashes?.Sha1;
+            size = f?.Size ?? 0;
+        }
+        if (url is null || string.IsNullOrEmpty(fileName)) return;
+
+        var destPath = Path.Combine(Launcher.Core.Utils.GameDirectory.InstallDir(), "downloads", "mods", fileName);
+        IsDownloadingMatched = true;
+        MatchedDownloadState = "";
+        MatchedDownloadProgress = 0;
+        try
+        {
+            await new DownloadService().DownloadFileAsync(url, destPath, sha1, size > 0 ? size : null,
+                p => Dispatcher.UIThread.Post(() => MatchedDownloadProgress = p.OverallPercent), default);
+            MatchedDownloadProgress = 100;
+            // 8-22 下载完成引导：有前置 → 提示用「安装」；无 → 说明缓存文件用途（下载 ≠ 装入实例 mods）
+            var depNote = DependencyHint.StartsWith("将安装")
+                ? "（该 mod 有前置依赖，建议用「安装」自动装入实例 mods）"
+                : "（下载缓存文件；点「安装」可直接装入实例 mods）";
+            MatchedDownloadState = $"已保存到下载缓存：{destPath} {depNote}";
+            NotificationService.Success($"已下载：{fileName}");
+        }
+        catch (Exception ex)
+        {
+            MatchedDownloadState = $"下载失败：{ex.Message}";
+        }
+        finally
+        {
+            IsDownloadingMatched = false;
+        }
+    }
+
+    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / 1024.0 / 1024:0.#} MB"
+        : bytes >= 1024 ? $"{bytes / 1024:0} KB" : $"{bytes} B";
+
+    /// <summary>8-22 CF 诊断：CF 侧全参数矩阵实测永不产生「格式异常」——失败必留痕（真实 modId/版本/异常全貌），
+    /// 复现后读 exe 目录 cf-debug.log 定位（怀疑本地加速器/代理对 CF 请求返回 200+HTML 或超时）</summary>
+    private void LogCfFailure(Exception ex)
+    {
+        try
+        {
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cf-debug.log"),
+                $"[{DateTime.Now:HH:mm:ss}] source={_card.Source} mod={_cfModId} game={_cfGameVersion} {ex.GetType().Name}: {ex.Message}\n");
+        }
+        catch { /* 日志失败不影响 UI */ }
     }
 
     /// <summary>后台解析依赖：前置提示 + 安装按钮文字（"安装（含 N 个前置）"）</summary>
@@ -632,8 +767,17 @@ public partial class ProjectDetailViewModel : ViewModelBase
             if (_instance is null && _card.Type != ProjectType.Modpack)
                 throw new InvalidOperationException("你还没选目标实例。去生态页顶部选一个。");
             var file = _cfFile ?? throw new InvalidOperationException("没有匹配的可用文件");
+            // 8-22 修复：列表响应的 dependencies 恒空（tweakeroo/minihud 实测）——安装前换单文件详情，
+            // 否则前置依赖（如 malilib）永远不会被解析安装
+            try
+            {
+                var detail = await _cf.GetFileAsync(_cfModId, file.id);
+                if (detail is not null) file = detail;
+            }
+            catch { /* 详情拉取失败用列表数据（依赖未知则按无依赖处理） */ }
             var gameVersion = _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv)
                 ? gv : null;
+            var loader = _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null;
             var instanceName = _instance?.Name ?? "modpack";
             // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2
             var gameDirFor = _instance is { GameDir.Length: > 0 } inst
@@ -648,6 +792,31 @@ public partial class ProjectDetailViewModel : ViewModelBase
                 gameDirFor = chosen;
             }
 
+            // 8-22 跨源兜底：CF 依赖数据缺失（tweakeroo/minihud 等实测全空）→ Modrinth 按名全套安装
+            // （主文件 + 前置依赖一起装；搜索/版本查询失败则回落原 CF 流程）
+            if ((file.dependencies ?? []).Count(d => d.relationType == 1) == 0 && _instance is not null)
+            {
+                try
+                {
+                    var page = await _eco.SearchAsync(_card.Type, _card.Title, gameVersion, loader, limit: 1);
+                    var hit = page?.Hits?.FirstOrDefault();
+                    if (hit is not null)
+                    {
+                        var mrVersions = await _eco.GetVersionsAsync(hit.ProjectId, gameVersion, loader);
+                        var mrVersion = mrVersions?.FirstOrDefault();
+                        if (mrVersion is not null)
+                        {
+                            NotificationService.Info("CurseForge 无依赖数据，已改用 Modrinth 源安装（含前置依赖）");
+                            await ExecuteInstallAsync(async (gctx, dp, t) => await _eco.InstallWithDependenciesAsync(
+                                hit.ProjectId, mrVersion, instanceName, _card.Type, gameVersion, loader, dp, t,
+                                gameDirOverride: gameDirFor, ctx: gctx), instanceName, ct);
+                            return;
+                        }
+                    }
+                }
+                catch { /* 兜底失败回落原流程 */ }
+            }
+
             var includeDeps = true;
             if (DependencyHint.Length > 0 && DialogService.MainWindow() is { } owner)
             {
@@ -659,7 +828,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
             {
                 if (includeDeps)
                     return await _cf.InstallWithDependenciesAsync(_cfModId, file, instanceName, _card.Type,
-                        gameVersion, dp, t, gameDirOverride: gameDirFor, ctx: gctx);
+                        gameVersion, loader, dp, t, gameDirOverride: gameDirFor, ctx: gctx);
                 string? path = null;
                 if (gctx is null)
                     path = await _cf.InstallAsync(_cfModId, file, instanceName, _card.Type, dp, t, gameDirFor);

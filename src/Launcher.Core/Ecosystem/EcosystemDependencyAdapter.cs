@@ -74,16 +74,17 @@ public static class EcosystemDependencyAdapter
 
     // ---------- CurseForge ----------
 
-    /// <summary>创建 CurseForge ProjectResolver（同步签名，内部同步等待——依赖数量少，可接受）</summary>
+    /// <summary>创建 CurseForge ProjectResolver（同步签名，内部同步等待——依赖数量少，可接受）。
+    /// 8-22 loader 透传：CF 依赖（如 JEI→cloth-config）匹配文件时按加载器过滤（SelectBestFile 兜底）</summary>
     public static Func<string, string, ModDependencyProject?> CreateResolver(
-        CurseForgeService cf, string? gameVersion)
+        CurseForgeService cf, string? gameVersion, string? loader = null)
     {
         return (source, projectId) =>
         {
             try
             {
                 if (!int.TryParse(projectId, out var modId)) return null;
-                var files = cf.GetFilesAsync(modId, gameVersion).GetAwaiter().GetResult();
+                var files = cf.GetFilesWithFallbackAsync(modId, gameVersion, default, loader).GetAwaiter().GetResult().Files;
                 if (files.Count == 0) return null;
                 return new ModDependencyProject
                 {

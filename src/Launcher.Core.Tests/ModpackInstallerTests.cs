@@ -186,7 +186,7 @@ public class ModpackInstallerTests
                 ["/mc/game/version_manifest_v2.json"] = ManifestJson,
                 ["/mc/1.21.10.json"] = VanillaJson,
                 // CF API 兜底：单文件详情（返回 downloadUrl 指向 stub CDN）
-                ["/v1/mods/100/files/200"] = """{"data":{"id":200,"gameId":432,"modId":100,"isAvailable":true,"displayName":"Sodium","fileName":"sodium-api.jar","releaseType":1,"fileStatus":1,"hashes":{"value":"4601044687c40f1a23385d338d02f9fc7f5d512d","algo":1},"downloadUrl":"https://cdn.example/sodium-api.jar","fileLength":5}}""",
+                ["/v1/mods/100/files/200"] = """{"data":{"id":200,"gameId":432,"modId":100,"isAvailable":true,"displayName":"Sodium","fileName":"sodium-api.jar","releaseType":1,"fileStatus":1,"hashes":[{"value":"4601044687c40f1a23385d338d02f9fc7f5d512d","algo":1}],"downloadUrl":"https://cdn.example/sodium-api.jar","fileLength":5}}""",
                 ["/sodium-api.jar"] = "BBBBB",
             };
             var http = new HttpClient(new StubHandler(routes));
