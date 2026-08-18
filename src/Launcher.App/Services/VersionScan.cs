@@ -36,11 +36,12 @@ public static class VersionScan
         return (loader, mc);
     }
 
-    /// <summary>PCL 式显示名：加载器版本 → "1.21.11 (Fabric)"，原版保持原名（主页/版本页统一，勿各写一份）</summary>
+    /// <summary>PCL 式显示名：加载器版本 → "1.21.11 (Fabric)"，原版 → "1.21.11 (原版)"
+    /// （8-18 批次 73：原版加后缀，与主页/开服页口径统一——用户无法区分原版与带加载器版本）</summary>
     public static string FriendlyName(string id, string loader, string mcVersion)
         => loader.Length > 0 && mcVersion.Length > 0
             ? $"{mcVersion} ({Cap(loader)})"
-            : id;
+            : $"{id} (原版)";
 
     /// <summary>
     /// 有效 client jar 判定（与两种下载语义对齐，版本页行徽章/详情共用）：

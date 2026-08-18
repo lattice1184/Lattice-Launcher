@@ -310,7 +310,7 @@ public partial class ServerViewModel : ViewModelBase
             await svc.RefreshAsync();
             // 收集全部候选 (目录, 版本)
             var candidates = new List<(string Dir, string Id)>();
-            foreach (var e in svc.Entries.Where(e => e.Installed))
+            foreach (var e in svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id)))
                 candidates.Add((e.GameDirectory, e.Id));
             // 目录补漏：加载器版本（fabric/forge 等不在 manifest）+ PCL/官方扫描源
             foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
@@ -321,7 +321,9 @@ public partial class ServerViewModel : ViewModelBase
                 {
                     var id = Path.GetFileName(d);
                     if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
-                    if (File.Exists(Path.Combine(d, $"{id}.json")))
+                    // 8-18 批次 73：预取原版父版本（仅供加载器继承）不入开服列表；隔离删除残件不显示
+                    if (id.Contains(".deleting-", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (File.Exists(Path.Combine(d, $"{id}.json")) && InstallMarker.ShouldShowInPage(dir, id))
                         candidates.Add((dir, id));
                 }
             }

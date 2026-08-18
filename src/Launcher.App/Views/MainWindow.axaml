@@ -57,9 +57,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavHomeIconR" Data="{StaticResource NavIconHomeRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavHomeIconF" Data="{StaticResource NavIconHomeFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="主页" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
@@ -71,9 +74,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE9D2;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavVersionIconR" Data="{StaticResource NavIconVersionRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavVersionIconF" Data="{StaticResource NavIconVersionFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="版本" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
@@ -85,9 +91,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <TextBlock Text="&#xE896;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavDownloadIconR" Data="{StaticResource NavIconDownloadRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavDownloadIconF" Data="{StaticResource NavIconDownloadFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="下载" Foreground="{Binding $parent[Button].Foreground}"/>
                                 <Border Classes="badge" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                         VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
@@ -103,9 +112,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE7C3;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavServerIconR" Data="{StaticResource NavIconServerRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavServerIconF" Data="{StaticResource NavIconServerFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="开服" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
@@ -117,9 +129,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE77B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavMultiIconR" Data="{StaticResource NavIconMultiRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavMultiIconF" Data="{StaticResource NavIconMultiFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
@@ -131,9 +146,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE774;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavEcoIconR" Data="{StaticResource NavIconEcoRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavEcoIconF" Data="{StaticResource NavIconEcoFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="生态" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>
@@ -145,9 +163,12 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                           FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{Binding $parent[Button].Foreground}"/>
+                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                    <Path x:Name="NavSettingsIconR" Data="{StaticResource NavIconSettingsRegular}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                    <Path x:Name="NavSettingsIconF" Data="{StaticResource NavIconSettingsFilled}" Stretch="Uniform"
+                                          Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                </Grid>
                                 <TextBlock Text="设置" Foreground="{Binding $parent[Button].Foreground}"/>
                             </StackPanel>
                         </Button>

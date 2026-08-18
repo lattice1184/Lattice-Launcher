@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         _navButtons["multiplayer"] = NavMultiplayer;
         _navButtons["ecosystem"] = NavEcosystem;
         _navButtons["settings"] = NavSettings;
+        RegisterNavIcons();
         // AL47 整合包拖入：全窗口接收 zip/mrpack 拖拽（DragOver 过滤，Drop 取第一个导入）
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnWindowDragOver);
@@ -302,12 +303,114 @@ public partial class MainWindow : Window
     private void ApplyNavVisuals()
     {
         if (DataContext is not MainViewModel main) return;
+        string? activePage = null;
         foreach (var (page, btn) in _navButtons)
         {
             var (bg, fg) = NavTargetVisuals(btn);
             btn.Background = bg;
             btn.Foreground = fg;
-            if (IsPageActive(main, page)) MoveNavIndicator(btn);
+            if (IsPageActive(main, page))
+            {
+                activePage = page;
+                MoveNavIndicator(btn);
+            }
+        }
+        // 批次 72（8-18）：图标双态交叉淡入 + 激活切换瞬间的语义动作
+        foreach (var (page, _) in _navButtons) AnimateIconState(page, page == activePage);
+        if (activePage is not null && activePage != _lastActivePage)
+        {
+            PlayNavIconAction(activePage);
+            _lastActivePage = activePage;
+        }
+    }
+
+    // ===== 导航图标双态 + 语义动作（批次 72，8-18；FluentSystemIcons Regular/Filled 矢量双字形） =====
+    /// <summary>图标双字形注册表（页面 → Regular 层/Filled 层）。</summary>
+    private readonly Dictionary<string, (Avalonia.Controls.Shapes.Path R, Avalonia.Controls.Shapes.Path F)> _navIcons = new();
+    private string? _lastActivePage;
+
+    private void RegisterNavIcons()
+    {
+        _navIcons["home"] = (NavHomeIconR, NavHomeIconF);
+        _navIcons["version"] = (NavVersionIconR, NavVersionIconF);
+        _navIcons["download"] = (NavDownloadIconR, NavDownloadIconF);
+        _navIcons["server"] = (NavServerIconR, NavServerIconF);
+        _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
+        _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
+        _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
+    }
+
+    /// <summary>双态交叉淡入：激活 → Filled 显 / Regular 隐（150ms）；取消激活反向。复用 UiAnim 帧驱动。</summary>
+    private void AnimateIconState(string page, bool active)
+    {
+        if (!_navIcons.TryGetValue(page, out var p)) return;
+        var rFrom = p.R.Opacity;
+        var fFrom = p.F.Opacity;
+        var rTo = active ? 0.0 : 1.0;
+        var fTo = active ? 1.0 : 0.0;
+        if (Math.Abs(rFrom - rTo) < 0.001) return;
+        UiAnim.Animate(150, UiAnim.Curves.Decelerate, e =>
+        {
+            p.R.Opacity = rFrom + (rTo - rFrom) * e;
+            p.F.Opacity = fFrom + (fTo - fFrom) * e;
+        }, host: p.F, slot: "navicon");
+    }
+
+    /// <summary>图标语义动作：激活切换瞬间对当前可见层播放一次表演（纯 transform，sin 往返一次；完成后清变换）。</summary>
+    private void PlayNavIconAction(string page)
+    {
+        if (!_navIcons.TryGetValue(page, out var p)) return;
+        var target = p.F.Opacity > 0.5 ? p.F : p.R; // 当前可见层（双态动画未完成时按现状取）
+        switch (page)
+        {
+            case "download": // 箭头下沉插入托盘（往返一次）
+                var tt = new TranslateTransform(0, 0);
+                target.RenderTransform = tt;
+                UiAnim.Animate(220, UiAnim.Curves.Standard, e => tt.Y = Math.Sin(e * Math.PI) * 3,
+                    () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "settings": // 齿轮微转
+                var rt = new RotateTransform(0);
+                target.RenderTransform = rt;
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(220, UiAnim.Curves.Standard, e => rt.Angle = Math.Sin(e * Math.PI) * 15,
+                    () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "server": // 服务器顶灯亮起：scale 脉冲
+            case "ecosystem": // 生态节点脉冲：scale 脉冲
+                var st = new ScaleTransform(1, 1);
+                target.RenderTransform = st;
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(220, UiAnim.Curves.Standard, e =>
+                {
+                    var s = 1 + Math.Sin(e * Math.PI) * (page == "server" ? 0.15 : 0.12);
+                    st.ScaleX = s;
+                    st.ScaleY = s;
+                }, () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "home": // 房子落位（单向收敛，非弹跳）
+                var st2 = new ScaleTransform(0.92, 0.92);
+                target.RenderTransform = st2;
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(150, UiAnim.Curves.Decelerate, e =>
+                {
+                    var s = 0.92 + 0.08 * e;
+                    st2.ScaleX = s;
+                    st2.ScaleY = s;
+                }, () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "version": // 书页从下落入位
+                var tt2 = new TranslateTransform(0, 2);
+                target.RenderTransform = tt2;
+                UiAnim.Animate(150, UiAnim.Curves.Decelerate, e => tt2.Y = 2 * (1 - e),
+                    () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "multiplayer": // 人群从右聚拢
+                var tt3 = new TranslateTransform(3, 0);
+                target.RenderTransform = tt3;
+                UiAnim.Animate(150, UiAnim.Curves.Decelerate, e => tt3.X = 3 * (1 - e),
+                    () => target.RenderTransform = null, target, slot: "navact");
+                break;
         }
     }
 

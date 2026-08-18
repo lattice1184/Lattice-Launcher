@@ -41,7 +41,10 @@ namespace Launcher.Core.Services;
 /// <summary>构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）</summary>
 internal static class BundledCfKeyGen
 {
-    public const string Obfuscated = "$obf";
+    public static readonly string Obfuscated = "$obf";
+
+    /// <summary>诱饵字段——不参与任何逻辑，仅供迷惑反编译者（假 key，解码后打 CF 必 403）</summary>
+    public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
 }
 "@
     [System.IO.File]::WriteAllText($genFile, $content, [System.Text.Encoding]::UTF8)
@@ -54,18 +57,39 @@ internal static class BundledCfKeyGen
 
 function Publish-One([string]$finalName, [switch]$SelfContained) {
     $stage = Join-Path $out "stage"
+    $pubDir = Join-Path $root "src\Launcher.App\bin\Release\net10.0-windows\win-x64\publish"
     Inject-BundledCfKey
+    # 两步 publish：先出 DLL 形式供发布期处理，再 --no-build 打包单文件
+    Write-Host "  [1/3] dotnet publish（非单文件，供混淆）..." -ForegroundColor DarkGray
+    & dotnet publish (Join-Path $root "src/Launcher.App") `
+        -c Release -r win-x64 --self-contained $SelfContained `
+        -p:PublishSingleFile=false `
+        -p:RollForward=LatestMajor `
+        -p:DebugType=None -p:DebugSymbols=false | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "publish(非单文件) 失败 (exit $LASTEXITCODE)" }
+    $coreDll = Join-Path $pubDir "Launcher.Core.dll"
+    if (Test-Path $coreDll) {
+        Write-Host "  [2/3] Obfuscar 混淆 Launcher.Core.dll..." -ForegroundColor DarkYellow
+        & obfuscar.console (Join-Path $root "obfuscar.xml") | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "Obfuscar 失败 (exit $LASTEXITCODE)" }
+        $obfOut = Join-Path $pubDir "obf-stage\Launcher.Core.dll"
+        Move-Item $obfOut $coreDll -Force
+        Remove-Item (Join-Path $pubDir "obf-stage") -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Host "  [警告] 未找到 $coreDll，跳过混淆" -ForegroundColor Yellow
+    }
+    Write-Host "  [3/3] dotnet publish（单文件打包，含混淆 DLL）..." -ForegroundColor DarkGray
     & dotnet publish (Join-Path $root "src/Launcher.App") `
         -c Release -r win-x64 --self-contained $SelfContained `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:EnableCompressionInSingleFile=$SelfContained `
         -p:RollForward=LatestMajor `
         -p:DebugType=None -p:DebugSymbols=false `
-        -o $stage | Out-Null
+        --no-build -o $stage | Out-Null
     # 注：EnableCompressionInSingleFile 单文件压缩仅支持 self-contained（fdep 会报 NETSDK1176）；
     # 反引号续行内严禁插入注释行（会打断续行链，-p: 被当独立命令）；
     # | Out-Null 必须：dotnet publish 的 stdout 会进函数管道，泄漏到返回值（$finalSelf 变数组导致 Get-Item 报错）。
-    if ($LASTEXITCODE -ne 0) { throw "publish 失败 (exit $LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "publish(单文件) 失败 (exit $LASTEXITCODE)" }
 
     $exe = Get-ChildItem (Join-Path $stage "*.exe") | Select-Object -First 1
     if ($null -eq $exe) { Write-Host "[错误] 发布产物中未找到 exe" -ForegroundColor Red; exit 1 }

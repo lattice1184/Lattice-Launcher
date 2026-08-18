@@ -14,3 +14,7 @@ src/Launcher.Core.Tests/TestResults/
 SESSION_NOTES.md
 REVIEW-E.md
 宣传/
+
+# 发布期本地配置/工具（不随仓库分发）
+obfuscar.xml
+scripts/check-obfuscation.py

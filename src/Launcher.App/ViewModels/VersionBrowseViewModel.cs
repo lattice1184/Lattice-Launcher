@@ -78,7 +78,7 @@ public partial class VersionBrowseViewModel : ViewModelBase
         try
         {
             await _svc.RefreshAsync();
-            var installed = _svc.Entries.Where(e => e.Installed)
+            var installed = _svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id))
                 .ToDictionary(e => e.Id, e => e.GameDirectory, StringComparer.OrdinalIgnoreCase);
 
             _all.Clear();
@@ -174,6 +174,8 @@ public partial class VersionBrowseViewModel : ViewModelBase
     private void SyncFromDisk()
     {
         var keep = SelectedVersion?.Id;
+        var keepGameDir = SelectedVersion?.GameDir ?? ""; // 快照：RescanLocal 重建列表会清空选中
+        // （8-18 批次 73：原在 else 分支读，此时 SelectedVersion 已为 null → diskGone 恒真 → 点选原版行误弹"已被删除"）
         RescanLocal();
         if (keep is null) return;
         var row = _all.FirstOrDefault(r => r.Id.Equals(keep, StringComparison.OrdinalIgnoreCase));
@@ -189,7 +191,6 @@ public partial class VersionBrowseViewModel : ViewModelBase
             // 8-22 消失必有反馈：磁盘态变化把选中的版本滤掉时静默清空 = 「点一下版本就没了」的
             // 幽灵体验（真机 26.2 原版消失：json 残件被重标 .prefetched → 按预取残留隐藏）。
             // 先查磁盘区分「预取隐藏」和「真被删」，别给删版本的用户误报预取文案
-            var keepGameDir = SelectedVersion?.GameDir ?? "";
             var diskGone = !Directory.Exists(Path.Combine(keepGameDir, "versions", keep))
                            || !File.Exists(Path.Combine(keepGameDir, "versions", keep, $"{keep}.json"));
             Detail.ClearSelection(); // 版本被删 → 详情清空

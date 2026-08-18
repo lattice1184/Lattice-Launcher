@@ -69,13 +69,14 @@ public static class RippleBehavior
 
         var pos = e.GetPosition(host);
         var maxR = Math.Max(host.Bounds.Width, host.Bounds.Height) * 1.2;
-        // Google 涟漪：扩散色 = 点击变深（BgBase #14181F——比所有按钮底色更暗；BgActive 反而比底色亮会显"白影"）
+        // Google 涟漪：8-18 批次 73 改半透明白（#40FFFFFF）——深色涟漪 #14181F 在导航深色玻璃
+        // （#12161F）上融进背景不可见（用户实测"没有波纹"）；白色 25% alpha 在深色 UI 任何底上都可见
         // 一次布局定位（Canvas 坐标固定，圆心恒在按压点）+ 每帧只动 ScaleTransform/Opacity（零布局写、零分配）
         var ellipse = new Ellipse
         {
             Width = maxR * 2,                 // 终尺寸一次定死（布局只发生一次）
             Height = maxR * 2,
-            Fill = new SolidColorBrush(Color.Parse("#14181F")),
+            Fill = new SolidColorBrush(Color.Parse("#40FFFFFF")),
             IsHitTestVisible = false,
             RenderTransform = new ScaleTransform(0, 0), // 预置 0，防首帧闪全尺寸；圆心=默认 50%,50%=按压点
             Opacity = 0.9,
