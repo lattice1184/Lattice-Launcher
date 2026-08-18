@@ -197,6 +197,14 @@
             <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{DynamicResource TextPrimary}"/>
         </Style>
 
+        <!-- 链接按钮（accent 青字——外部跳转入口一眼可辨，区别于本地操作的幽灵按钮） -->
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{DynamicResource AccentLight}"/>
+        </Style>
+
         <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动） -->
         <Style Selector="Button.tab">
             <Setter Property="Padding" Value="16,7"/>
