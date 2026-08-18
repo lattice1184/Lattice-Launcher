@@ -37,15 +37,11 @@ public sealed class VersionInstaller
 
         if (File.Exists(jsonPath))
         {
-            // AL42 补：缓存命中也要打预取标记——旧版本（无 AL42 时）写下的缓存没有 .prefetched，
-            // 不补的话删除加载器版本时清理判定失败，留下幽灵条目（真机 08-09 第 2 轮循环测试发现）。
-            // 守卫：已正式安装（.yanla-installed）的版本永不误加——真机 08-09 自动修复流程
-            // 读已装版本 json 命中缓存 → 误打 .prefetched → 版本页把它当「预取残留」隐藏（26.2 消失根因）
-            // 8-14 再守卫：非自建目录（PCL/官方扫描源）不写任何标记——修复路径打标记是误标根因
-            // （整合包导入 allowForeignMarkers 放行——预取父版本是导入流程的有意行为）
-            if ((_allowForeignMarkers || GameDirectory.IsOwnInstallDir(_gameDirectory))
-                && !InstallMarker.IsMarked(_gameDirectory, safeId))
-                InstallMarker.MarkPrefetched(_gameDirectory, safeId);
+            // 8-18 批次 74：移除缓存命中的 .prefetched 补写——浏览/点选（LoadSizeAsync 等读路径）
+            // 写盘标记 → FileSystemWatcher 触发重扫 → 版本页按「预取残留」过滤 → 行消失 → 主页
+            // （可用判定）又显示 → 1.21.10 点一下就没、循环往复（真机 8-18 第 2 轮循环测试发现）。
+            // 预取标记只在真正拉取（下载）分支写（下方）；AL42 时代的旧缓存残件不再补标，
+            // 清理判定依赖新流程自带的标记，缺失时作为可见残件（json-only）可修可删。
             try
             {
                 var cached = JsonSerializer.Deserialize<VersionJson>(await File.ReadAllTextAsync(jsonPath, ct));

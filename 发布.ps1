@@ -43,7 +43,7 @@ internal static class BundledCfKeyGen
 {
     public static readonly string Obfuscated = "$obf";
 
-    /// <summary>诱饵字段——不参与任何逻辑，仅供迷惑反编译者（假 key，解码后打 CF 必 403）</summary>
+    /// <summary>预留字段（构建注入模板同步用）</summary>
     public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
 }
 "@
