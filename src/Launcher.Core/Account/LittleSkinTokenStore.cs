@@ -20,7 +20,8 @@ public sealed class LittleSkinTokenStore
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "littleskin-token.json");
     }
 
-    private sealed record Stored(string AccessToken, string RefreshToken, int ExpiresInSec);
+    /// <summary>8-19 签发时间（主动过期判断用；旧文件无此字段 = default，Load 兼容照常返回）</summary>
+    private sealed record Stored(string AccessToken, string RefreshToken, int ExpiresInSec, DateTime IssuedAtUtc);
 
     /// <summary>读 token（解密）；无文件/损坏 → null</summary>
     public LittleSkinOAuth.TokenPair? Load()
@@ -41,7 +42,8 @@ public sealed class LittleSkinTokenStore
     /// <summary>写 token（DPAPI 加密落盘）</summary>
     public void Save(LittleSkinOAuth.TokenPair tokens)
     {
-        var stored = new Stored(Secrets.Protect(tokens.AccessToken), Secrets.Protect(tokens.RefreshToken), tokens.ExpiresInSec);
+        var stored = new Stored(Secrets.Protect(tokens.AccessToken), Secrets.Protect(tokens.RefreshToken),
+            tokens.ExpiresInSec, DateTime.UtcNow);
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         File.WriteAllText(_path, JsonSerializer.Serialize(stored));
     }

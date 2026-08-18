@@ -15,7 +15,7 @@
             <StackPanel Spacing="8">
                 <!-- 已连接：角色 + 断开 + 网页打开 -->
                 <StackPanel IsVisible="{Binding IsConnected}">
-                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="应用皮肤到角色：" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="1" MinWidth="160" ItemsSource="{Binding Players}"
                                   SelectedItem="{Binding SelectedPlayer}">
@@ -25,9 +25,14 @@
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <Button Grid.Column="2" Content="在网页打开皮肤库" Classes="ghost" FontSize="11" Padding="10,4"
+                        <!-- 8-19 多角色切换：所选角色 ≠ 当前游戏账号时可一键切换（登录默认取第一个角色） -->
+                        <Button Grid.Column="2" Content="设为游戏账号" Classes="ghost" FontSize="11" Padding="10,4"
+                                Command="{Binding SetAsGameAccountCommand}"
+                                IsVisible="{Binding CanSetAsGameAccount}"
+                                ToolTip.Tip="把这个角色切换为启动器的游戏账号（多角色账号专用）"/>
+                        <Button Grid.Column="3" Content="在网页打开皮肤库" Classes="ghost" FontSize="11" Padding="10,4"
                                 Command="{Binding OpenWebSkinlibCommand}"/>
-                        <Button Grid.Column="3" Content="断开连接" Classes="ghost" FontSize="11" Padding="10,4"
+                        <Button Grid.Column="4" Content="断开连接" Classes="ghost" FontSize="11" Padding="10,4"
                                 Command="{Binding DisconnectCommand}"/>
                     </Grid>
                 </StackPanel>

@@ -75,13 +75,22 @@ public partial class AccountViewModel : ViewModelBase
                 a.Type == "microsoft" ? "正版" : a.Type == "littleskin" ? "Littleskin" : "离线",
                 a.Name == acc?.Name));
 
-        // 玩家头像（minotar 渲染服务；离线名返回默认 Steve 皮肤，与游戏内一致）。
-        // 8-13：不置空——加载期间保留旧头像，首字母块兜底，避免每次刷新闪空白
-        // 8-22 全栈排查：空 Name（accounts.json 手工编辑/外部账号空名）→ [..1] 索引越界崩
+        // 玩家头像（8-19：正版/离线走 minotar 渲染；LittleSkin 走 yggdrasil 纹理——minotar 对非
+        // Mojang 名返回 Steve 默认图，头像永不更新）。8-13：不置空——加载期间保留旧头像，首字母块兜底
         AvatarFallback = acc is null || string.IsNullOrEmpty(acc.Name) ? "" : acc.Name[..1].ToUpperInvariant();
         if (acc is not null)
-            _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
-                bmp => Avatar = bmp);
+        {
+            if (acc.Type == "littleskin")
+            {
+                _ = ImageLoader.LoadAsync(Launcher.Core.Account.LittleSkinApi.SkinFileUrl(acc.Name),
+                    bmp => Avatar = bmp);
+            }
+            else
+            {
+                _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
+                    bmp => Avatar = bmp);
+            }
+        }
     }
 
     /// <summary>8-13 账号类型文本（微软正版 / Littleskin / 离线 / 空）</summary>
@@ -249,6 +258,14 @@ public partial class AccountViewModel : ViewModelBase
             }
             var uuid = await api.GetUuidByNameAsync(name, CancellationToken.None);
             _accounts.LoginLittleskin(name, uuid);
+            // 8-19 回归修复：登录即同步皮肤到本地（SkinPack 注入条件 = 本地文件存在——
+            // 旧邮箱流程有下载、OAuth 重构丢失，不下载则游戏内永远是默认 Steve/Alex）
+            try
+            {
+                if (!await Launcher.Core.Account.LittleSkinSkinSync.DownloadToLocalAsync(http, name))
+                    Status = $"已登录 Littleskin {name}（皮肤同步失败，游戏内暂时是默认皮肤）";
+            }
+            catch { /* 皮肤同步失败不阻塞登录 */ }
             IsDeviceCodeMode = false;
             DeviceCodeText = "";
             IsLoginFormVisible = false;

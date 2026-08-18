@@ -44,6 +44,34 @@ public partial class SkinLibraryViewModel : ViewModelBase
     public ObservableCollection<PlayerInfo> Players { get; } = [];
     [ObservableProperty]
     public partial PlayerInfo? SelectedPlayer { get; set; }
+
+    /// <summary>8-19 多角色切换：所选角色不是当前游戏账号时可「设为游戏账号」（登录只取第一个角色，
+    /// 第 2+ 角色只能从皮肤库切换）</summary>
+    public bool CanSetAsGameAccount
+        => IsConnected && SelectedPlayer is { } p
+           && p.Name != Launcher.Core.Account.AccountService.Shared.Current?.Name;
+
+    partial void OnSelectedPlayerChanged(PlayerInfo? value) => OnPropertyChanged(nameof(CanSetAsGameAccount));
+
+    partial void OnIsConnectedChanged(bool value) => OnPropertyChanged(nameof(CanSetAsGameAccount));
+
+    /// <summary>8-19 把所选角色切换为启动器的游戏账号（多角色账号专用；切换后主页/头像即时生效）</summary>
+    [RelayCommand]
+    private async Task SetAsGameAccount()
+    {
+        if (SelectedPlayer is not { } p || IsBusy) return;
+        IsBusy = true;
+        try
+        {
+            var uuid = await _api.GetUuidByNameAsync(p.Name, CancellationToken.None);
+            Launcher.Core.Account.AccountService.Shared.LoginLittleskin(p.Name, uuid);
+            NotificationService.Success($"已切换为 LittleSkin 账号 {p.Name}");
+            OnPropertyChanged(nameof(CanSetAsGameAccount));
+            RefreshHomeAvatar();
+        }
+        catch (Exception ex) { ShowError(ex); }
+        finally { IsBusy = false; }
+    }
     public ObservableCollection<ClosetItemVM> Closet { get; } = [];
     [ObservableProperty]
     public partial bool IsLoadingCloset { get; set; }
@@ -233,7 +261,8 @@ public partial class SkinLibraryViewModel : ViewModelBase
         {
             await WithRefreshAsync(ct => _api.ApplySkinAsync(SelectedPlayer.Pid, item.Item.Tid, ct));
             var wrote = await DownloadToLocalAsync(SelectedPlayer.Name, item.Item);
-            Status = $"已应用到 {SelectedPlayer.Name}" + (wrote ? "，游戏内与本地头像同步生效" : "（游戏内已生效，本地保存失败）");
+            // 8-19 文案改准确：应用皮肤后本地已写 skins/{name}.png（SkinPack 下次启动注入）+ 头像即时刷新
+            Status = $"已应用到 {SelectedPlayer.Name}" + (wrote ? "，皮肤已存本地，下次启动游戏内生效" : "（游戏内已生效，本地保存失败）");
             RefreshHomeAvatar();
             NotificationService.Success(Status);
         }
@@ -262,30 +291,10 @@ public partial class SkinLibraryViewModel : ViewModelBase
         finally { BusyItemTid = null; }
     }
 
-    /// <summary>下载皮肤原图写本地（yggdrasil 纹理路径 404 → 降级 /textures/{hash}）；返回是否成功</summary>
-    private async Task<bool> DownloadToLocalAsync(string playerName, LittleSkinApi.ClosetItem item)
-    {
-        byte[]? bytes = null;
-        foreach (var url in new[] { LittleSkinApi.SkinFileUrl(playerName), $"https://littleskin.cn/textures/{item.Hash}" })
-        {
-            try
-            {
-                using var resp = await _http.GetAsync(url);
-                if (resp.IsSuccessStatusCode) { bytes = await resp.Content.ReadAsByteArrayAsync(); break; }
-            }
-            catch { /* 换下一个候选 */ }
-        }
-        if (bytes is null) return false;
-
-        var size = SkinPngHeader.TryParse(bytes);
-        if (size is not { } dims || !SkinPack.IsSupportedSize(dims.Width, dims.Height))
-            return false; // 尺寸不支持（或非 PNG）——不写本地（游戏内 PUT 已生效）
-
-        var dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "skins", $"{playerName}.png"); // 与 HomeViewModel.LocalSkinPath 同规则
-        SkinFileWriter.ForceWrite(dest, bytes);
-        return true;
-    }
+    /// <summary>下载皮肤原图写本地（yggdrasil 纹理路径 404 → 降级 /textures/{hash}）；返回是否成功。
+    /// 8-19 实现移到共享类 LittleSkinSkinSync（登录流程也用它——登录即同步皮肤）</summary>
+    private Task<bool> DownloadToLocalAsync(string playerName, LittleSkinApi.ClosetItem item)
+        => LittleSkinSkinSync.DownloadToLocalAsync(_http, playerName, item.Hash);
 
     /// <summary>刷新主页头像（应用/下载成功后本地头像即时更新）</summary>
     private static void RefreshHomeAvatar()
@@ -342,7 +351,21 @@ public partial class SkinLibraryViewModel : ViewModelBase
         var current = _store.Load();
         if (current is null)
             throw new InvalidOperationException("LittleSkin 未连接，请重新连接");
-        var fresh = await LittleSkinOAuth.RefreshAsync(_http, clientId, current.RefreshToken, CancellationToken.None);
+        LittleSkinOAuth.TokenPair fresh;
+        try
+        {
+            fresh = await LittleSkinOAuth.RefreshAsync(_http, clientId, current.RefreshToken, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // 8-19 刷新失败（invalid_grant=授权被撤销/refresh 失效等）→ 清 token 回未连接 +
+            // 明确提示重连——此前残留脏状态：IsConnected 仍 true、每次开窗再失败一次
+            Disconnect();
+            throw new InvalidOperationException(
+                ex.Message.Contains("已失效", StringComparison.Ordinal)
+                    ? "LittleSkin 授权已失效，请重新连接"
+                    : $"LittleSkin 刷新授权失败：{ex.Message}。已断开，请重新连接");
+        }
         _store.Save(fresh);
         try
         {

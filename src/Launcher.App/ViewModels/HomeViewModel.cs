@@ -319,12 +319,19 @@ public partial class HomeViewModel : ViewModelBase
         // 8-13：不置空——网络头像加载期间保留旧头像（首字母块兜底由视图层做），避免每次刷新闪空白
         if (acc is null) return;
 
-        // 8-18 终局：头像统一走 minotar 3D 渲染（helm——与弹窗头像一致，脸永远正确）。
-        // 本地皮肤（换肤）只作用于游戏内，不再做主头像：自定义皮肤图（非标准布局）裁脸必失败
+        // 8-18 终局（正版/离线）：头像走 minotar 3D 渲染（helm——脸永远正确）。
+        // 本地皮肤（换肤）只作用于游戏内，不做主头像：自定义皮肤图（非标准布局）裁脸必失败
         // （实机：整图=全身照缩小、裁(0,0)=透明、(8,8)=纯白——三种都不像头像）；helm 失败时
         // 本地皮肤整图作离线兜底，再失败保持首字母。
+        // 8-19 LittleSkin 分支：minotar 对非 Mojang 名实测返回 200+Steve 默认图（非 404）——
+        // 头像永不更新、撞名还显示别人脸；LittleSkin 皮肤是标准 64×64 布局，本地裁脸可靠
         var skinPath = LocalSkinPath(acc.Name);
         Launcher.Core.Utils.AppLog.Instance?.LogInformation("[avatar] refresh: {Name}, skin={Exists}", acc.Name, File.Exists(skinPath));
+        if (acc.Type == "littleskin")
+        {
+            LoadLittleSkinAvatar(acc.Name, skinPath);
+            return;
+        }
         _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png", bmp =>
         {
             if (bmp is not null) { PlayerAvatar = bmp; return; }
@@ -333,6 +340,40 @@ public partial class HomeViewModel : ViewModelBase
                 try { using var s = File.OpenRead(skinPath); PlayerAvatar = new Avalonia.Media.Imaging.Bitmap(s); }
                 catch { /* 本地兜底失败保持首字母 */ }
             }
+        });
+    }
+
+    /// <summary>8-19 LittleSkin 头像：本地皮肤（标准布局）裁脸 → yggdrasil 纹理图裁脸 → 首字母。
+    /// 皮肤库应用皮肤会写本地并触发 RefreshPlayer——头像随皮肤库即时更新</summary>
+    private void LoadLittleSkinAvatar(string name, string skinPath)
+    {
+        // 本地皮肤优先（皮肤库应用后已写入；标准 64×64/64×32 布局，脸在 (8,8)-(16,16)）
+        if (File.Exists(skinPath))
+        {
+            try
+            {
+                using var s = File.OpenRead(skinPath);
+                using var bmp = new Avalonia.Media.Imaging.Bitmap(s);
+                if (bmp.PixelSize.Width == 64 && (bmp.PixelSize.Height is 64 or 32))
+                {
+                    PlayerAvatar = new Avalonia.Media.Imaging.CroppedBitmap(bmp,
+                        new Avalonia.PixelRect(8, 8, 8, 8));
+                    return;
+                }
+            }
+            catch { /* 本地图损坏走网络 */ }
+        }
+        // 网络 yggdrasil 纹理（免 token）；非标准布局不裁（整图兜底观感已可接受）
+        _ = ImageLoader.LoadAsync(Launcher.Core.Account.LittleSkinApi.SkinFileUrl(name), bmp =>
+        {
+            if (bmp is null) return;
+            try
+            {
+                PlayerAvatar = bmp.PixelSize.Width == 64 && (bmp.PixelSize.Height is 64 or 32)
+                    ? new Avalonia.Media.Imaging.CroppedBitmap(bmp, new Avalonia.PixelRect(8, 8, 8, 8))
+                    : bmp;
+            }
+            catch { PlayerAvatar = bmp; } // 裁脸失败整图兜底
         });
     }
 

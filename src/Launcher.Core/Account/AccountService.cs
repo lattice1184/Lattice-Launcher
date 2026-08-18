@@ -51,7 +51,7 @@ public sealed class AccountService
     }
 
     /// <summary>8-13 Littleskin 第三方登录：按皮肤站角色保存（type=littleskin；
-    /// 无 token 落盘——皮肤站 token 本启动器无用途，皮肤 PNG 已本地化到 skins/{name}.png）</summary>
+    /// 皮肤 PNG 由 LittleSkinSkinSync 登录时同步到 skins/{name}.png——SkinPack 注入条件）</summary>
     public AccountInfo LoginLittleskin(string name, string uuid)
     {
         var acc = new AccountInfo(name, FormatUuid(uuid), "littleskin");
