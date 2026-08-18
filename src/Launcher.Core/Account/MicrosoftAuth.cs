@@ -15,7 +15,7 @@ namespace Launcher.Core.Account;
 public static class MicrosoftAuth
 {
     // 8-13：Minecraft Java 官方 title client id（Live 设备码端点 oauth20_connect.srf 实测可用；
-    // PCL 的 <redacted>… 只启用 remoteconnect 端点，不支持设备码——invalid_client）
+    // 部分老 Live 系 clientId 只启用 remoteconnect 端点，不支持设备码——invalid_client）
     internal const string FallbackClientId = "00000000402b5328";
     // 设备码流程固定 scope：MBI_SSL = Xbox Live 用户令牌（wl.* 不适用于设备码端点——invalid_scope）
     private const string DeviceCodeScope = "service::user.auth.xboxlive.com::MBI_SSL";
