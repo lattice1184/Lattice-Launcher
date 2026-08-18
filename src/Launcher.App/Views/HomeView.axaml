@@ -288,23 +288,15 @@
                                     Command="{Binding Account.LoginOfflineCommand}"/>
                         </Grid>
 
-                        <!-- Littleskin 第三方（8-19 统一 OAuth 设备码 + 弹窗内内联完成，不绕设置页） -->
+                        <!-- Littleskin 第三方（8-19 重设计：一次授权搞定，不用填任何东西） -->
                         <StackPanel Spacing="8" IsVisible="{Binding Account.IsLittleskinMode}">
-                            <TextBlock Text="用浏览器授权登录，和正版登录一样输配对码就行"
+                            <TextBlock Text="点一下登录：浏览器授权一次，账号和皮肤库一起连接好，之后皮肤库直接进"
                                        Classes="dim" FontSize="11" TextWrapping="Wrap"/>
-                            <!-- 8-19 精简：Client ID 没配置时直接在弹窗里填（填一次写进设置，下次不用再填） -->
-                            <StackPanel Spacing="6" IsVisible="{Binding Account.IsLittleSkinClientIdNeeded}">
-                                <TextBox Text="{Binding Account.LittleSkinClientIdInput}"
-                                         Watermark="LittleSkin Client ID（没有就点下面注册）"
-                                         FontFamily="Consolas" FontSize="11"/>
-                                <Button Content="创建应用" Classes="link" FontSize="11" Padding="0"
-                                        HorizontalAlignment="Left" Click="OnOpenLsOAuth"
-                                        ToolTip.Tip="打开 LittleSkin OAuth 应用管理页，创建后把 Client ID 复制回来填上"/>
-                            </StackPanel>
                             <Button Content="Littleskin 登录" Classes="primary" FontSize="12" Padding="14,7"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                     Command="{Binding Account.LoginLittleskinCommand}"
-                                    IsEnabled="{Binding !Account.IsMsAuthBusy}"/>
+                                    IsEnabled="{Binding !Account.IsMsAuthBusy}"
+                                    ToolTip.Tip="首次需要浏览器输配对码授权；之后打开皮肤库直接可用，不用再配对"/>
                             <Button Content="注册 Littleskin" Classes="link" FontSize="11" Padding="0"
                                     HorizontalAlignment="Left"
                                     Command="{Binding Account.OpenLittleskinRegisterCommand}"/>

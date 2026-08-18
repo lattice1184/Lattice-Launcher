@@ -197,17 +197,9 @@ public partial class AccountViewModel : ViewModelBase
             _ => LoginModeKind.Microsoft,
         };
 
-    /// <summary>8-19 精简：LittleSkin Client ID 内联输入（设置里没有有效值时在主页头像弹窗里直接填，不用去设置页）</summary>
-    [ObservableProperty]
-    public partial string LittleSkinClientIdInput { get; set; } = "";
-
-    /// <summary>是否显示 Client ID 输入框（当前设置里没有有效值才要填）</summary>
-    public bool IsLittleSkinClientIdNeeded
-        => string.IsNullOrWhiteSpace(Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId);
-
-    /// <summary>8-19 LittleSkin 登录统一走 OAuth 设备码（用户拍板：邮箱密码直连与皮肤库 OAuth 两套分裂
-    /// 是「填了 client_id 却搞不懂」的根因——client_id 只被 OAuth 消费）。流程与正版登录一致：
-    /// 发起 → 浏览器输码授权 → 自动登录角色为游戏账号。client_id 唯一入口：设置 → 外观 → 皮肤库。</summary>
+    /// <summary>8-19 重设计：LittleSkin 登录 = 一次浏览器授权搞定一切。
+    /// client_id 内置默认 1504（设置页可改）——不用填；授权后 token 存入 LittleSkinTokenStore
+    /// （登录即连接：皮肤库窗口直接可用，不再二次配对）。</summary>
     [RelayCommand]
     private async Task LoginLittleskin()
     {
@@ -215,16 +207,8 @@ public partial class AccountViewModel : ViewModelBase
         var clientId = Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId;
         if (string.IsNullOrWhiteSpace(clientId))
         {
-            // 8-19 精简：弹窗内联输入（不用再去设置页）；输入框也是空的 → 停在原地提示
-            clientId = LittleSkinClientIdInput.Trim();
-            if (clientId.Length == 0)
-            {
-                Status = "先填一下 LittleSkin Client ID（下面输入框；没有就先点「创建应用」注册）";
-                return;
-            }
-            Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId = clientId;
-            Launcher.Core.Utils.LauncherSettings.Current.Save(); // 写回设置（DPAPI 加密落盘，与设置页同字段）
-            LittleSkinClientIdInput = "";
+            Status = "LittleSkin Client ID 没配置：去 设置 → 外观 → 皮肤库 填一下（默认 1504 已内置，这里只兜底）";
+            return;
         }
         IsMsAuthBusy = true;
         Status = "";
@@ -248,7 +232,9 @@ public partial class AccountViewModel : ViewModelBase
             var tokens = await Launcher.Core.Account.LittleSkinOAuth.PollDeviceCodeAsync(
                 http, clientId, session, s => Status = s, _deviceCts.Token);
 
-            // 授权成功：取角色 → 登录为游戏账号（与皮肤库「连接即登录」同一链路）
+            // 授权成功：先存 token（登录即连接——皮肤库窗口读同一 store 直接可用，免二次配对）
+            Launcher.Core.Account.LittleSkinTokenStore.Shared.Save(tokens);
+            // 取角色 → 登录为游戏账号（与皮肤库「连接即登录」同一链路）
             Status = "授权成功，正在同步账号…";
             var api = new Launcher.Core.Account.LittleSkinApi(http, () => tokens.AccessToken);
             var players = await api.GetPlayersAsync(CancellationToken.None);

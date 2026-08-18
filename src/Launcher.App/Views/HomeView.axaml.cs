@@ -169,13 +169,6 @@ public partial class HomeView : UserControl
 
 }
 
-    /// <summary>8-19 创建 LittleSkin OAuth 应用（Client ID 内联填写的注册入口）</summary>
-    private void OnOpenLsOAuth(object? sender, RoutedEventArgs e)
-    {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://littleskin.cn/user/oauth/manage") { UseShellExecute = true }); }
-        catch { NotificationService.Error("无法打开浏览器，请手动访问 littleskin.cn/user/oauth/manage"); }
-    }
-
     /// <summary>8-16 批次 51：打开内置 LittleSkin 皮肤库窗口（非模态；VM 独立实例）</summary>
     private void OnOpenSkinLibrary(object? sender, RoutedEventArgs e)
     {
