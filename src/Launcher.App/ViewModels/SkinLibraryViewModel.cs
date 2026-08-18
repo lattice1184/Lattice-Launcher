@@ -18,7 +18,6 @@ namespace Launcher.App.ViewModels;
 /// </summary>
 public partial class SkinLibraryViewModel : ViewModelBase
 {
-    private const string OAuthManageUrl = "https://littleskin.cn/user/oauth/manage";
     private const string SkinlibWebUrl = "https://littleskin.cn/skinlib";
 
     private readonly LittleSkinApi _api;
@@ -85,13 +84,10 @@ public partial class SkinLibraryViewModel : ViewModelBase
     [RelayCommand]
     private async Task ConnectAsync()
     {
+        // 8-19 client_id 已内部化（Load 空值回填内置默认）——此防御理论不可达，纯保险
         var clientId = LauncherSettings.Current.LittleSkinClientId;
         if (string.IsNullOrWhiteSpace(clientId))
-        {
-            Status = "还没填 LittleSkin Client ID：设置 → 外观 → LittleSkin Client ID";
-            OpenUrl(OAuthManageUrl);
-            return;
-        }
+            clientId = LittleSkinOAuth.DefaultClientId;
         IsConnecting = true;
         IsBusy = true;
         Status = "正在发起连接…";
@@ -342,8 +338,9 @@ public partial class SkinLibraryViewModel : ViewModelBase
         }
         _tokenRefreshed = true;
         var clientId = LauncherSettings.Current.LittleSkinClientId;
+        if (string.IsNullOrWhiteSpace(clientId)) clientId = LittleSkinOAuth.DefaultClientId; // 内部化防御
         var current = _store.Load();
-        if (string.IsNullOrWhiteSpace(clientId) || current is null)
+        if (current is null)
             throw new InvalidOperationException("LittleSkin 未连接，请重新连接");
         var fresh = await LittleSkinOAuth.RefreshAsync(_http, clientId, current.RefreshToken, CancellationToken.None);
         _store.Save(fresh);

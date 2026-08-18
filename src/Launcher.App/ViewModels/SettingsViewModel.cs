@@ -70,10 +70,6 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string JavaPathText { get; set; } = "";
 
-    /// <summary>8-16 LittleSkin OAuth client_id（皮肤库设备码流必需；留空连接时引导创建应用）</summary>
-    [ObservableProperty]
-    public partial string LittleSkinClientId { get; set; } = "";
-
     [ObservableProperty]
     public partial string ExtraJvmArgsText { get; set; } = "";
 
@@ -310,7 +306,6 @@ public partial class SettingsViewModel : ViewModelBase
             ?? MemoryPresets[^1]; // 非预设值 → 自定义
         MemoryCustomText = s.MemoryMb > 0 ? s.MemoryMb.ToString() : "";
         JavaPathText = s.JavaPath ?? "";
-        LittleSkinClientId = s.LittleSkinClientId ?? "";
         ExtraJvmArgsText = s.ExtraJvmArgs ?? "";
         AutoChineseEnabled = s.AutoChineseEnabled;
         EcoFollowInstance = s.EcoFollowInstance;
@@ -367,7 +362,6 @@ public partial class SettingsViewModel : ViewModelBase
         var s = LauncherSettings.Current;
         s.VersionIsolation = VersionIsolation;
         s.JavaPath = string.IsNullOrWhiteSpace(JavaPathText) ? null : JavaPathText.Trim();
-        s.LittleSkinClientId = LittleSkinClientId.Trim(); // Save 内 DPAPI 加密落盘
         s.ExtraJvmArgs = string.IsNullOrWhiteSpace(ExtraJvmArgsText) ? null : ExtraJvmArgsText.Trim();
         s.AutoChineseEnabled = AutoChineseEnabled;
         s.EcoFollowInstance = EcoFollowInstance;

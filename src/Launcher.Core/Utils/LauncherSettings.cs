@@ -88,10 +88,9 @@ public sealed class LauncherSettings
     /// DPAPI 加密落盘——「藏」的第一层（防 grep 挖二进制级防护）。</summary>
     public string MicrosoftClientId { get; set; } = "";
 
-    /// <summary>LittleSkin OAuth 应用 client_id（8-16 批次 51 皮肤库：设备码流必需，无官方公共值，用户自建）。
-    /// 8-19 默认 "1504"（开发者自己的应用，OAuth 只要 client_id 不要 secret——公开信息内置；
-    /// 用户已在设置页填过的值优先，加载覆盖默认）</summary>
-    public string LittleSkinClientId { get; set; } = "1504";
+    /// <summary>LittleSkin OAuth 应用 client_id（8-16 批次 51 皮肤库：设备码流必需）。
+    /// 8-19 内部化：默认内置值 + 加载空值回填——用户界面不再暴露此设置（账号弹窗/皮肤库直接一条龙登录）</summary>
+    public string LittleSkinClientId { get; set; } = Launcher.Core.Account.LittleSkinOAuth.DefaultClientId;
 
     /// <summary>8-16 批次 52 CF API 地址覆盖（空 = 官方 api.curseforge.com；填自建代理如 Cloudflare Worker 绕开直连抖动）</summary>
     public string CurseForgeApiBase { get; set; } = "";
@@ -146,7 +145,8 @@ public sealed class LauncherSettings
                     s.CurseForgeApiKey = Secrets.Read(s.CurseForgeApiKey) ?? "";
                     s.GitHubApiToken = Secrets.Read(s.GitHubApiToken) ?? "";
                     s.MicrosoftClientId = Secrets.Read(s.MicrosoftClientId) ?? "";
-                    s.LittleSkinClientId = Secrets.Read(s.LittleSkinClientId) ?? "";
+                    // 8-19 空值回填内置默认（旧配置存过空串会覆盖字段默认——不回填用户又被引导去设置）
+                    s.LittleSkinClientId = Secrets.Read(s.LittleSkinClientId) ?? Launcher.Core.Account.LittleSkinOAuth.DefaultClientId;
                     return s;
                 }
             }

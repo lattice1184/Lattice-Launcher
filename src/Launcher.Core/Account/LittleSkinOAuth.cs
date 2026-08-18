@@ -14,6 +14,10 @@ public static class LittleSkinOAuth
     internal const string DeviceCodeUrl = "https://open.littleskin.cn/oauth/device_code";
     internal const string TokenUrl = "https://open.littleskin.cn/oauth/token";
 
+    /// <summary>8-19 内置默认 client_id（开发者自建应用；OAuth 只要 client_id 不要 secret——公开信息，
+    /// 内部常量不暴露给用户界面；设置里存过旧值的优先，空则回填此值）</summary>
+    public const string DefaultClientId = "1504";
+
     /// <summary>
     /// 连接所需 scope：衣柜读 + 角色读写 + offline_access（8-16 文档核实：refresh_token 必须申请
     /// offline_access，否则拿不到刷新令牌、401 自愈链路失效；设备码流勿申请 Yggdrasil scope——invalid_scope）

@@ -204,12 +204,10 @@ public partial class AccountViewModel : ViewModelBase
     private async Task LoginLittleskin()
     {
         if (IsMsAuthBusy) return;
+        // 8-19 client_id 已内部化（Load 空值回填内置默认）——此防御理论不可达，纯保险
         var clientId = Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId;
         if (string.IsNullOrWhiteSpace(clientId))
-        {
-            Status = "LittleSkin Client ID 没配置：去 设置 → 外观 → 皮肤库 填一下（默认 1504 已内置，这里只兜底）";
-            return;
-        }
+            clientId = Launcher.Core.Account.LittleSkinOAuth.DefaultClientId;
         IsMsAuthBusy = true;
         Status = "";
         try
