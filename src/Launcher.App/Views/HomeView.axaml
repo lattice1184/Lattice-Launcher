@@ -288,23 +288,26 @@
                                     Command="{Binding Account.LoginOfflineCommand}"/>
                         </Grid>
 
-                        <!-- Littleskin 第三方（8-19 统一 OAuth 设备码：浏览器授权一次即登录；
-                             需要先在 设置 → 外观 → 皮肤库 填 Client ID） -->
+                        <!-- Littleskin 第三方（8-19 统一 OAuth 设备码 + 弹窗内内联完成，不绕设置页） -->
                         <StackPanel Spacing="8" IsVisible="{Binding Account.IsLittleskinMode}">
                             <TextBlock Text="用浏览器授权登录，和正版登录一样输配对码就行"
                                        Classes="dim" FontSize="11" TextWrapping="Wrap"/>
+                            <!-- 8-19 精简：Client ID 没配置时直接在弹窗里填（填一次写进设置，下次不用再填） -->
+                            <StackPanel Spacing="6" IsVisible="{Binding Account.IsLittleSkinClientIdNeeded}">
+                                <TextBox Text="{Binding Account.LittleSkinClientIdInput}"
+                                         Watermark="LittleSkin Client ID（没有就点下面注册）"
+                                         FontFamily="Consolas" FontSize="11"/>
+                                <Button Content="创建应用" Classes="link" FontSize="11" Padding="0"
+                                        HorizontalAlignment="Left" Click="OnOpenLsOAuth"
+                                        ToolTip.Tip="打开 LittleSkin OAuth 应用管理页，创建后把 Client ID 复制回来填上"/>
+                            </StackPanel>
                             <Button Content="Littleskin 登录" Classes="primary" FontSize="12" Padding="14,7"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                     Command="{Binding Account.LoginLittleskinCommand}"
                                     IsEnabled="{Binding !Account.IsMsAuthBusy}"/>
-                            <!-- 8-13 一条龙入口：注册 / 皮肤库（无公开 API，网页浏览，PNG 拖进窗口即换肤） -->
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Button Content="注册 Littleskin" Classes="link" FontSize="11" Padding="0"
-                                        Command="{Binding Account.OpenLittleskinRegisterCommand}"/>
-                                <Button Content="皮肤库" Classes="link" FontSize="11" Padding="0"
-                                        Click="OnOpenSkinLibrary"
-                                        ToolTip.Tip="内置 LittleSkin 皮肤库：连接账号浏览衣柜，一键应用皮肤（游戏内立即生效）"/>
-                            </StackPanel>
+                            <Button Content="注册 Littleskin" Classes="link" FontSize="11" Padding="0"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding Account.OpenLittleskinRegisterCommand}"/>
                         </StackPanel>
                     </StackPanel>
                     <!-- 8-13 设备码登录：配对码大字显示 + 复制 + 重开网页 + 取消 -->
@@ -328,6 +331,10 @@
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" Spacing="8">
+                        <!-- 8-19 皮肤库常显（登录后表单收起也有入口——LittleSkin 衣柜浏览/应用皮肤） -->
+                        <Button Content="皮肤库" Classes="ghost" FontSize="11" Padding="8,3"
+                                HorizontalAlignment="Left" Click="OnOpenSkinLibrary"
+                                ToolTip.Tip="内置 LittleSkin 皮肤库：连接账号浏览衣柜，一键应用皮肤（游戏内立即生效）"/>
                         <Button Content="更换皮肤…" Classes="ghost" FontSize="11" Padding="8,3"
                                 HorizontalAlignment="Left" Click="OnPickSkin"/>
                         <Button Content="重置皮肤" Classes="ghost" FontSize="11" Padding="8,3"

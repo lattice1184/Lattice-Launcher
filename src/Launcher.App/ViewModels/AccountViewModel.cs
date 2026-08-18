@@ -197,6 +197,14 @@ public partial class AccountViewModel : ViewModelBase
             _ => LoginModeKind.Microsoft,
         };
 
+    /// <summary>8-19 精简：LittleSkin Client ID 内联输入（设置里没有有效值时在主页头像弹窗里直接填，不用去设置页）</summary>
+    [ObservableProperty]
+    public partial string LittleSkinClientIdInput { get; set; } = "";
+
+    /// <summary>是否显示 Client ID 输入框（当前设置里没有有效值才要填）</summary>
+    public bool IsLittleSkinClientIdNeeded
+        => string.IsNullOrWhiteSpace(Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId);
+
     /// <summary>8-19 LittleSkin 登录统一走 OAuth 设备码（用户拍板：邮箱密码直连与皮肤库 OAuth 两套分裂
     /// 是「填了 client_id 却搞不懂」的根因——client_id 只被 OAuth 消费）。流程与正版登录一致：
     /// 发起 → 浏览器输码授权 → 自动登录角色为游戏账号。client_id 唯一入口：设置 → 外观 → 皮肤库。</summary>
@@ -207,11 +215,16 @@ public partial class AccountViewModel : ViewModelBase
         var clientId = Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId;
         if (string.IsNullOrWhiteSpace(clientId))
         {
-            Status = "先去 设置 → 外观 → 皮肤库 填 LittleSkin Client ID（点「创建应用」注册）";
-            NotificationService.Error("还没填 LittleSkin Client ID：设置 → 外观 → 皮肤库");
-            try { Process.Start(new ProcessStartInfo("https://littleskin.cn/user/oauth/manage") { UseShellExecute = true }); }
-            catch { /* 打不开则用户手动访问 */ }
-            return;
+            // 8-19 精简：弹窗内联输入（不用再去设置页）；输入框也是空的 → 停在原地提示
+            clientId = LittleSkinClientIdInput.Trim();
+            if (clientId.Length == 0)
+            {
+                Status = "先填一下 LittleSkin Client ID（下面输入框；没有就先点「创建应用」注册）";
+                return;
+            }
+            Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId = clientId;
+            Launcher.Core.Utils.LauncherSettings.Current.Save(); // 写回设置（DPAPI 加密落盘，与设置页同字段）
+            LittleSkinClientIdInput = "";
         }
         IsMsAuthBusy = true;
         Status = "";
