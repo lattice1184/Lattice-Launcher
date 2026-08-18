@@ -16,7 +16,7 @@ public sealed class GameLaunchService
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs, string? javaPathOverride = null,
         Action<string>? onLog = null, Action<string>? onStage = null, CancellationToken ct = default,
-        string[]? extraGameArgs = null, string userType = "legacy")
+        string[]? extraGameArgs = null, string userType = "legacy", string? skinUrl = null)
     {
         // 1. 读版本 JSON
         onStage?.Invoke("解析版本");
@@ -73,7 +73,7 @@ public sealed class GameLaunchService
         var builder = new JavaArgumentsBuilder();
         var profile = builder.Build(version, gameDirectory, java,
             accountName, accountUuid, accessToken, memoryMb, extraJvmArgs,
-            versionIsolation: null, extraGameArgs, userType);
+            versionIsolation: null, extraGameArgs, userType, skinUrl);
 
         // AL8：启动命令写入日志（onLog → launch-*.log 首行）——崩溃/启动失败时未替换的占位符等根因一眼可见
         onLog?.Invoke("§ 启动命令：" + LaunchProcess.DescribeCommandLine(profile));

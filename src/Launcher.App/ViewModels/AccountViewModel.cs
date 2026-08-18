@@ -197,62 +197,86 @@ public partial class AccountViewModel : ViewModelBase
             _ => LoginModeKind.Microsoft,
         };
 
-    /// <summary>Littleskin 邮箱（表单 PasswordChar 不回显密码）</summary>
-    [ObservableProperty]
-    public partial string LittleskinEmail { get; set; } = "";
-
-    [ObservableProperty]
-    public partial string LittleskinPassword { get; set; } = "";
-
-    /// <summary>8-13 Littleskin 第三方登录：Yggdrasil 认证 → 皮肤下载本地 → 账号落座。
-    /// 密码只在内存经 https 传输，不落盘不写日志；皮肤下载失败仍完成登录（头像 minotar 兜底）。</summary>
+    /// <summary>8-19 LittleSkin 登录统一走 OAuth 设备码（用户拍板：邮箱密码直连与皮肤库 OAuth 两套分裂
+    /// 是「填了 client_id 却搞不懂」的根因——client_id 只被 OAuth 消费）。流程与正版登录一致：
+    /// 发起 → 浏览器输码授权 → 自动登录角色为游戏账号。client_id 唯一入口：设置 → 外观 → 皮肤库。</summary>
     [RelayCommand]
     private async Task LoginLittleskin()
     {
         if (IsMsAuthBusy) return;
-        var email = LittleskinEmail.Trim();
-        var password = LittleskinPassword;
-        if (email.Length == 0 || password.Length == 0) { Status = "填上 Littleskin 邮箱和密码"; return; }
+        var clientId = Launcher.Core.Utils.LauncherSettings.Current.LittleSkinClientId;
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            Status = "先去 设置 → 外观 → 皮肤库 填 LittleSkin Client ID（点「创建应用」注册）";
+            NotificationService.Error("还没填 LittleSkin Client ID：设置 → 外观 → 皮肤库");
+            try { Process.Start(new ProcessStartInfo("https://littleskin.cn/user/oauth/manage") { UseShellExecute = true }); }
+            catch { /* 打不开则用户手动访问 */ }
+            return;
+        }
         IsMsAuthBusy = true;
         Status = "";
         try
         {
-            using var http = new HttpClient();
+            using var http = new HttpClient(Launcher.Core.Download.HttpClientPool.SharedHandler);
             http.Timeout = TimeSpan.FromSeconds(30);
-            var session = await Launcher.Core.Account.LittleskinAuth.AuthenticateAsync(
-                http, email, password, CancellationToken.None);
-            if (session.SkinUrl is { } skinUrl)
+            Status = "正在发起 LittleSkin 授权…";
+            var session = await Launcher.Core.Account.LittleSkinOAuth.StartDeviceCodeAsync(
+                http, clientId, CancellationToken.None);
+            DeviceCodeText = session.UserCode;
+            DeviceCodeVerifyUri = string.IsNullOrEmpty(session.VerificationUriComplete)
+                ? session.VerificationUri : session.VerificationUriComplete;
+            IsDeviceCodeMode = true; // 复用设备码 UI（配对码大字 + 自动复制 + 重开网页/取消）
+            Status = "在打开的网页里输入配对码并授权（配对码已自动复制）";
+            try { Process.Start(new ProcessStartInfo(DeviceCodeVerifyUri) { UseShellExecute = true }); }
+            catch { /* 无法自动打开则手动访问 */ }
+
+            // 轮询授权（设备码 UI 的「取消登录」按钮随时可取消）
+            _deviceCts = new CancellationTokenSource();
+            var tokens = await Launcher.Core.Account.LittleSkinOAuth.PollDeviceCodeAsync(
+                http, clientId, session, s => Status = s, _deviceCts.Token);
+
+            // 授权成功：取角色 → 登录为游戏账号（与皮肤库「连接即登录」同一链路）
+            Status = "授权成功，正在同步账号…";
+            var api = new Launcher.Core.Account.LittleSkinApi(http, () => tokens.AccessToken);
+            var players = await api.GetPlayersAsync(CancellationToken.None);
+            var name = players.FirstOrDefault()?.Name;
+            if (string.IsNullOrEmpty(name))
             {
-                try
-                {
-                    var bytes = await http.GetByteArrayAsync(skinUrl, CancellationToken.None);
-                    var dir = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "skins");
-                    Directory.CreateDirectory(dir);
-                    await File.WriteAllBytesAsync(Path.Combine(dir, $"{session.Name}.png"), bytes);
-                }
-                catch { /* 皮肤下载失败不阻塞登录 */ }
+                // 账号没角色：引导创建（LittleSkin 平台规则：登录角色由平台管理）
+                IsDeviceCodeMode = false;
+                DeviceCodeText = "";
+                Status = "LittleSkin 账号还没有游戏角色，先去创建";
+                NotificationService.Error("这个账号没有游戏角色，去 littleskin.cn 创建");
+                try { Process.Start(new ProcessStartInfo("https://littleskin.cn/user/player") { UseShellExecute = true }); }
+                catch { /* 打不开则用户手动访问 */ }
+                return;
             }
-            _accounts.LoginLittleskin(session.Name, session.Uuid);
-            LittleskinPassword = "";
+            var uuid = await api.GetUuidByNameAsync(name, CancellationToken.None);
+            _accounts.LoginLittleskin(name, uuid);
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
             IsLoginFormVisible = false;
-            Status = $"已登录 Littleskin {session.Name}";
-            NotificationService.Success($"Littleskin 账号 {session.Name} 登录成功，皮肤已同步");
+            Status = $"已登录 Littleskin {name}";
+            NotificationService.Success($"LittleSkin 账号 {name} 登录成功");
             Refresh();
+        }
+        catch (OperationCanceledException)
+        {
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
+            Status = _deviceCts?.IsCancellationRequested == true ? "已取消登录" : "登录超时，请重新发起";
         }
         catch (Exception ex)
         {
-            Status = ex.Message; // 异常消息已含完整原因（不带前缀——避免「登录失败: 登录失败:」双前缀）
-            NotificationService.Error(ex.Message);
-            // 8-13 一条龙：账号没角色 → 自动打开角色管理页引导创建（创建后回来重试即可）
-            if (ex.Message.Contains("角色"))
-            {
-                try { Process.Start(new ProcessStartInfo("https://littleskin.cn/user/player") { UseShellExecute = true }); }
-                catch { /* 打不开则用户手动访问 */ }
-            }
+            IsDeviceCodeMode = false;
+            DeviceCodeText = "";
+            Status = ex.Message;
+            NotificationService.Error($"LittleSkin 登录失败: {ex.Message}");
         }
         finally
         {
+            _deviceCts?.Dispose();
+            _deviceCts = null;
             IsMsAuthBusy = false;
         }
     }
@@ -275,8 +299,8 @@ public partial class AccountViewModel : ViewModelBase
         catch { NotificationService.Error("无法打开浏览器，请手动访问 minecraft.net/msaprofile"); }
     }
 
-    /// <summary>取消设备码登录（用户在浏览器里输码期间可随时取消）</summary>
-    private CancellationTokenSource? _msCts;
+    /// <summary>8-19 设备码登录统一取消源（微软正版 + LittleSkin 共用——设备码 UI 的「取消登录」按钮）</summary>
+    private CancellationTokenSource? _deviceCts;
 
     /// <summary>微软正版登录（8-13 Live 设备码流）：配对码 → 浏览器输码登录 → 轮询拿 token → 认证链</summary>
     [RelayCommand]
@@ -311,13 +335,13 @@ public partial class AccountViewModel : ViewModelBase
             catch { /* 无法自动打开则手动访问 microsoft.com/link */ }
 
             // 2. 轮询等授权（可取消）→ 认证链（分步状态反馈，缓解同步慢的体感）
-            _msCts = new CancellationTokenSource();
+            _deviceCts = new CancellationTokenSource();
             LogWrapper.Info("[账号] 设备码轮询等待授权…");
             var (oauthToken, refreshToken) = await MicrosoftAuth.PollDeviceCodeAsync(
-                http, session, status => MsAuthStatus = status, _msCts.Token);
+                http, session, status => MsAuthStatus = status, _deviceCts.Token);
             LogWrapper.Info("[账号] 授权完成，走认证链（Xbox→XSTS→Minecraft）");
             var msSession = await MicrosoftAuth.AuthenticateMinecraftAsync(
-                http, oauthToken, refreshToken, _msCts.Token,
+                http, oauthToken, refreshToken, _deviceCts.Token,
                 stage => MsAuthStatus = stage);
             _accounts.LoginMicrosoft(msSession);
             LogWrapper.Info($"[账号] 正版登录成功：{msSession.MinecraftName}");
@@ -334,7 +358,7 @@ public partial class AccountViewModel : ViewModelBase
             MsAuthStatus = "";
             IsDeviceCodeMode = false;
             DeviceCodeText = "";
-            Status = _msCts?.IsCancellationRequested == true
+            Status = _deviceCts?.IsCancellationRequested == true
                 ? "已取消登录"
                 : "登录超时，请重新发起";
         }
@@ -349,24 +373,24 @@ public partial class AccountViewModel : ViewModelBase
         }
         finally
         {
-            _msCts?.Dispose();
-            _msCts = null;
+            _deviceCts?.Dispose();
+            _deviceCts = null;
             IsMsAuthBusy = false;
         }
     }
 
-    /// <summary>8-13 重新打开输码网页（浏览器被关掉后不用重新发起登录）</summary>
+    /// <summary>8-13 重新打开输码网页（浏览器被关掉后不用重新发起登录；微软/LittleSkin 共用）</summary>
     [RelayCommand]
     private void ReopenLoginPage()
     {
         if (DeviceCodeVerifyUri.Length == 0) return;
         try { Process.Start(new ProcessStartInfo(DeviceCodeVerifyUri) { UseShellExecute = true }); }
-        catch { NotificationService.Error("无法打开浏览器，请手动访问 microsoft.com/link"); }
+        catch { NotificationService.Error("无法打开浏览器，请手动访问链接页面"); }
     }
 
-    /// <summary>8-13 取消设备码登录（停止轮询，收起等待区）</summary>
+    /// <summary>8-13 取消设备码登录（停止轮询，收起等待区；微软/LittleSkin 共用）</summary>
     [RelayCommand]
-    private void CancelMsLogin() => _msCts?.Cancel();
+    private void CancelMsLogin() => _deviceCts?.Cancel();
 
     /// <summary>微软登录错误落盘（AppData\Launcher\logs\microsoft-auth.log）——下次失败可回看原因</summary>
     private static void LogMsError(string detail)

@@ -247,6 +247,15 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>最近更新（关于页：改动最大的几条功能与修复，用户视角；随版本更新追加）</summary>
     public IReadOnlyList<string> ChangelogItems { get; } =
     [
+        "外观修复：透明度不再被交互重置——拖动即生效并保存，只有你再改才变",
+        "LittleSkin 登录统一：浏览器授权一次即可登录游戏账号（不再要邮箱密码）",
+        "进服务器角色皮肤不再消失：皮肤数据透传 + 正版验证匹配提示",
+        "服务端控制台中文不乱码了（say 命令和日志编码统一）",
+        "账号列表点一下整行就能切换，不用找小按钮",
+        "启动记录每条都能打开当次日志（失败的也能看）",
+        "启动更快更省内存：页面按需加载、启动扫描后立即释放",
+        "删除版本会把其他来源的同名副本一起清掉，下载缓存过期自动清理",
+        "设置页每个区域都加了说明，看不懂的项现在有解释",
         "下载引擎重构：多源竞速、分片、断点续传、自动重试、下载质检",
         "下载卡死根治：响应头超时、读心跳、线程池死锁修复",
         "整合包导入导出修复：内容落盘、mrpack 反查、路径安全",
@@ -438,10 +447,33 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>8-16 CF API 地址覆盖：变更即落盘（ToApiBase 动态读设置，即时生效）</summary>
     partial void OnCurseForgeApiBaseTextChanged(string value) => Save();
 
-    // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）
-    partial void OnWindowOpacityChanged(double value) => PreviewChanged?.Invoke();
+    // 外观：预览模式（改动即时预览，[保存并应用] 才写盘）。
+    // 8-19 透明度硬性要求（用户验收）：透明度例外——拖动即落盘，持久值恒等于实时值；
+    // 否则合成降级恢复时防御重放会拿旧持久值把观感打回默认（实机：交互几次后透明度被重置）
+    partial void OnWindowOpacityChanged(double value)
+    {
+        PreviewChanged?.Invoke();
+        if (_loading) return;
+        LauncherSettings.Current.WindowOpacity = value;
+        DebouncedSaveOpacity();
+    }
     partial void OnAccentColorChanged(string value) => PreviewChanged?.Invoke();
     partial void OnDensityIndexChanged(int value) => PreviewChanged?.Invoke();
+
+    private CancellationTokenSource? _opacityDebounce;
+
+    /// <summary>透明度落盘（150ms 防抖——滑块拖动连续触发，避免每 tick 全量序列化 settings.json）</summary>
+    private async void DebouncedSaveOpacity()
+    {
+        _opacityDebounce?.Cancel();
+        var cts = _opacityDebounce = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(150, cts.Token);
+            LauncherSettings.Current.Save();
+        }
+        catch (OperationCanceledException) { }
+    }
 
     /// <summary>背景图片路径（""=无；预览模式，保存才写盘）</summary>
     [ObservableProperty]

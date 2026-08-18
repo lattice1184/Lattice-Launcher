@@ -227,6 +227,41 @@ public partial class HomeViewModel : ViewModelBase
         // 目录树重构（AE3）：旧 .minecraft\servers 一次性迁移到启动器目录树 servers\
         Launcher.Core.Server.ServerInstaller.MigrateLegacy(GameDirectory.InstallDir());
         await RefreshVersionsAsync();
+        // 8-19 启动清理（后台，失败静默）：跨源预取残留目录（主页隐藏的占位）+ 过期下载缓存——
+        // 用户视角「删了版本但数据夹里还残留」的观感来源，启动时顺带清
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                foreach (var (dir, _) in GameDirectory.ScanSourceDirs())
+                    Launcher.Core.Download.VersionInstaller.CleanupOrphanPrefetches(dir);
+                CleanExpiredCache();
+            }
+            catch { }
+        });
+        // 8-19 启动峰值已过：版本扫描/清单的中间对象一次性 GC + 工作集修剪
+        Services.IdleMemoryTuner.TrimStartup();
+    }
+
+    /// <summary>8-19 过期下载缓存清理：AppData\Launcher\cache 的 eco-*/loader-* json
+    /// 超过 24h 未使用即删（搜索 5min/版本列表 30min/详情 24h 分级 TTL 的保守上限）——此前过期文件永不清理会累积</summary>
+    private static void CleanExpiredCache()
+    {
+        var cacheDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
+        if (!Directory.Exists(cacheDir)) return;
+        var cutoff = DateTime.UtcNow - TimeSpan.FromHours(24);
+        foreach (var f in Directory.GetFiles(cacheDir))
+        {
+            try
+            {
+                var name = Path.GetFileName(f);
+                if (!name.StartsWith("eco-", StringComparison.OrdinalIgnoreCase)
+                    && !name.StartsWith("loader-", StringComparison.OrdinalIgnoreCase)) continue;
+                if (File.GetLastWriteTimeUtc(f) < cutoff) File.Delete(f);
+            }
+            catch { /* 单文件清理失败跳过 */ }
+        }
     }
 
     /// <summary>
@@ -538,7 +573,10 @@ public partial class HomeViewModel : ViewModelBase
                 memoryMb: memMb, extraJvmArgs: extraArgs,
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None, extraGameArgs: extraGameArgs,
-                userType: account.Type == "microsoft" ? "msa" : "legacy"));
+                userType: account.Type == "microsoft" ? "msa" : "legacy",
+                // 8-19 进服皮肤：LittleSkin 账号把角色皮肤 URL 透传给服务端（offline 服其他玩家可见真实皮肤）
+                skinUrl: account.Type == "littleskin"
+                    ? Launcher.Core.Account.LittleSkinApi.SkinFileUrl(account.Name) : null));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;
@@ -606,7 +644,8 @@ public partial class HomeViewModel : ViewModelBase
                 ? "你的客户端文件缺失，启动不了。可以补全下载，或去官方页面下载。"
                 : ex.Message;
             AppendLog($"§ 启动失败: {ex.Message}");
-            LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0);
+            // 8-19 失败记录也关联日志文件（会话开始即建，失败也可回看）
+            LaunchHistoryService.Record(version.Name, LaunchOutcome.Failed, ex.Message, _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
             // AL9/AL10 自修复：文件缺失（异常即证据，跳过诊断直接重下）或诊断命中可自动修复项 → 修复后自动重试一次
             // gameDir 是 try 块局部变量，catch 不可见——这里按相同规则重算
             var gameDir = overrideGameDir.Length > 0 ? overrideGameDir
@@ -715,8 +754,17 @@ public partial class HomeViewModel : ViewModelBase
         catch { }
     }
 
-    /// <summary>新启动会话：重置日志文件（下次 Append 建新文件，与启动记录一一对应）</summary>
-    private void ResetLaunchLog() => _launchLogPath = null;
+    /// <summary>8-19 新启动会话：启动即定日志文件并创建（不等待首次输出——
+    /// 失败/无输出会话也能关联日志按钮；与启动记录一一对应）</summary>
+    private void ResetLaunchLog()
+    {
+        try
+        {
+            _launchLogPath = BuildLaunchLogPath();
+            File.WriteAllText(_launchLogPath, $"=== Lattice 启动日志 {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\n");
+        }
+        catch { _launchLogPath = null; }
+    }
 
     private static string BuildLaunchLogPath()
     {

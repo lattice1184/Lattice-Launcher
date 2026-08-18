@@ -662,6 +662,20 @@ public partial class ServerViewModel : ViewModelBase
         }
         if (IsRunning || IsInstalling) return;
 
+        // 8-19 进服皮肤（online-mode 匹配）：LittleSkin/离线账号 + online-mode=true 的正版验证服过不了校验
+        // （新服默认 offline 不受影响；老服/自建服默认 true）。用户改好配置后点「继续启动」即可
+        var onlineMode = ReadOnlineMode(dir);
+        if (onlineMode == true
+            && Launcher.Core.Account.AccountService.Shared.Current is { Type: not "microsoft" })
+        {
+            if (DialogService.MainWindow() is { } owner
+                && !await DialogService.Confirm(owner,
+                    "这个服务器开了正版验证（online-mode=true），当前账号不是正版账号，启动后会被服务器挡在门外、角色皮肤也显示不出来。\n\n"
+                    + "可以把 server.properties 的 online-mode 改成 false（离线模式），或换正版账号。改好后点「继续启动」。",
+                    "正版验证会挡住当前账号", "我改好了，继续启动", "取消"))
+                return;
+        }
+
         ServerInstaller.AcceptEula(dir);
         // 启动前日志文件锁预检（AJ2）：服务端启动要删除旧的 latest.log，被残留进程/编辑器占用时启动即失败——先探测并明确提示
         var latest = Path.Combine(dir, "logs", "latest.log");
@@ -713,6 +727,24 @@ public partial class ServerViewModel : ViewModelBase
             SetStatus($"启动失败: {ex.Message}", error: true);
             NotificationService.Error(ex.Message);
         }
+    }
+
+    /// <summary>8-19 读 server.properties 的 online-mode（文件缺失/读取失败 → null 不做校验）</summary>
+    private static bool? ReadOnlineMode(string dir)
+    {
+        try
+        {
+            var path = Path.Combine(dir, "server.properties");
+            if (!File.Exists(path)) return null;
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var s = line.Trim();
+                if (!s.StartsWith("online-mode=", StringComparison.OrdinalIgnoreCase)) continue;
+                return s["online-mode=".Length..].Trim().Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch { }
+        return null;
     }
 
     /// <summary>优雅停止（stop 命令 + 超时强杀；后台等待不阻塞 UI）</summary>

@@ -8,6 +8,8 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="存储占用" Classes="group-header"/>
+            <TextBlock Text="各数据占了多少磁盘空间：游戏版本、下载缓存、日志等。看不顺眼的项点删除就回收空间（删除前会再确认，删掉的重新下载即可）。"
+                       Classes="dim" FontSize="11" TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="重新扫描" Classes="ghost" FontSize="12" Padding="12,5"
                         Command="{Binding Storage.ReloadStatsCommand}"/>

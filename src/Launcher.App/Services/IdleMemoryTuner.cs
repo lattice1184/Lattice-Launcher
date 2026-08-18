@@ -17,6 +17,17 @@ public sealed class IdleMemoryTuner : IDisposable
     private long _lastActivityTick = Environment.TickCount64;
     private bool _trimmed;
 
+    /// <summary>8-19 启动后立即修剪（版本扫描峰值/清单解析中间对象一次性释放）；
+    /// 与闲置/失焦逻辑独立（不置 _trimmed），10s 防抖防重复调用</summary>
+    public static void TrimStartup()
+    {
+        var now = Environment.TickCount64;
+        if (now - _lastStartupTrimTick < 10_000) return;
+        _lastStartupTrimTick = now;
+        _ = Task.Run(TrimAsync);
+    }
+    private static long _lastStartupTrimTick;
+
     public IdleMemoryTuner()
     {
         _timer.Tick += OnTick;

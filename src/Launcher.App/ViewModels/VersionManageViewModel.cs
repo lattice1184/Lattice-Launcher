@@ -326,8 +326,18 @@ public partial class VersionManageViewModel : ViewModelBase
     private async Task Delete()
     {
         var owner = DialogService.MainWindow();
-        if (owner is null || !await DialogService.Confirm(owner,
-                $"确认删除版本「{_versionId}」？删除后无法恢复，建议先备份。", "删除版本", "删除", "取消"))
+        if (owner is null) return;
+        // 8-19 删除扩展（用户拍板）：其他来源的同 id 副本一并清理——此前只删选中行所在目录，
+        // 同版本在多源（自建/PCL/官方）并存时删不干净，数据文件夹残留
+        var others = GameDirectory.ScanSourceDirs()
+            .Where(x => !string.Equals(Path.GetFullPath(x.Dir), Path.GetFullPath(_gameDir),
+                StringComparison.OrdinalIgnoreCase))
+            .Where(x => Directory.Exists(Path.Combine(x.Dir, "versions", _versionId)))
+            .Select(x => x.Dir)
+            .ToList();
+        var suffix = others.Count > 0 ? $"（另有 {others.Count} 个其他来源的同名副本会一并删除）" : "";
+        if (!await DialogService.Confirm(owner,
+                $"确认删除版本「{_versionId}」？删除后无法恢复，建议先备份。{suffix}", "删除版本", "删除", "取消"))
         {
             return;
         }
@@ -358,6 +368,17 @@ public partial class VersionManageViewModel : ViewModelBase
             // AL41：删除完整性——预取残留的父版本（json-only、无标记无 jar）一并清掉，
             // 不再留下「删了加载器版本，原版还挂红字缺文件」的幽灵条目
             VersionInstaller.CleanupOrphanParents(_gameDir, _versionId);
+            // 8-19 跨源副本：逐个删（主副本已删，个别失败静默——残留可走存储页手动清）
+            foreach (var otherDir in others)
+            {
+                try
+                {
+                    var d = Path.Combine(otherDir, "versions", _versionId);
+                    if (Directory.Exists(d)) await TryDeleteWithRetryAsync(d);
+                    VersionInstaller.CleanupOrphanParents(otherDir, _versionId);
+                }
+                catch { /* 跨源删除失败不阻断主流程 */ }
+            }
             _onDeleted();
         }
         catch (Exception ex)

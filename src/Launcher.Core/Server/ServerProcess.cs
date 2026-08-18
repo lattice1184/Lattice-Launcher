@@ -47,10 +47,16 @@ public sealed class ServerProcess : IDisposable
                 RedirectStandardInput = true,
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8,
+                // 8-19 say 乱码修复：stdin 也必须 UTF-8——Java 18+ 服务端按 UTF-8 读 stdin，
+                // 此前未设置回落系统 ANSI（GBK），`say 中文` 以 GBK 字节写入即乱码
+                StandardInputEncoding = Encoding.UTF8,
                 CreateNoWindow = true,
             };
             psi.ArgumentList.Add($"-Xmx{memoryMb}M");
             psi.ArgumentList.Add("-Xms256M");
+            // 8-19 编码统一：Java 17 服务端 stdout 跟随 file.encoding（不设时为系统 ANSI/GBK），
+            // 启动器固定按 UTF-8 读 → 控制台日志乱码；加参数后双向往来一致
+            psi.ArgumentList.Add("-Dfile.encoding=UTF-8");
             psi.ArgumentList.Add("-jar");
             psi.ArgumentList.Add("server.jar");
             psi.ArgumentList.Add("nogui");

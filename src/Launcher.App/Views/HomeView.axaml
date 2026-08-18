@@ -233,7 +233,9 @@
                         <ItemsControl ItemsSource="{Binding Account.Accounts}" MaxHeight="160">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:AccountRowVM">
-                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,3">
+                                    <!-- 8-19 整行可点切换（删除按钮区除外）；Cursor 提示可点 -->
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,3"
+                                          PointerPressed="OnRowPointerPressed" Cursor="Hand">
                                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" FontSize="13"/>
                                             <Border CornerRadius="3" Padding="5,1" Background="{DynamicResource AccentDark}"
@@ -286,10 +288,11 @@
                                     Command="{Binding Account.LoginOfflineCommand}"/>
                         </Grid>
 
-                        <!-- Littleskin 第三方（皮肤同步到本地，游戏内生效） -->
+                        <!-- Littleskin 第三方（8-19 统一 OAuth 设备码：浏览器授权一次即登录；
+                             需要先在 设置 → 外观 → 皮肤库 填 Client ID） -->
                         <StackPanel Spacing="8" IsVisible="{Binding Account.IsLittleskinMode}">
-                            <TextBox Text="{Binding Account.LittleskinEmail}" Watermark="Littleskin 邮箱" FontSize="13"/>
-                            <TextBox Text="{Binding Account.LittleskinPassword}" Watermark="密码" PasswordChar="*" FontSize="13"/>
+                            <TextBlock Text="用浏览器授权登录，和正版登录一样输配对码就行"
+                                       Classes="dim" FontSize="11" TextWrapping="Wrap"/>
                             <Button Content="Littleskin 登录" Classes="primary" FontSize="12" Padding="14,7"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                     Command="{Binding Account.LoginLittleskinCommand}"

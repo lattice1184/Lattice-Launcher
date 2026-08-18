@@ -48,11 +48,13 @@ public partial class MainWindow : Window
                 _idleTuner.TrimNow();
         };
         // 8-18 透明度防御：合成降级（ActualTransparencyLevel → None）后恢复时重新应用用户透明度——
-        // 某些页面/交互触发亚克力合成失败会丢透明度，恢复后自动回到用户设置值
+        // 某些页面/交互触发亚克力合成失败会丢透明度，恢复后自动回到用户设置值。
+        // 8-19 硬性要求：改取 VM 实时值 + 观感一致跳过——任何非用户改动时机不得把透明度写回旧值
+        // （此前重放持久值：预览未保存时把观感打回默认，交互几次即"被重置"）
         ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ActualTransparencyLevel) && ActualTransparencyLevel != WindowTransparencyLevel.None)
-                ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
+                ApplyAppearanceDefensive();
         };
         // 8-18 输入框失焦：点击窗口任意非输入控件处 → 清除焦点（Avalonia 默认点击面板/空白不移除 TextBox 焦点）
         PointerPressed += (_, e) =>
@@ -93,7 +95,7 @@ public partial class MainWindow : Window
         {
             UiAnim.Host = this; // 渲染帧驱动的全局宿主（splash 等无 host 参数的动画取帧时钟）
             ApplyOpacityFallback();
-            ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
+            ApplyAppearanceFromVm(); // 8-19 取 VM 实时值（构造时已加载设置；DataContext 缺失时内部回退持久值）
             ApplyNavVisuals(); // 兜底：DataContext 若早于挂载，这里补一次
             // 页面切换：平滑滑入淡出
             PageHost.PageTransition = new UiAnim.FadeSlideTransition { Duration = TimeSpan.FromMilliseconds(180) };
@@ -108,8 +110,8 @@ public partial class MainWindow : Window
             // AL7：预览必须传 VM 值——Settings 未写盘时读不到新值，旧版预览/即时生效永远不变化
             if (DataContext is MainViewModel main)
             {
-                main.Settings.AppearanceChanged += () => ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
-                main.Settings.PreviewChanged += () => ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
+                main.Settings.AppearanceChanged += ApplyAppearanceFromVm; // 保存后持久值==VM 值，同一入口
+                main.Settings.PreviewChanged += ApplyAppearanceFromVm;
             }
             // 8-16 批次 50：尺寸与居中已前移构造器（Show 前）——此处不再 resize/重摆，窗口一次落位
             // 兜底：启动期间导航未布局被跳过，可见后 150ms 一次性补定位（不用链式 Post，防饿死 UI 线程）
@@ -627,6 +629,27 @@ public partial class MainWindow : Window
         if (RootSurface.Material is ExperimentalAcrylicMaterial m)
             m.FallbackColor = Avalonia.Media.Color.Parse("#FF12161F");
         NavSurface.IsVisible = false;
+    }
+
+    /// <summary>8-19 透明度硬性要求：统一入口——取 VM 实时值应用外观（VM 缺失时回退持久值）。
+    /// 透明度改动已即时落盘，VM 值 == 持久值，任何时机重放都不会把观感打回旧值。</summary>
+    private void ApplyAppearanceFromVm()
+    {
+        if (DataContext is MainViewModel main)
+            ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);
+        else
+            ApplyAppearance(LauncherSettings.Current.WindowOpacity, (DensityMode)LauncherSettings.Current.Density);
+    }
+
+    /// <summary>8-19 防御重放：观感未变则跳过——只有用户再次改动透明度才变化（硬性要求）。
+    /// 合成降级恢复时若当前 TintOpacity 与目标一致，什么都不做，避免无谓重写干扰预览。</summary>
+    private void ApplyAppearanceDefensive()
+    {
+        if (DataContext is not MainViewModel main || RootSurface?.Material is not ExperimentalAcrylicMaterial m) return;
+        var opacity = main.Settings.WindowOpacity;
+        var tint = 0.30 + (opacity - 0.7) * 2.1667;
+        if (Math.Abs(m.TintOpacity - tint) < 0.001) return;
+        ApplyAppearance(opacity, (DensityMode)main.Settings.DensityIndex);
     }
 
     /// <summary>应用外观设置：窗口透明度 + 界面密度（强调色由 App 应用）。

@@ -8,6 +8,8 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="启动" Classes="group-header"/>
+            <TextBlock Text="这里管游戏怎么跑：分多少内存、用哪个 Java、进程优先级和额外参数。一般不用动——内存按机器实际大小选（16GB 机器开 6~8GB 比较稳），Java 找不到或想换版本时在这里手动指定路径。"
+                       Classes="dim" FontSize="11" TextWrapping="Wrap"/>
             <TextBlock Text="内存与 Java" Classes="group-sub"/>
 
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">

@@ -41,11 +41,13 @@ public sealed class JavaArgumentsBuilder
     /// <param name="extraJvmArgs">额外 JVM 参数（性能管线等，用户覆盖优先）</param>
     /// <param name="versionIsolation">版本隔离（game_directory 指向 versions/{id}，saves/mods 不串门）；null = 读设置</param>
     /// <param name="extraGameArgs">附加游戏参数（如一键进服 --server host --port N，追加在 arguments.game 之后）</param>
+    /// <param name="skinUrl">8-19 皮肤纹理 URL（LittleSkin 等第三方账号）：填入 user_properties——
+    /// 离线服（online-mode=false）服务端不验签，其他玩家从该 URL 拉取你的真实皮肤；null = 不传（"{}"）</param>
     public LaunchProfile Build(
         VersionJson version, string gameDir, string javaPath,
         string accountName, string accountUuid, string accessToken,
         long memoryMb, string[]? extraJvmArgs = null, bool? versionIsolation = null,
-        string[]? extraGameArgs = null, string userType = "legacy")
+        string[]? extraGameArgs = null, string userType = "legacy", string? skinUrl = null)
     {
         // 0. inheritsFrom 链解析（Forge/NeoForge/Fabric 生成的 version.json 继承原版）
         var v = version;
@@ -111,7 +113,7 @@ public sealed class JavaArgumentsBuilder
 
         // 3. 共享 token（game/jvm 参数替换）
         var isolated = versionIsolation ?? LauncherSettings.Current.VersionIsolation;
-        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken, isolated, userType);
+        var tokens = BuildTokens(v, gameDir, assetsDir, nativesDir, accountName, accountUuid, accessToken, isolated, userType, skinUrl);
 
         // 4. 基础 JVM 参数
         var jvmArgs = new List<string>
@@ -186,7 +188,8 @@ public sealed class JavaArgumentsBuilder
 
     private static Dictionary<string, string> BuildTokens(
         VersionJson version, string gameDir, string assetsDir, string nativesDir,
-        string accountName, string accountUuid, string accessToken, bool isolated, string userType)
+        string accountName, string accountUuid, string accessToken, bool isolated, string userType,
+        string? skinUrl)
     {
         // 版本隔离：game_directory 指向 versions/{id}（saves/mods/options 各自独立）；
         // assets_root/game_assets 保持绝对指向共享 assets 目录
@@ -205,7 +208,9 @@ public sealed class JavaArgumentsBuilder
             ["game_assets"] = Path.Combine(assetsDir, "legacy").Replace('\\', '/'),
             ["assets_root"] = assetsDir.Replace('\\', '/'),
             ["assets_index_name"] = assetsIndexId,
-            ["user_properties"] = "{}",
+            // 8-19 皮肤透传（LittleSkin 等第三方）：offline 服其他玩家从 URL 拉取真实皮肤；
+            // 正版服验签会忽略未签名 properties，无副作用
+            ["user_properties"] = skinUrl is null ? "{}" : $"{{\"textures\":{{\"SKIN\":{{\"url\":\"{skinUrl}\"}}}}}}",
             // 8-13：按账号类型传——正版 msa（游戏走在线认证），离线 legacy；此前硬编码 legacy 正版账号也按离线跑
             ["user_type"] = userType,
             ["version_type"] = version.Type ?? "release",

@@ -169,6 +169,47 @@ public sealed class VersionInstaller
         }
     }
 
+    /// <summary>
+    /// 8-19 启动清理：删除「预取残留」且不再被任何已装版本引用的父版本目录。
+    /// 预取目录（.prefetched）在主页/版本页都被隐藏——用户视角的「删了版本但数据夹里还残留」多数是它们：
+    /// 下载加载器版本时预取的原版，引用它的版本被删除后链上清理只沿自身链，其他孤立预取没人管。
+    /// 判定：带 .prefetched 标记 + 不在任何版本 json 的 inheritsFrom 引用集中 → 删（正式安装不碰）。
+    /// </summary>
+    public static void CleanupOrphanPrefetches(string gameDir)
+    {
+        try
+        {
+            var versionsDir = Path.Combine(gameDir, "versions");
+            if (!Directory.Exists(versionsDir)) return;
+            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var vd in Directory.GetDirectories(versionsDir))
+            {
+                try
+                {
+                    var id = Path.GetFileName(vd);
+                    var jsonPath = Path.Combine(vd, $"{id}.json");
+                    if (!File.Exists(jsonPath)) continue;
+                    var v = JsonSerializer.Deserialize<VersionJson>(File.ReadAllText(jsonPath));
+                    if (v?.InheritsFrom is { } p && !string.IsNullOrEmpty(p)) referenced.Add(p);
+                }
+                catch { /* 单版损坏跳过 */ }
+            }
+            foreach (var vd in Directory.GetDirectories(versionsDir))
+            {
+                try
+                {
+                    var id = Path.GetFileName(vd);
+                    if (referenced.Contains(id)) continue;
+                    var dir = Path.Combine(versionsDir, id);
+                    if (!InstallMarker.IsPrefetched(gameDir, id)) continue;
+                    Directory.Delete(dir, true);
+                }
+                catch { /* 单目录清理失败跳过（占用等） */ }
+            }
+        }
+        catch { /* 清理失败不影响启动 */ }
+    }
+
     /// <summary>除 seen（自身链）外，是否还有其他版本的 json 以 parent 为父</summary>
     private static bool IsReferencedByOthers(string gameDir, string parent, HashSet<string> seen)
     {

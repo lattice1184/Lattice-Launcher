@@ -9,6 +9,8 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="下载" Classes="group-header"/>
+            <TextBlock Text="下载相关设置：从哪个源下、同时下几个、分片数和限速，还有 CurseForge 的 Key 与加速地址。按默认用就行——下载慢或失败时再来调这里（比如换镜像源、加大并发、填上自己的 GitHub Token / CF Key）。"
+                       Classes="dim" FontSize="11" TextWrapping="Wrap"/>
             <TextBlock Text="下载行为" Classes="group-sub"/>
             <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
                 <TextBlock Text="下载源策略" Classes="setting-label" VerticalAlignment="Center"/>

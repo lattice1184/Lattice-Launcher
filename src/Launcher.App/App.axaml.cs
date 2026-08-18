@@ -129,7 +129,7 @@ public partial class App : Application
             {
                 // 8-22 全栈排查：退出必须停服务端进程——否则孤儿 java 残留占用端口
                 // （ServerProcess.Dispose 从未被调用；stdout 管道无读者还会挂起）
-                try { MainViewModel.Current?.Server.StopOnExit(); } catch { /* 退出清理不阻断 */ }
+                try { MainViewModel.Current?.StopServerIfRunning(); } catch { /* 退出清理不阻断 */ }
                 Guard("Lifecycle.Shutdown", () => Lifecycle.Shutdown());
             };
             // UI 线程未捕获异常兜底（弹崩溃窗口 + 防崩溃）

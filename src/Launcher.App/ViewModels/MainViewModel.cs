@@ -33,12 +33,25 @@ public partial class MainViewModel : ViewModelBase
     public partial bool IsEcosystemActive { get; set; }
 
     public HomeViewModel Home { get; } = new();
-    public VersionBrowseViewModel Versions { get; } = new();
-    public DownloadViewModel Downloads { get; } = new();
     public SettingsViewModel Settings { get; } = new();
-    public ServerViewModel Server { get; } = new();
-    public MultiplayerViewModel Multiplayer { get; } = new();
-    public EcosystemNavViewModel EcosystemNav { get; } = new();
+
+    // 8-19 惰性实例化：版本/下载/开服/联机/生态 VM 首次进入对应页才创建——
+    // 启动只付主页+设置的成本（版本页的 FileSystemWatcher 递归监听、下载页的历史订阅、开服页的进程事件
+    // 等常驻开销全部推迟到真正用到时，平时不占内存不耗事件）
+    private VersionBrowseViewModel? _versions;
+    public VersionBrowseViewModel Versions => _versions ??= new();
+
+    private DownloadViewModel? _downloads;
+    public DownloadViewModel Downloads => _downloads ??= new();
+
+    private ServerViewModel? _server;
+    public ServerViewModel Server => _server ??= new();
+
+    private MultiplayerViewModel? _multiplayer;
+    public MultiplayerViewModel Multiplayer => _multiplayer ??= new();
+
+    private EcosystemNavViewModel? _ecosystemNav;
+    public EcosystemNavViewModel EcosystemNav => _ecosystemNav ??= new();
 
     /// <summary>全局当前版本（主页权威，单向驱动下载/开服页——AF1：主页选什么，后面就全都是那个版本）</summary>
     [ObservableProperty]
@@ -142,9 +155,13 @@ public partial class MainViewModel : ViewModelBase
         {
             try { await Task.Delay(500); } catch { return; }
             if (!ReferenceEquals(CurrentPage, Home)) Home.ReleaseData();
-            if (!ReferenceEquals(CurrentPage, Versions)) Versions.ReleaseData();
+            // 8-19 惰性化后：未创建过的 VM 无需释放（属性访问会触发构造，破坏惰性）
+            if (!ReferenceEquals(CurrentPage, Versions) && _versions is not null) _versions.ReleaseData();
         });
     }
+
+    /// <summary>退出清理：开服页进程停止（惰性 VM 未创建则无事可做）</summary>
+    public void StopServerIfRunning() => _server?.StopOnExit();
 }
 
 /// <summary>全局运行状态（AG2）：Kind = 客户端 / 服务端</summary>

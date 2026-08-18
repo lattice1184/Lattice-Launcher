@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using Launcher.App.ViewModels;
 
 using Launcher.App.Services;
@@ -122,6 +123,16 @@ public partial class HomeView : UserControl
     private void OnAccountPopupOpened(object? sender, EventArgs e)
     {
         Animations.UiAnim.SpringIn(AccountPanel);
+    }
+
+    /// <summary>8-19 账号行整行点击切换（按钮区按下不触发——Button 内部命中元素非 Button 本体，查祖先链）</summary>
+    private void OnRowPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (e.Source is Avalonia.Visual v
+            && v.FindAncestorOfType<Avalonia.Controls.Button>() is not null) return;
+        if (sender is Avalonia.Controls.Control { DataContext: AccountRowVM row }
+            && DataContext is HomeViewModel vm)
+            vm.Account.SwitchAccountCommand.Execute(row);
     }
 
     /// <summary>账号列表"切换"（Popup 内 $parent 绑定不可靠，走 code-behind 转发）</summary>
