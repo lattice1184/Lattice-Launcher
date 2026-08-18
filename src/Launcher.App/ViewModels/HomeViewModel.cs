@@ -743,15 +743,32 @@ public partial class HomeViewModel : ViewModelBase
     /// <summary>8-18 本次启动的日志文件路径（启动会话固定——启动记录可关联查看；null=未开始落盘）</summary>
     private string? _launchLogPath;
 
-    /// <summary>控制台同步落盘（AppData\Launcher\logs\launch-*.log）——启动报错可回看；会话内固定同一文件</summary>
+    /// <summary>控制台同步落盘（AppData\Launcher\logs\launch-*.log）——启动报错可回看；会话内固定同一文件。
+    /// 8-19 简化日志：游戏 INFO 噪音（状态轮询/心跳刷屏）不落盘，只留启动器事件 + 错误/警告/异常堆栈——打开日志不再几千行刷屏</summary>
     private void AppendToLaunchLog(string line)
     {
+        if (!IsKeyLine(line)) return;
         try
         {
             _launchLogPath ??= BuildLaunchLogPath();
             File.AppendAllText(_launchLogPath, line + Environment.NewLine);
         }
         catch { }
+    }
+
+    /// <summary>8-19 日志行筛选：启动器事件（§）全保留；游戏输出只保留级别 ERROR/WARN/FATAL 与异常堆栈行</summary>
+    private static bool IsKeyLine(string line)
+    {
+        if (line.StartsWith('§')) return true;
+        if (line.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Caused by", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("Crashed!", StringComparison.OrdinalIgnoreCase)) return true;
+        // 堆栈行（"at ..."）属于异常上下文，保留
+        if (line.TrimStart().StartsWith("at ", StringComparison.Ordinal)) return true;
+        // 带级别标记的游戏行：ERROR/WARN/FATAL 保留，INFO/DEBUG 丢
+        var m = System.Text.RegularExpressions.Regex.Match(line,
+            @"\[(\w+)\/(ERROR|WARN|FATAL)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success;
     }
 
     /// <summary>8-19 新启动会话：启动即定日志文件并创建（不等待首次输出——
