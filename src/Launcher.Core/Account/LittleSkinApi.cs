@@ -40,7 +40,10 @@ public sealed class LittleSkinApi
     public async Task<ClosetPage> GetClosetAsync(string category, int page, CancellationToken ct)
     {
         using var doc = await GetJsonAsync($"{BaseUrl}/closet?category={Uri.EscapeDataString(category)}&page={page}", ct);
-        var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+        // 8-19 防御：TryGetProperty 对非 Object 根直接抛（"requires an element of type 'Object'"）——
+        // 接口可能返回数组根（无 data 包装），先判 ValueKind 再取
+        var root = doc.RootElement;
+        var data = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var d) ? d : root;
         if (data.ValueKind != JsonValueKind.Array)
             throw new HttpRequestException("LittleSkin 返回了无法解析的衣柜数据");
         var items = new List<ClosetItem>();
@@ -60,11 +63,12 @@ public sealed class LittleSkinApi
         return new ClosetPage(items, items.Count > 0 && data.GetArrayLength() >= 20); // 满页（PageSize=20）即还有下一页
     }
 
-    /// <summary>角色列表（GET /api/players）</summary>
+    /// <summary>角色列表（GET /api/players；实机 8-19：返回数组根，无 data 包装——先判 ValueKind 再 TryGetProperty）</summary>
     public async Task<IReadOnlyList<PlayerInfo>> GetPlayersAsync(CancellationToken ct)
     {
         using var doc = await GetJsonAsync($"{BaseUrl}/players", ct);
-        var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+        var root = doc.RootElement;
+        var data = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var d) ? d : root;
         if (data.ValueKind != JsonValueKind.Array) return [];
         var list = new List<PlayerInfo>();
         foreach (var el in data.EnumerateArray())
@@ -86,7 +90,8 @@ public sealed class LittleSkinApi
         try
         {
             using var doc = await GetJsonAsync($"{BaseUrl}/users/profiles/minecraft/{Uri.EscapeDataString(name)}", ct);
-            if (doc.RootElement.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
             {
                 var uuid = id.GetString();
                 if (!string.IsNullOrWhiteSpace(uuid)) return uuid;
