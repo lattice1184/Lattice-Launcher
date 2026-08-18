@@ -926,7 +926,11 @@ public sealed class DownloadService
         var total = expectedSize ?? response.Content.Headers.ContentLength ?? 0;
         await using (var src = await response.Content.ReadAsStreamAsync(ct))
         {
-            using var dst = new FileStream(tmp, FileMode.Append, FileAccess.Write, FileShare.None);
+            // BUGS#3 单连接半边（8-19 修复，与分片路径 1388 对齐）：服务器忽略 Range 回 200 全量时
+            // append 会把完整 body 拼在半截 .tmp 后 → 错位文件；206 才追加，200 重写从头
+            var isPartial = response.StatusCode == HttpStatusCode.PartialContent; // 206
+            using var dst = new FileStream(tmp, from > 0 && isPartial ? FileMode.Append : FileMode.Create,
+                FileAccess.Write, FileShare.None);
             var buffer = new byte[_options.BufferSize];
             long read = 0;
             // AL61 心率监测：持续低速（默认 30s < 100KB/s）→ 判源死抛异常 → 外层换路。
