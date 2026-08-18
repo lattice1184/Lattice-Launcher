@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Launcher.App.Animations;
@@ -338,6 +339,23 @@ public partial class MainWindow : Window
         _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
         _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
         _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
+        _navHalos["home"] = NavHomeHalo;
+        _navHalos["version"] = NavVersionHalo;
+        _navHalos["download"] = NavDownloadHalo;
+        _navHalos["server"] = NavServerHalo;
+        _navHalos["multiplayer"] = NavMultiHalo;
+        _navHalos["ecosystem"] = NavEcoHalo;
+        _navHalos["settings"] = NavSettingsHalo;
+    }
+
+    /// <summary>hover 圆块（批次 75：Material 式图标 hover 高亮，弃 RippleBehavior）</summary>
+    private readonly Dictionary<string, Ellipse> _navHalos = new();
+
+    private string? FindPage(Button btn)
+    {
+        foreach (var (page, b) in _navButtons)
+            if (ReferenceEquals(b, btn)) return page;
+        return null;
     }
 
     /// <summary>双态交叉淡入：激活 → Filled 显 / Regular 隐（150ms）；取消激活反向。复用 UiAnim 帧驱动。</summary>
@@ -496,6 +514,16 @@ public partial class MainWindow : Window
         }
         UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav"); // BgHover
         UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, new SolidColorBrush(Color.Parse("#E8EAF0")), UiAnim.Durations.Fast, "nav"); // TextPrimary
+        // 批次 75：图标 hover 圆块淡入（scale 0.8→1 + opacity 0→1，180ms）——Material 导航栏式高亮
+        if (FindPage(btn) is { } pg && _navHalos.TryGetValue(pg, out var halo))
+        {
+            halo.RenderTransform = new ScaleTransform(0.8, 0.8);
+            UiAnim.Animate(180, UiAnim.Curves.Decelerate, ev =>
+            {
+                halo.Opacity = ev;
+                if (halo.RenderTransform is ScaleTransform st) { st.ScaleX = 0.8 + 0.2 * ev; st.ScaleY = 0.8 + 0.2 * ev; }
+            }, host: halo, slot: "halo");
+        }
     }
 
     private void NavExit(object? sender, PointerEventArgs e) => TweenNavBack(sender);
@@ -503,7 +531,36 @@ public partial class MainWindow : Window
     private void NavPress(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Button btn)
+        {
             UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#1A2029")), UiAnim.Durations.Fast, "nav"); // 按下变深
+            // 批次 75：自研点击光晕（弃 RippleBehavior——模板 RippleHost 查找不可靠实测无波纹）。
+            // 光晕叠加在图标 halo Grid 同格（Grid 单格子元素重叠不占布局），从点击点扩散淡出。
+            if (FindPage(btn) is { } page && _navHalos.TryGetValue(page, out var halo))
+            {
+                var host = halo.Parent as Grid; // 28×28 halo 容器 Grid
+                if (host is not null)
+                {
+                    var size = 28.0;
+                    var ripple = new Ellipse
+                    {
+                        Width = size, Height = size,
+                        Fill = new SolidColorBrush(Color.Parse("#4DFFFFFF")),
+                        IsHitTestVisible = false,
+                        RenderTransform = new ScaleTransform(0, 0),
+                        RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
+                        Opacity = 0.4,
+                    };
+                    // 圆心 = halo 容器中心（28×28，图标 14 居中）；扩散至 1.6 倍容器
+                    host.Children.Add(ripple);
+                    UiAnim.Animate(280, UiAnim.Curves.Standard, ev =>
+                    {
+                        var e2 = 1 - Math.Pow(1 - ev, 3); // cubic-out
+                        if (ripple.RenderTransform is ScaleTransform st) { st.ScaleX = 1.6 * e2; st.ScaleY = 1.6 * e2; }
+                        ripple.Opacity = 0.4 * (1 - e2);
+                    }, () => host.Children.Remove(ripple), ripple, slot: "navrip");
+                }
+            }
+        }
     }
 
     private void NavRelease(object? sender, PointerReleasedEventArgs e) => TweenNavBack(sender);
@@ -515,6 +572,15 @@ public partial class MainWindow : Window
         var (bg, fg) = NavTargetVisuals(btn);
         UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, bg, UiAnim.Durations.Fast, "nav");
         UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, fg, UiAnim.Durations.Fast, "nav");
+        // 批次 75：halo 圆块回退（180ms）
+        if (FindPage(btn) is { } page && _navHalos.TryGetValue(page, out var halo))
+        {
+            UiAnim.Animate(180, UiAnim.Curves.Decelerate, ev =>
+            {
+                halo.Opacity = 1 - ev;
+                if (halo.RenderTransform is ScaleTransform st) { st.ScaleX = 1 - 0.2 * ev; st.ScaleY = 1 - 0.2 * ev; }
+            }, host: halo, slot: "halo");
+        }
     }
 
     private void ApplyOpacityFallback()

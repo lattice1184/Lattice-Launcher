@@ -238,15 +238,19 @@ public partial class HomeViewModel : ViewModelBase
             await svc.RefreshAsync();
             // 收集全部候选 (目录, 版本)
             var candidates = new List<(string Dir, string Id)>();
-            foreach (var e in svc.Entries.Where(e => e.Installed))
+            foreach (var e in svc.Entries.Where(e => e.Installed && InstallMarker.ShouldShowInPage(e.GameDirectory, e.Id)))
                 candidates.Add((e.GameDirectory, e.Id));
             // 目录扫描补漏：加载器版本（fabric/forge/neoforge/quilt 等不在 Mojang manifest）
             // + 三路 jar 判定（8-14：原版父版本 jar 落加载器子目录也算——与版本页侧栏同口径）
             foreach (var (id, dir) in VersionManifestService.ScanUsableInstances(
                          GameDirectory.ScanSourceDirs().Select(x => x.Dir), cleanForeignMarkers: true))
-                if (!candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-                    candidates.Add((dir, id));
-            // AL27：回滚 AL26 隐藏——原版与加载器都显示（友好名徽章保留；隐藏后用户失去原版可选，1.21.10 启动依赖它）
+            {
+                if (candidates.Any(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))) continue;
+                // 8-18 批次 75：预取父版本（.prefetched，Fabric 下载的依赖）主页不显示——
+                // 非用户主动安装；正式安装的原版照常显示。要启动原版去下载页正式下载
+                if (!InstallMarker.ShouldShowInPage(dir, id)) continue;
+                candidates.Add((dir, id));
+            }
             InstalledVersions.Clear();
             foreach (var (dir, id) in candidates)
             {

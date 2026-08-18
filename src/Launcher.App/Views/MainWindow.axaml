@@ -53,51 +53,66 @@
                                 Command="{Binding NavigateCommand}" CommandParameter="home"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavHomeHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavHomeIconR" Data="{StaticResource NavIconHomeRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavHomeIconF" Data="{StaticResource NavIconHomeFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="主页" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="主页" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="NavVersions"
                                 Command="{Binding NavigateCommand}" CommandParameter="version"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavVersionHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavVersionIconR" Data="{StaticResource NavIconVersionRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavVersionIconF" Data="{StaticResource NavIconVersionFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="版本" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="版本" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="NavDownloads"
                                 Command="{Binding NavigateCommand}" CommandParameter="download"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavDownloadHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavDownloadIconR" Data="{StaticResource NavIconDownloadRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavDownloadIconF" Data="{StaticResource NavIconDownloadFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="下载" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="下载" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                                 <Border Classes="badge" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="5,0"
                                         VerticalAlignment="Center" IsVisible="{Binding Downloads.HasActive}">
                                     <TextBlock Text="{Binding Downloads.ActiveBadgeText}" Foreground="{DynamicResource Accent}" FontSize="10"/>
@@ -108,68 +123,88 @@
                                 Command="{Binding NavigateCommand}" CommandParameter="server"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavServerHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavServerIconR" Data="{StaticResource NavIconServerRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavServerIconF" Data="{StaticResource NavIconServerFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="开服" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="开服" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="NavMultiplayer"
                                 Command="{Binding NavigateCommand}" CommandParameter="multiplayer"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavMultiHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavMultiIconR" Data="{StaticResource NavIconMultiRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavMultiIconF" Data="{StaticResource NavIconMultiFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="NavEcosystem"
                                 Command="{Binding NavigateCommand}" CommandParameter="ecosystem"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavEcoHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavEcoIconR" Data="{StaticResource NavIconEcoRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavEcoIconF" Data="{StaticResource NavIconEcoFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="生态" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="生态" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="NavSettings"
                                 Command="{Binding NavigateCommand}" CommandParameter="settings"
                                 behaviors:SpringScaleBehavior.Enabled="False"
                                 behaviors:HoverBrushBehavior.Enabled="False"
+                                behaviors:RippleBehavior.Enabled="False"
                                 PointerEntered="NavEnter" PointerExited="NavExit"
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="14" Height="14" VerticalAlignment="Center">
+                                <Grid Width="28" Height="28" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NavSettingsHalo" Fill="#336C8CFF" Opacity="0"
+                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavSettingsIconR" Data="{StaticResource NavIconSettingsRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavSettingsIconF" Data="{StaticResource NavIconSettingsFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
-                                <TextBlock Text="设置" Foreground="{Binding $parent[Button].Foreground}"/>
+                                </Grid>
+                                <TextBlock Text="设置" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
