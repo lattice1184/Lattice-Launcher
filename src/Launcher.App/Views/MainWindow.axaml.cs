@@ -26,9 +26,41 @@ public partial class MainWindow : Window
     /// <summary>激活指示条是否已首次定位（首次直接落位，之后切换才滑动）</summary>
     private bool _navIndicatorFirst = true;
 
+    /// <summary>闲置内存让渡（8-18 批次 80）：无操作 3 分钟 → GC + 工作集修剪</summary>
+    private readonly IdleMemoryTuner _idleTuner = new();
+
+    /// <summary>点击光晕残留防抖（8-18）：动画中断（快速连点/同 slot 抢占）时旧光晕不移除会卡在导航上</summary>
+    private readonly Dictionary<string, Ellipse> _navRipples = new();
+
     public MainWindow()
     {
         InitializeComponent();
+        // 闲置检测：窗口级输入事件（冒泡覆盖全部子元素）只更新原子时间戳，零开销。
+        // 8-18 修正：不含 PointerMoved——鼠标微动/漂移会不断重置计时导致永不修剪；只认明确输入
+        PointerPressed += (_, _) => _idleTuner.OnUserActivity();
+        PointerWheelChanged += (_, _) => _idleTuner.OnUserActivity();
+        KeyDown += (_, _) => _idleTuner.OnUserActivity();
+        // 8-18 失焦/最小化 → 立即修剪（用户离开马上让资源，不等 3 分钟；回来活动自动重置）
+        Deactivated += (_, _) => _idleTuner.TrimNow();
+        ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(WindowState) && WindowState == WindowState.Minimized)
+                _idleTuner.TrimNow();
+        };
+        // 8-18 透明度防御：合成降级（ActualTransparencyLevel → None）后恢复时重新应用用户透明度——
+        // 某些页面/交互触发亚克力合成失败会丢透明度，恢复后自动回到用户设置值
+        ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ActualTransparencyLevel) && ActualTransparencyLevel != WindowTransparencyLevel.None)
+                ApplyAppearance(LauncherSettings.Current.WindowOpacity, LauncherSettings.Current.Density);
+        };
+        // 8-18 输入框失焦：点击窗口任意非输入控件处 → 清除焦点（Avalonia 默认点击面板/空白不移除 TextBox 焦点）
+        PointerPressed += (_, e) =>
+        {
+            if (e.Source is not TextBox && e.Source is not Avalonia.Controls.Button
+                && e.Source is not ComboBox && e.Source is not ToggleButton)
+                FocusManager?.Focus(null, NavigationMethod.Unspecified, KeyModifiers.None); // 8-18 点别处即失焦
+        };
         // 8-16 批次 50：窗口以最终尺寸创建（XAML 已无 150×150 splash 尺寸；CenterScreen 在 Show 时按此尺寸居中），
         // 消灭「先显示左上角 150×150 小窗、Opened 里再放大居中」的两段跳变
         var (tw, th) = ResolveTargetSize();
@@ -287,7 +319,9 @@ public partial class MainWindow : Window
         }
         try
         {
-            var bitmap = new Bitmap(path);
+            // 8-18：限宽解码（2560）——4K 壁纸全尺寸 BGRA 33MB，缩到窗口可用宽度省显存/内存（注释与实现终于对齐）
+            using var stream = File.OpenRead(path);
+            var bitmap = Bitmap.DecodeToWidth(stream, 2560);
             ContentSurface.Background = new ImageBrush(bitmap) { Stretch = Stretch.UniformToFill };
             BgDim.IsVisible = true;
         }
@@ -339,17 +373,17 @@ public partial class MainWindow : Window
         _navIcons["multiplayer"] = (NavMultiIconR, NavMultiIconF);
         _navIcons["ecosystem"] = (NavEcoIconR, NavEcoIconF);
         _navIcons["settings"] = (NavSettingsIconR, NavSettingsIconF);
-        _navHalos["home"] = NavHomeHalo;
-        _navHalos["version"] = NavVersionHalo;
-        _navHalos["download"] = NavDownloadHalo;
-        _navHalos["server"] = NavServerHalo;
-        _navHalos["multiplayer"] = NavMultiHalo;
-        _navHalos["ecosystem"] = NavEcoHalo;
-        _navHalos["settings"] = NavSettingsHalo;
+        _navIconHosts["home"] = NavHomeHost;
+        _navIconHosts["version"] = NavVersionHost;
+        _navIconHosts["download"] = NavDownloadHost;
+        _navIconHosts["server"] = NavServerHost;
+        _navIconHosts["multiplayer"] = NavMultiHost;
+        _navIconHosts["ecosystem"] = NavEcoHost;
+        _navIconHosts["settings"] = NavSettingsHost;
     }
 
-    /// <summary>hover 圆块（批次 75：Material 式图标 hover 高亮，弃 RippleBehavior）</summary>
-    private readonly Dictionary<string, Ellipse> _navHalos = new();
+    /// <summary>图标容器 Grid（28×28；8-18 删 halo 圆块后保留——点击光晕 ripple 宿主）</summary>
+    private readonly Dictionary<string, Grid> _navIconHosts = new();
 
     private string? FindPage(Button btn)
     {
@@ -381,11 +415,16 @@ public partial class MainWindow : Window
         var target = p.F.Opacity > 0.5 ? p.F : p.R; // 当前可见层（双态动画未完成时按现状取）
         switch (page)
         {
-            case "download": // 箭头下沉插入托盘（往返一次）
+            case "download": // 谷歌式箭头往下插：下沉 5px + 轻微 squash 回弹（插入感）
                 var tt = new TranslateTransform(0, 0);
-                target.RenderTransform = tt;
-                UiAnim.Animate(220, UiAnim.Curves.Standard, e => tt.Y = Math.Sin(e * Math.PI) * 3,
-                    () => target.RenderTransform = null, target, slot: "navact");
+                var tts = new ScaleTransform(1, 1);
+                target.RenderTransform = new TransformGroup { Children = [tt, tts] };
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(260, UiAnim.Curves.Standard, e =>
+                {
+                    tt.Y = Math.Sin(e * Math.PI) * 5;
+                    tts.ScaleY = 1 - Math.Sin(e * Math.PI) * 0.08; // 落地 squash
+                }, () => target.RenderTransform = null, target, slot: "navact");
                 break;
             case "settings": // 齿轮微转
                 var rt = new RotateTransform(0);
@@ -394,16 +433,24 @@ public partial class MainWindow : Window
                 UiAnim.Animate(220, UiAnim.Curves.Standard, e => rt.Angle = Math.Sin(e * Math.PI) * 15,
                     () => target.RenderTransform = null, target, slot: "navact");
                 break;
-            case "server": // 服务器顶灯亮起：scale 脉冲
-            case "ecosystem": // 生态节点脉冲：scale 脉冲
+            case "server": // 服务器顶灯亮起：scale 脉冲加强
                 var st = new ScaleTransform(1, 1);
                 target.RenderTransform = st;
                 target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
-                UiAnim.Animate(220, UiAnim.Curves.Standard, e =>
+                UiAnim.Animate(240, UiAnim.Curves.Standard, e =>
                 {
-                    var s = 1 + Math.Sin(e * Math.PI) * (page == "server" ? 0.15 : 0.12);
+                    var s = 1 + Math.Sin(e * Math.PI) * 0.2;
                     st.ScaleX = s;
                     st.ScaleY = s;
+                }, () => target.RenderTransform = null, target, slot: "navact");
+                break;
+            case "ecosystem": // 生态转动：转一整圈（360°）
+                var rt2 = new RotateTransform(0);
+                target.RenderTransform = rt2;
+                target.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
+                UiAnim.Animate(320, UiAnim.Curves.Standard, e =>
+                {
+                    rt2.Angle = 360 * e; // 匀速转一整圈
                 }, () => target.RenderTransform = null, target, slot: "navact");
                 break;
             case "home": // 房子落位（单向收敛，非弹跳）
@@ -423,11 +470,17 @@ public partial class MainWindow : Window
                 UiAnim.Animate(150, UiAnim.Curves.Decelerate, e => tt2.Y = 2 * (1 - e),
                     () => target.RenderTransform = null, target, slot: "navact");
                 break;
-            case "multiplayer": // 人群从右聚拢
+            case "multiplayer": // 人群从右聚拢 + 两人间虚线流动
                 var tt3 = new TranslateTransform(3, 0);
                 target.RenderTransform = tt3;
                 UiAnim.Animate(150, UiAnim.Curves.Decelerate, e => tt3.X = 3 * (1 - e),
                     () => target.RenderTransform = null, target, slot: "navact");
+                if (NavMultiDash is not null)
+                {
+                    // 虚线平移一个周期（dash 总长 1.6+2=3.6）——连接线"流动"
+                    UiAnim.Animate(600, UiAnim.Curves.Linear, e => NavMultiDash.StrokeDashOffset = -3.6 * e,
+                        () => NavMultiDash.StrokeDashOffset = 0, NavMultiDash, slot: "navact");
+                }
                 break;
         }
     }
@@ -514,16 +567,7 @@ public partial class MainWindow : Window
         }
         UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#2C3544")), UiAnim.Durations.Fast, "nav"); // BgHover
         UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, new SolidColorBrush(Color.Parse("#E8EAF0")), UiAnim.Durations.Fast, "nav"); // TextPrimary
-        // 批次 75：图标 hover 圆块淡入（scale 0.8→1 + opacity 0→1，180ms）——Material 导航栏式高亮
-        if (FindPage(btn) is { } pg && _navHalos.TryGetValue(pg, out var halo))
-        {
-            halo.RenderTransform = new ScaleTransform(0.8, 0.8);
-            UiAnim.Animate(180, UiAnim.Curves.Decelerate, ev =>
-            {
-                halo.Opacity = ev;
-                if (halo.RenderTransform is ScaleTransform st) { st.ScaleX = 0.8 + 0.2 * ev; st.ScaleY = 0.8 + 0.2 * ev; }
-            }, host: halo, slot: "halo");
-        }
+        // 8-18：hover 圆块已删（用户拍板——有圆块反而看着不协调），hover 只改背景/前景色
     }
 
     private void NavExit(object? sender, PointerEventArgs e) => TweenNavBack(sender);
@@ -534,12 +578,12 @@ public partial class MainWindow : Window
         {
             UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, new SolidColorBrush(Color.Parse("#1A2029")), UiAnim.Durations.Fast, "nav"); // 按下变深
             // 批次 75：自研点击光晕（弃 RippleBehavior——模板 RippleHost 查找不可靠实测无波纹）。
-            // 光晕叠加在图标 halo Grid 同格（Grid 单格子元素重叠不占布局），从点击点扩散淡出。
-            if (FindPage(btn) is { } page && _navHalos.TryGetValue(page, out var halo))
+            // 光晕叠加在图标容器 Grid 同格（Grid 单格子元素重叠不占布局），从点击点扩散淡出。
+            if (FindPage(btn) is { } page && _navIconHosts.TryGetValue(page, out var host))
             {
-                var host = halo.Parent as Grid; // 28×28 halo 容器 Grid
-                if (host is not null)
-                {
+                // 8-18 防残留：动画中断（快速连点/同 slot 抢占）时旧光晕不移除会卡在导航上——先清旧
+                if (_navRipples.TryGetValue(page, out var oldRipple) && host.Children.Contains(oldRipple))
+                    host.Children.Remove(oldRipple);
                     var size = 28.0;
                     var ripple = new Ellipse
                     {
@@ -550,6 +594,7 @@ public partial class MainWindow : Window
                         RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative),
                         Opacity = 0.4,
                     };
+                    _navRipples[page] = ripple; // 登记防残留（onDone 移除后字典留空条目无害）
                     // 圆心 = halo 容器中心（28×28，图标 14 居中）；扩散至 1.6 倍容器
                     host.Children.Add(ripple);
                     UiAnim.Animate(280, UiAnim.Curves.Standard, ev =>
@@ -560,7 +605,6 @@ public partial class MainWindow : Window
                     }, () => host.Children.Remove(ripple), ripple, slot: "navrip");
                 }
             }
-        }
     }
 
     private void NavRelease(object? sender, PointerReleasedEventArgs e) => TweenNavBack(sender);
@@ -572,15 +616,7 @@ public partial class MainWindow : Window
         var (bg, fg) = NavTargetVisuals(btn);
         UiAnim.TweenBrush(btn, TemplatedControl.BackgroundProperty, bg, UiAnim.Durations.Fast, "nav");
         UiAnim.TweenBrush(btn, TemplatedControl.ForegroundProperty, fg, UiAnim.Durations.Fast, "nav");
-        // 批次 75：halo 圆块回退（180ms）
-        if (FindPage(btn) is { } page && _navHalos.TryGetValue(page, out var halo))
-        {
-            UiAnim.Animate(180, UiAnim.Curves.Decelerate, ev =>
-            {
-                halo.Opacity = 1 - ev;
-                if (halo.RenderTransform is ScaleTransform st) { st.ScaleX = 1 - 0.2 * ev; st.ScaleY = 1 - 0.2 * ev; }
-            }, host: halo, slot: "halo");
-        }
+        // 8-18：halo 圆块已删（用户拍板），回退只改背景/前景色
     }
 
     private void ApplyOpacityFallback()

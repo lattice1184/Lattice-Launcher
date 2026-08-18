@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.Core.Account;
 
@@ -43,11 +44,13 @@ public static class LittleSkinOAuth
         {
             var err = root.TryGetProperty("error", out var e) ? e.GetString() : "";
             var desc = root.TryGetProperty("error_description", out var d) ? d.GetString() : "";
+            Launcher.Core.Utils.AppLog.Instance?.LogWarning("[littleskin] device code start failed: {Error}", err);
             if (err == "invalid_client")
                 throw new InvalidOperationException(
                     "LittleSkin 拒绝了应用 ID（client_id 无效）。请去 littleskin.cn 用户中心创建 OAuth 应用，把 client_id 填进设置页");
             throw new InvalidOperationException($"连接 LittleSkin 失败：{err}（{desc}）");
         }
+        Launcher.Core.Utils.AppLog.Instance?.LogInformation("[littleskin] device code session started");
         return new DeviceCodeSession(
             userCode.GetString()!,
             root.TryGetProperty("device_code", out var dc) ? dc.GetString() ?? "" : "",

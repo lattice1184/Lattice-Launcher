@@ -195,7 +195,7 @@ public sealed partial class ConfigService
                     {
                         ArgumentNullException.ThrowIfNull(argument);
                         var dir = Path.GetFullPath(argument.ToString()!);
-                        var configPath = Path.Combine(dir, "PCL", "config.v1.yml");
+                        var configPath = Path.Combine(dir, "Lattice", "config.v1.yml"); // 8-18：PCL → Lattice（运行时目录改名）
                         if (!File.Exists(dir)) _TryMigrate(dir, [
                             new ConfigMigration
                             {

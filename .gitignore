@@ -18,3 +18,4 @@ REVIEW-E.md
 # 发布期本地配置/工具（不随仓库分发）
 obfuscar.xml
 scripts/check-obfuscation.py
+scripts/attach-test.ps1

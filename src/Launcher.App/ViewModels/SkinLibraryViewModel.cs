@@ -109,6 +109,20 @@ public partial class SkinLibraryViewModel : ViewModelBase
             IsConnected = true;
             Status = "连接成功";
             _ = LoadAllAsync();
+            // 8-18 连接即登录：皮肤库连接成功 → 自动成为游戏账号（连贯性——两套登录打通）
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var players = await _api.GetPlayersAsync(CancellationToken.None);
+                    var name = players.FirstOrDefault()?.Name;
+                    if (string.IsNullOrEmpty(name)) return;
+                    var uuid = await _api.GetUuidByNameAsync(name, CancellationToken.None);
+                    Launcher.Core.Account.AccountService.Shared.LoginLittleskin(name, uuid);
+                    NotificationService.Success($"已切换为 LittleSkin 账号 {name}");
+                }
+                catch { /* 连接成功但账号同步失败不阻塞皮肤库使用 */ }
+            });
         }
         catch (OperationCanceledException)
         {

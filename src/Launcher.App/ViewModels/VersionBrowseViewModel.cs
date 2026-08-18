@@ -51,6 +51,13 @@ public partial class VersionBrowseViewModel : ViewModelBase
 
     private List<InstalledVersionRowVM> _all = [];
 
+    /// <summary>8-18 内存让渡：切走版本页时释放列表（切回时 LoadAsync 重建）</summary>
+    public void ReleaseData()
+    {
+        Versions.Clear();
+        _all.Clear();
+    }
+
     public VersionBrowseViewModel()
     {
         _svc = new VersionManifestService();

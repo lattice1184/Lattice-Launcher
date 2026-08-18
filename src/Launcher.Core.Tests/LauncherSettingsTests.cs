@@ -61,7 +61,7 @@ public class LauncherSettingsTests
         Assert.Null(s.ExtraJvmArgs);
         Assert.True(s.AutoChineseEnabled);
         Assert.True(s.EcoFollowInstance); // 8-19：默认跟随实例（老用户无感）
-        Assert.Equal(DownloadSourcePreference.OfficialFirst, s.DownloadSource);
+        Assert.Equal(DownloadSourcePreference.MirrorFirst, s.DownloadSource); // 8-18：默认镜像优先
         Assert.Equal(0, s.MaxConcurrentDownloads);
     }
 

@@ -5,9 +5,10 @@ namespace Launcher.App.Services;
 /// <summary>启动记录结果</summary>
 public enum LaunchOutcome { Success, Failed, Stopped, Crashed }
 
-/// <summary>单次启动记录（时间/版本/结果/错误/耗时）</summary>
+/// <summary>单次启动记录（时间/版本/结果/错误/耗时/日志文件——8-18 加 LogPath 供查看那次日志）</summary>
 public sealed record LaunchHistoryEntry(
-    DateTime Time, string VersionId, LaunchOutcome Outcome, string? Error, double DurationSeconds)
+    DateTime Time, string VersionId, LaunchOutcome Outcome, string? Error, double DurationSeconds,
+    string? LogPath = null)
 {
     public string TimeText => Time.ToString("MM-dd HH:mm");
     public string OutcomeText => Outcome switch
@@ -36,9 +37,9 @@ public static class LaunchHistoryService
 
     public static event Action? Changed;
 
-    public static void Record(string versionId, LaunchOutcome outcome, string? error, double durationSeconds)
+    public static void Record(string versionId, LaunchOutcome outcome, string? error, double durationSeconds, string? logPath = null)
     {
-        Entries.Insert(0, new LaunchHistoryEntry(DateTime.Now, versionId, outcome, error, durationSeconds));
+        Entries.Insert(0, new LaunchHistoryEntry(DateTime.Now, versionId, outcome, error, durationSeconds, logPath));
         if (Entries.Count > MaxEntries) Entries.RemoveRange(MaxEntries, Entries.Count - MaxEntries);
         Save();
         Changed?.Invoke();

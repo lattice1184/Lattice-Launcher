@@ -19,6 +19,7 @@
                             <!-- 8-13：头像加载期间首字母占位，不露白 -->
                             <Grid>
                                 <Image Source="{Binding PlayerAvatar}" Width="44" Height="44" Stretch="Uniform"
+                                       Loaded="OnAvatarImageLoaded"
                                        IsVisible="{Binding PlayerAvatar, Converter={x:Static conv:ObjectConverters.IsNotNull}}"/>
                                 <TextBlock Text="{Binding PlayerAvatarFallback}" FontSize="18" FontWeight="Bold"
                                            Foreground="{DynamicResource Accent}"
@@ -141,7 +142,7 @@
                             <ItemsControl ItemsSource="{Binding LaunchHistory}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="svc:LaunchHistoryEntry">
-                                        <Grid ColumnDefinitions="Auto,88,*,Auto" ColumnSpacing="8" Margin="0,2" MinHeight="22">
+                                        <Grid ColumnDefinitions="Auto,88,*,Auto,Auto" ColumnSpacing="8" Margin="0,2" MinHeight="22">
                                             <TextBlock Text="{Binding TimeText}" Classes="dim" FontSize="11" VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="1" Text="{Binding VersionId}" FontSize="11" LineHeight="16"
                                                        Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
@@ -153,6 +154,13 @@
                                                 <TextBlock Text="{Binding OutcomeText}" FontSize="10" Foreground="#5AD07C"
                                                            VerticalAlignment="Center"/>
                                             </Border>
+                                            <!-- 8-18 查看日志：启动记录关联当次日志文件（无日志文件的旧记录不显示） -->
+                                            <Button Grid.Column="4" Padding="6,1" CornerRadius="3" FontSize="10"
+                                                    IsVisible="{Binding LogPath, Converter={x:Static conv:ObjectConverters.IsNotNull}}"
+                                                    Click="OnOpenLaunchLog" Tag="{Binding LogPath}" Cursor="Hand"
+                                                    ToolTip.Tip="打开这次启动的日志文件">
+                                                <TextBlock Text="日志" FontSize="10" VerticalAlignment="Center"/>
+                                            </Button>
                                         </Grid>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

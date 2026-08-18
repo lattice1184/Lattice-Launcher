@@ -58,10 +58,8 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavHomeHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavHomeHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-0.3,0,0.3"><!-- 8-18 重心补偿：房子主体偏下 0.56vb → 上移 0.3px -->
                                     <Path x:Name="NavHomeIconR" Data="{StaticResource NavIconHomeRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavHomeIconF" Data="{StaticResource NavIconHomeFilled}" Stretch="Uniform"
@@ -80,12 +78,10 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavVersionHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
+                                <Grid x:Name="NavVersionHost" Width="28" Height="28" VerticalAlignment="Center">
                                     <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Path x:Name="NavVersionIconR" Data="{StaticResource NavIconVersionRegular}" Stretch="Uniform"
-                                          Fill="{Binding $parent[Button].Foreground}"/>
+                                          Fill="Transparent" Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5"/>
                                     <Path x:Name="NavVersionIconF" Data="{StaticResource NavIconVersionFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
                                 </Grid>
@@ -102,10 +98,8 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavDownloadHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavDownloadHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-0.9,0,0.9"><!-- 8-18 重心补偿：箭头偏下 1.58vb → 上移 0.9px -->
                                     <Path x:Name="NavDownloadIconR" Data="{StaticResource NavIconDownloadRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavDownloadIconF" Data="{StaticResource NavIconDownloadFilled}" Stretch="Uniform"
@@ -128,10 +122,8 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavServerHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavServerHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-0.5,0,0.5"><!-- 8-18 重心补偿：机架偏下 0.79vb → 上移 0.5px -->
                                     <Path x:Name="NavServerIconR" Data="{StaticResource NavIconServerRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavServerIconF" Data="{StaticResource NavIconServerFilled}" Stretch="Uniform"
@@ -150,14 +142,16 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavMultiHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavMultiHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0.6,0,-0.6"><!-- 8-18 重心补偿：人形偏上 0.95vb → 下移 0.6px -->
                                     <Path x:Name="NavMultiIconR" Data="{StaticResource NavIconMultiRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavMultiIconF" Data="{StaticResource NavIconMultiFilled}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}" Opacity="0"/>
+                                    <!-- 8-18 联机=两人用虚线连接（点击时虚线流动动画由 NavMultiDash 驱动） -->
+                                    <Path x:Name="NavMultiDash" Data="M 8 14.5 L 16 14.5" Stretch="Uniform"
+                                          Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.2"
+                                          StrokeDashArray="1.6,2" StrokeDashOffset="0" IsHitTestVisible="False"/>
                                 </Grid>
                                 </Grid>
                                 <TextBlock Text="联机" Foreground="{Binding $parent[Button].Foreground}" VerticalAlignment="Center"/>
@@ -172,10 +166,8 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavEcoHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavEcoHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0.3,0,-0.3"><!-- 8-18 重心补偿：地球偏上 0.59vb → 下移 0.3px -->
                                     <Path x:Name="NavEcoIconR" Data="{StaticResource NavIconEcoRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavEcoIconF" Data="{StaticResource NavIconEcoFilled}" Stretch="Uniform"
@@ -194,10 +186,8 @@
                                 PointerPressed="NavPress" PointerReleased="NavRelease"
                                 HorizontalAlignment="Stretch" Margin="0,2" Padding="12,7">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Grid Width="28" Height="28" VerticalAlignment="Center">
-                                    <Ellipse x:Name="NavSettingsHalo" Fill="#336C8CFF" Opacity="0"
-                                           RenderTransformOrigin="50%,50%" IsHitTestVisible="False"/>
-                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Grid x:Name="NavSettingsHost" Width="28" Height="28" VerticalAlignment="Center">
+                                    <Grid Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0.2,0,-0.2"><!-- 8-18 重心补偿：齿轮偏上 0.37vb → 下移 0.2px -->
                                     <Path x:Name="NavSettingsIconR" Data="{StaticResource NavIconSettingsRegular}" Stretch="Uniform"
                                           Fill="{Binding $parent[Button].Foreground}"/>
                                     <Path x:Name="NavSettingsIconF" Data="{StaticResource NavIconSettingsFilled}" Stretch="Uniform"

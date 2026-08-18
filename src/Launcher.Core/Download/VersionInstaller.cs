@@ -3,6 +3,7 @@ using System.Text.Json;
 using Launcher.Core.Diagnostics;
 using Launcher.Core.Model.Mojang;
 using Launcher.Core.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.Core.Download;
 
@@ -99,9 +100,12 @@ public sealed class VersionInstaller
             // 自建目录（PCL 的版本归 PCL 管，补文件≠本启动器安装；整合包导入 allowForeignMarkers 放行）
             if (_allowForeignMarkers || GameDirectory.IsOwnInstallDir(_gameDirectory))
                 InstallMarker.Mark(_gameDirectory, version.Id); // 完整安装后才打标记
+            Launcher.Core.Utils.AppLog.Instance?.LogInformation("[install] complete: {Version}", version.Id);
         }
         catch
         {
+            Launcher.Core.Utils.AppLog.Instance?.LogWarning("[install] failed: {Version}", version.Id);
+
             // 半装清理：只删本次新建的 client jar（安装前本不存在；原本存在的绝不删）
             if (!jarExistedBefore)
             {

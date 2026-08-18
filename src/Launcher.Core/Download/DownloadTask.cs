@@ -103,6 +103,9 @@ public partial class DownloadTask : ObservableObject
     [ObservableProperty]
     public partial DownloadTaskState State { get; set; } = DownloadTaskState.Queued;
 
+    /// <summary>8-18 排队序号（并发门等待位；0 = 未排队）。入队时快照，用于「排队（前面 N 个任务）」提示</summary>
+    public int QueuePosition { get; internal set; }
+
     /// <summary>
     /// 同步终态（内部）：State 通过 UI Post 异步生效，而 Completion 同步完成——
     /// 组任务推导（WhenAll 后查子任务状态）若读 State 会读到旧值（AL5 竞态：子失败误判父完成）。
@@ -163,8 +166,8 @@ public partial class DownloadTask : ObservableObject
         }
     }
 
-    /// <summary>子任务迷你行文本（叶子任务的百分比文字）</summary>
-    public string ChildProgressText => HasProgress ? $"{ProgressPercent:0}%" : "…";
+    /// <summary>子任务迷你行文本（叶子任务的百分比文字；无总量时显示已下载字节——压缩包无 Content-Length 也有进度感）</summary>
+    public string ChildProgressText => HasProgress ? $"{ProgressPercent:0}%" : (BytesDone > 0 ? FormatBytes(BytesDone) : "…");
 
     public IRelayCommand CancelCommand { get; }
     public IRelayCommand PauseCommand { get; }

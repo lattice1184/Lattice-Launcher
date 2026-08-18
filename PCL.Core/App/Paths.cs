@@ -71,7 +71,7 @@ public static class Paths
         const string oldName = ".PCLCE";
 #endif
         // fill paths
-        _data = Path.Combine(DefaultDirectory, "PCL");
+        _data = Path.Combine(DefaultDirectory, "Lattice"); // 8-18：PCL → Lattice（运行时目录改名）
         _sharedData = GetSpecialPath(Special.ApplicationData, name);
         _sharedLocalData = GetSpecialPath(Special.LocalApplicationData, name);
         _temp = Path.Combine(Path.GetTempPath(), name);

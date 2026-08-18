@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Launcher.Core.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.Core.Account;
 
@@ -68,6 +70,7 @@ public static class MicrosoftAuth
         {
             var err = root.TryGetProperty("error", out var e) ? e.GetString() : "";
             var desc = root.TryGetProperty("error_description", out var d) ? d.GetString() : "";
+            AppLog.Instance?.LogWarning("[microsoft] device code start failed: {Error}", err);
             throw new InvalidOperationException(
                 $"发起设备码登录失败: {err}（{desc}）。可在设置里更换微软登录 Client ID");
         }
@@ -113,6 +116,7 @@ public static class MicrosoftAuth
                 var rt = root.TryGetProperty("refresh_token", out var r) ? r.GetString() ?? "" : "";
                 if (rt.Length == 0)
                     throw new InvalidOperationException("授权成功但未返回 refresh_token");
+                AppLog.Instance?.LogInformation("[microsoft] device code authorized");
                 return (at.GetString()!, rt);
             }
             if (root.TryGetProperty("error", out var err))
@@ -130,6 +134,7 @@ public static class MicrosoftAuth
                 else
                 {
                     var desc = root.TryGetProperty("error_description", out var d) ? d.GetString() : "";
+                    AppLog.Instance?.LogWarning("[microsoft] device code poll failed: {Code}", code);
                     throw new InvalidOperationException($"设备码授权失败: {code}（{desc}）");
                 }
             }

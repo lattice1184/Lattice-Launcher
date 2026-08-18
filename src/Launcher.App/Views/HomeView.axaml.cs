@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using Launcher.App.ViewModels;
 
 using Launcher.App.Services;
+using Microsoft.Extensions.Logging;
 namespace Launcher.App.Views;
 
 public partial class HomeView : UserControl
@@ -23,6 +24,24 @@ public partial class HomeView : UserControl
                 vm.Account.PropertyChanged += OnAccountPropertyChanged;
             }
         };
+    }
+
+    /// <summary>8-18 头像排查：视图就绪时记录 VM 的头像值（区分「VM 值丢失」vs「绑定/渲染问题」）</summary>
+    private void OnAvatarImageLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is HomeViewModel vm)
+            Launcher.Core.Utils.AppLog.Instance?.LogInformation("[avatar] view loaded, vm={Value}",
+                vm.PlayerAvatar?.GetType().Name ?? "null");
+    }
+
+    /// <summary>8-18 启动记录「日志」按钮：系统默认打开该次启动的日志文件</summary>
+    private void OnOpenLaunchLog(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Button { Tag: string path } && File.Exists(path))
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); }
+            catch { /* 打开失败静默 */ }
+        }
     }
 
     /// <summary>配对码生成即自动复制到剪贴板（DeviceCodeText 非空触发一次）</summary>

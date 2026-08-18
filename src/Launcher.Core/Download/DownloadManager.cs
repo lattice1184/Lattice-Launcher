@@ -39,6 +39,9 @@ public sealed class DownloadManager
         _gate = new SemaphoreSlim(maxConcurrentDownloads > 0 ? maxConcurrentDownloads : int.MaxValue);
     }
 
+    /// <summary>8-18 排队序号计数（并发门等待位；拿到门即递减）</summary>
+    private int _queued;
+
     /// <summary>
     /// 入队单个文件任务。sourceUrl/targetPath 供下载历史「重新下载 / 打开位置」使用（第三方下载传入，其余为 null）。
     /// </summary>
@@ -50,6 +53,8 @@ public sealed class DownloadManager
             SourceUrl = sourceUrl,
             TargetPath = targetPath,
         };
+        task.QueuePosition = Interlocked.Increment(ref _queued);
+        task.Stage = task.QueuePosition > 1 ? $"排队（前面 {task.QueuePosition - 1} 个任务）" : "排队等待…";
         AddAndTrack(task);
         return task;
     }
@@ -58,6 +63,8 @@ public sealed class DownloadManager
     public DownloadTask EnqueueGroup(string name, Func<DownloadGroupContext, CancellationToken, Task> groupWork)
     {
         var task = new DownloadTask(name, Gated(groupWork), _ui);
+        task.QueuePosition = Interlocked.Increment(ref _queued);
+        task.Stage = task.QueuePosition > 1 ? $"排队（前面 {task.QueuePosition - 1} 个任务）" : "排队等待…";
         AddAndTrack(task);
         return task;
     }
@@ -67,6 +74,7 @@ public sealed class DownloadManager
         => async (arg, ct) =>
         {
             await _gate.WaitAsync(ct);
+            Interlocked.Decrement(ref _queued); // 8-18：拿到门，排队计数递减
             try { await inner(arg, ct); }
             finally { _gate.Release(); }
         };

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
 using Launcher.Core.Download;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Tests;
 
@@ -16,6 +17,7 @@ public class RaceEliminateTests
         var resolver = new FixedResolver(["http://fast.com/f.bin", "http://slow.com/f.bin"]);
         var svc = new DownloadService(http, resolver, new DownloadOptions
         {
+            DownloadSource = DownloadSourcePreference.OfficialFirst, // 显式官方顺序：本测试测淘汰逻辑，顺序非测试对象
             MaxSourceAttempts = 1,
             RaceEliminateInterval = TimeSpan.FromMilliseconds(100),
             BackoffProvider = _ => TimeSpan.Zero,
@@ -52,6 +54,7 @@ public class RaceEliminateTests
         var resolver = new FixedResolver(["http://slow.com/a.bin", "http://slow.com/b.bin"]);
         var svc = new DownloadService(http, resolver, new DownloadOptions
         {
+            DownloadSource = DownloadSourcePreference.OfficialFirst, // 显式官方顺序：本测试测淘汰逻辑，顺序非测试对象
             MaxSourceAttempts = 1,
             RaceEliminateInterval = TimeSpan.FromMilliseconds(100),
             BackoffProvider = _ => TimeSpan.Zero,

@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using Launcher.Core.Download;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Tests;
 
@@ -21,6 +22,7 @@ public class PaceRunnerTests
 
     private static DownloadOptions PaceOpts(int evalMs = 100) => new()
     {
+        DownloadSource = DownloadSourcePreference.OfficialFirst, // 显式官方顺序：本测试测竞速/陪跑时序，顺序非测试对象
         MaxSourceAttempts = 3, // 卡死测试需要第 3 轮（pace2 单独完成）
         BufferSize = 8192,     // 读粒度：220KB 文件 27 次读，逐读推拍采样充足
         RaceEliminateInterval = TimeSpan.FromMilliseconds(evalMs),

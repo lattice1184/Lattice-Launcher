@@ -321,6 +321,7 @@ public sealed class DownloadService
                 catch (Exception ex) when (ex is HttpRequestException or InvalidDataException)
                 {
                     last = ex;
+                    ThirdPartyDlSourceResolver.MarkFailed(candidates[0]); // 8-18 失败记忆：下轮排末位
                     LogWrapper.Warn($"[下载] 单候选失败 {ShortUrl(candidates[0])}: {ex.Message}");
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -423,7 +424,10 @@ public sealed class DownloadService
                             {
                                 var leadIndex = pending[leadPos].Index;
                                 foreach (var p in pending.Where(p => p.Index != leadIndex))
+                                {
                                     p.Cts.Cancel(); // 淘汰落后源——取消后 Task 走 OCE→(false,null)，WhenAny 收掉
+                                    ThirdPartyDlSourceResolver.MarkFailed(p.Src); // 8-18 失败记忆：下轮排末位
+                                }
                             }
                             // 陪跑期领先源停滞兜底（防多源全死挂起——watchdog 对 bytes 最大者生效）
                             if (paceActive)
@@ -1458,7 +1462,10 @@ public sealed class DownloadService
                 response.EnsureSuccessStatusCode();
                 return response.Content.Headers.ContentLength ?? 0;
             }
-            catch (Exception) { /* 超时/失败 → 试下一候选源 */ }
+            catch (Exception)
+            {
+                ThirdPartyDlSourceResolver.MarkFailed(src); // 8-18 失败记忆：HEAD 8s 超时浪费点，下轮排末位
+            }
         }
         return 0;
     }

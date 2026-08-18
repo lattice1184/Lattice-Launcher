@@ -15,7 +15,7 @@ public class DownloadOptionsTests
         Assert.Equal(8, o.ChunkCount);
         Assert.Equal(81920, o.BufferSize);
         Assert.Equal(2, o.MaxSourceAttempts);
-        Assert.Equal(DownloadSourcePreference.OfficialFirst, o.DownloadSource);
+        Assert.Equal(DownloadSourcePreference.MirrorFirst, o.DownloadSource);
     }
 
     [Fact]
@@ -60,14 +60,14 @@ public class DownloadOptionsTests
         var o = DownloadOptions.FromSettings(new LauncherSettings());
         Assert.Equal(81920, o.BufferSize);
         Assert.Equal(16, o.ChunkCount); // 默认档位 Medium(16)
-        Assert.Equal(DownloadSourcePreference.OfficialFirst, o.DownloadSource);
+        Assert.Equal(DownloadSourcePreference.MirrorFirst, o.DownloadSource);
         Assert.Equal(0, o.BytesPerSecond);
     }
 
     [Fact]
     public void FromSettings_DownloadSourceMaps()
     {
-        Assert.Equal(DownloadSourcePreference.OfficialFirst,
+        Assert.Equal(DownloadSourcePreference.MirrorFirst,
             DownloadOptions.FromSettings(new LauncherSettings()).DownloadSource);
         Assert.Equal(DownloadSourcePreference.MirrorFirst,
             DownloadOptions.FromSettings(new LauncherSettings { DownloadSource = DownloadSourcePreference.MirrorFirst }).DownloadSource);

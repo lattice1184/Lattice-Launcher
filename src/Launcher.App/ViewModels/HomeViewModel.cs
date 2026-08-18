@@ -12,6 +12,7 @@ using Launcher.Core.Download;
 using Launcher.Core.Launch;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
+using Microsoft.Extensions.Logging;
 
 namespace Launcher.App.ViewModels;
 
@@ -30,6 +31,9 @@ public partial class HomeViewModel : ViewModelBase
     private volatile bool _userStopped;
 
     public ObservableCollection<VersionInstanceVM> InstalledVersions { get; } = [];
+
+    /// <summary>8-18 内存让渡：切走主页时释放版本列表（切回时 RefreshVersionsAsync 重建）</summary>
+    public void ReleaseData() => InstalledVersions.Clear();
     public ObservableCollection<LaunchStageVM> Stages { get; } = [];
 
     [ObservableProperty]
@@ -280,31 +284,21 @@ public partial class HomeViewModel : ViewModelBase
         // 8-13：不置空——网络头像加载期间保留旧头像（首字母块兜底由视图层做），避免每次刷新闪空白
         if (acc is null) return;
 
-        // 本地皮肤优先（点击头像更换）；否则 minotar 网络头像（ImageLoader 磁盘缓存，二次启动秒显）
+        // 8-18 终局：头像统一走 minotar 3D 渲染（helm——与弹窗头像一致，脸永远正确）。
+        // 本地皮肤（换肤）只作用于游戏内，不再做主头像：自定义皮肤图（非标准布局）裁脸必失败
+        // （实机：整图=全身照缩小、裁(0,0)=透明、(8,8)=纯白——三种都不像头像）；helm 失败时
+        // 本地皮肤整图作离线兜底，再失败保持首字母。
         var skinPath = LocalSkinPath(acc.Name);
-        if (File.Exists(skinPath))
+        Launcher.Core.Utils.AppLog.Instance?.LogInformation("[avatar] refresh: {Name}, skin={Exists}", acc.Name, File.Exists(skinPath));
+        _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png", bmp =>
         {
-            // 8-14：字节流加载而非 new Bitmap(path)——后者持有文件写锁，重置皮肤删文件报
-            // Access denied（实机：skins\Walmoss8_.png is denied）；流用完即关，文件不锁
-            // 8-15：显示裁皮肤头部（64×64 皮肤图脸在左上 8×8）——此前整张皮肤图直接当头像
-            // 显示，脸只占 1/8，看着像「一张图片」；CroppedBitmap 裁脸后 Image 44×44 放大
-            // （MVP 不叠加帽子层 (40,0)，帽沿/头发层缺失可接受）
-            try
+            if (bmp is not null) { PlayerAvatar = bmp; return; }
+            if (File.Exists(skinPath))
             {
-                var bytes = File.ReadAllBytes(skinPath);
-                using var ms = new MemoryStream(bytes);
-                // 8-16 修复启动崩溃：full 不能 using 释放——CroppedBitmap 持有源引用（get_Size 走源 Dpi），
-                // 源被 Dispose 后布局头像 Image 直接 ObjectDisposedException（批次 50 窗口一次落位后必现）。
-                // 不显式释放，头像对象小（32×32≈4KB）切换频率低，GC 兜底。
-                var full = new Avalonia.Media.Imaging.Bitmap(ms);
-                PlayerAvatar = new Avalonia.Media.Imaging.CroppedBitmap(full,
-                    new Avalonia.PixelRect(0, 0, 8, 8));
-                return;
+                try { using var s = File.OpenRead(skinPath); PlayerAvatar = new Avalonia.Media.Imaging.Bitmap(s); }
+                catch { /* 本地兜底失败保持首字母 */ }
             }
-            catch { /* 损坏皮肤回退网络 */ }
-        }
-        _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png",
-            bmp => PlayerAvatar = bmp);
+        });
     }
 
     /// <summary>本地皮肤路径（AppData\Launcher\skins\{name}.png）</summary>
@@ -448,6 +442,7 @@ public partial class HomeViewModel : ViewModelBase
     private async Task LaunchCoreAsync(VersionInstanceVM? overrideVersion, string overrideGameDir, string[]? extraGameArgs)
     {
         if (IsLaunching || IsRunning) return;
+        ResetLaunchLog(); // 8-18：新启动会话新日志文件（与启动记录一一对应）
         // REVIEW-A1：_userStopped 每次启动入口重置——旧代码置 true 后永不复位，
         // 本会话停过一次游戏，之后任何崩溃都被误判「已停止」（不弹崩溃窗/不自动修复/历史记 Stopped）
         _userStopped = false;
@@ -562,19 +557,19 @@ public partial class HomeViewModel : ViewModelBase
             {
                 LaunchState = "已退出";
                 LaunchStatus = "已停止游戏";
-                LaunchHistoryService.Record(version.Name, LaunchOutcome.Stopped, null, _launchWatch?.Elapsed.TotalSeconds ?? 0);
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Stopped, null, _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
             }
             else if (code == 0)
             {
                 LaunchState = "已退出";
                 LaunchStatus = "游戏正常退出";
-                LaunchHistoryService.Record(version.Name, LaunchOutcome.Success, null, _launchWatch?.Elapsed.TotalSeconds ?? 0);
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Success, null, _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
             }
             else
             {
                 LaunchState = $"异常退出（{code}）";
                 LaunchStatus = "游戏异常退出，请查看日志";
-                LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0);
+                LaunchHistoryService.Record(version.Name, LaunchOutcome.Crashed, $"退出码 {code}", _launchWatch?.Elapsed.TotalSeconds ?? 0, _launchLogPath);
                 // 崩溃弹窗（PCL 式）：游戏日志尾部 + 导出报告
                 var logTail = string.Join(Environment.NewLine, GameLogs.TakeLast(40));
                 // AL9/AL10 自修复：日志诊断 → 可自动修复 → 修复后自动重新启动一次（最多一次；修复本身最多试 2 次，全失败才弹窗）
@@ -706,17 +701,28 @@ public partial class HomeViewModel : ViewModelBase
         AppendToLaunchLog(line);
     }
 
-    /// <summary>控制台同步落盘（AppData\Launcher\logs\launch-*.log）——启动报错可回看</summary>
+    /// <summary>8-18 本次启动的日志文件路径（启动会话固定——启动记录可关联查看；null=未开始落盘）</summary>
+    private string? _launchLogPath;
+
+    /// <summary>控制台同步落盘（AppData\Launcher\logs\launch-*.log）——启动报错可回看；会话内固定同一文件</summary>
     private void AppendToLaunchLog(string line)
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
-            Directory.CreateDirectory(dir);
-            var path = Path.Combine(dir, $"launch-{DateTime.Now:yyyyMMdd-HHmmss}.log");
-            File.AppendAllText(path, line + Environment.NewLine);
+            _launchLogPath ??= BuildLaunchLogPath();
+            File.AppendAllText(_launchLogPath, line + Environment.NewLine);
         }
         catch { }
+    }
+
+    /// <summary>新启动会话：重置日志文件（下次 Append 建新文件，与启动记录一一对应）</summary>
+    private void ResetLaunchLog() => _launchLogPath = null;
+
+    private static string BuildLaunchLogPath()
+    {
+        var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, $"launch-{DateTime.Now:yyyyMMdd-HHmmss}.log");
     }
 }
 

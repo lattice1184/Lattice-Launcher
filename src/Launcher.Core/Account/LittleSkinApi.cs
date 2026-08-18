@@ -77,6 +77,34 @@ public sealed class LittleSkinApi
         return list;
     }
 
+    /// <summary>
+    /// 8-18 角色名 → yggdrasil UUID（GET users/profiles/minecraft/{name}——LittleSkin 实现 yggdrasil 标准）。
+    /// 拉取失败回退离线式 UUID（MD5(name) 定长格式化——与离线登录同款），保证连接即登录不阻塞。
+    /// </summary>
+    public async Task<string> GetUuidByNameAsync(string name, CancellationToken ct)
+    {
+        try
+        {
+            using var doc = await GetJsonAsync($"{BaseUrl}/users/profiles/minecraft/{Uri.EscapeDataString(name)}", ct);
+            if (doc.RootElement.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                var uuid = id.GetString();
+                if (!string.IsNullOrWhiteSpace(uuid)) return uuid;
+            }
+        }
+        catch { /* 拉取失败回退离线式 */ }
+        return OfflineUuid(name);
+    }
+
+    /// <summary>离线式 UUID（MD5(name) → 8-4-4-4-12 格式）——yggdrasil 拉不到时的兜底</summary>
+    private static string OfflineUuid(string name)
+    {
+        var md5 = System.Security.Cryptography.MD5.HashData(
+            System.Text.Encoding.UTF8.GetBytes("OfflinePlayer:" + name));
+        var hex = Convert.ToHexString(md5).ToLowerInvariant();
+        return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
+    }
+
     /// <summary>应用皮肤到角色（PUT /api/players/{pid}/textures body {"skin": tid}）——游戏内 yggdrasil 立即生效</summary>
     public async Task ApplySkinAsync(int pid, int tid, CancellationToken ct)
     {

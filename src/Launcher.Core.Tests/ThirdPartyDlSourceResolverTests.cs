@@ -12,6 +12,9 @@ public class ThirdPartyDlSourceResolverTests
 
     private static ThirdPartyDlSourceResolver Resolver => new();
 
+    /// <summary>失败记忆是静态——每个测试前清空，防测试间污染</summary>
+    public ThirdPartyDlSourceResolverTests() => ThirdPartyDlSourceResolver.ClearFailures();
+
     [Fact]
     public void GitHubRelease_ResolvesToOriginalPlusMirrors()
     {
@@ -29,6 +32,53 @@ public class ThirdPartyDlSourceResolverTests
     {
         var url = "https://github.com/foo/bar/releases/expanded_assets/v1.0/x.zip";
         Assert.Equal(4, Resolver.Resolve(url).Count);
+    }
+
+    /// <summary>8-18 失败记忆：镜像失败 → 下一轮排末位（不再每轮白花 8s HEAD 超时）</summary>
+    [Fact]
+    public void FailedMirror_MovesToLast()
+    {
+        ThirdPartyDlSourceResolver.MarkFailed($"https://ghproxy.net/{ReleaseUrl}");
+        var list = Resolver.Resolve(ReleaseUrl);
+        Assert.Equal(ReleaseUrl, list[0]);
+        Assert.Equal($"https://gh-proxy.com/{ReleaseUrl}", list[1]);
+        Assert.Equal($"https://ghproxy.net/{ReleaseUrl}", list[2]);
+    }
+
+    /// <summary>8-18 失败记忆：官方源失败 → 排到镜像之后（官方被墙不再每次先白打）</summary>
+    [Fact]
+    public void FailedOfficial_MovesBehindMirrors()
+    {
+        ThirdPartyDlSourceResolver.MarkFailed(ReleaseUrl);
+        var list = Resolver.Resolve(ReleaseUrl);
+        Assert.Equal($"https://ghproxy.net/{ReleaseUrl}", list[0]);
+        Assert.Equal($"https://gh-proxy.com/{ReleaseUrl}", list[1]);
+        Assert.Equal(ReleaseUrl, list[2]);
+    }
+
+    /// <summary>8-18 失败记忆：清空后恢复原序；非 GitHub URL 标记被忽略（Resolve 不查询）</summary>
+    [Fact]
+    public void ClearFailures_RestoresOrder_And_NonGitHubIgnored()
+    {
+        ThirdPartyDlSourceResolver.MarkFailed($"https://ghproxy.net/{ReleaseUrl}");
+        ThirdPartyDlSourceResolver.MarkFailed("https://maven.fabricmc.net/lib/x.jar"); // 非 GitHub 不记
+        ThirdPartyDlSourceResolver.ClearFailures();
+        Assert.Equal(ReleaseUrl, Resolver.Resolve(ReleaseUrl)[0]);
+    }
+
+    /// <summary>8-18：archive 打包下载（zip/tar.gz/zipball）也走镜像竞速——此前漏匹配走单候选直连（用户实测失效根因）</summary>
+    [Theory]
+    [InlineData("https://github.com/deepseek-ai/deepseek-harness/archive/refs/tags/dsh-v0.1.0-rc.7.zip")]
+    [InlineData("https://github.com/foo/bar/archive/refs/heads/main.tar.gz")]
+    [InlineData("https://github.com/foo/bar/archive/abcdef0.zipball")]
+    public void Archive_ResolvesToOriginalPlusMirrors(string url)
+    {
+        var list = Resolver.Resolve(url);
+        // 官方 + 两个镜像；archive 无 ghapi 换链候选
+        Assert.Equal(3, list.Count);
+        Assert.Equal(url, list[0]);
+        Assert.Equal($"https://ghproxy.net/{url}", list[1]);
+        Assert.Equal($"https://gh-proxy.com/{url}", list[2]);
     }
 
     [Theory]

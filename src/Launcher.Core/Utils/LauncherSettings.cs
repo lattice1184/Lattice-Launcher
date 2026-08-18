@@ -59,8 +59,8 @@ public sealed class LauncherSettings
 
     // ---------- 下载 ----------
 
-    /// <summary>下载源策略（官方优先 / 镜像优先 / 仅镜像）</summary>
-    public DownloadSourcePreference DownloadSource { get; set; } = DownloadSourcePreference.OfficialFirst;
+    /// <summary>下载源策略（官方优先 / 镜像优先 / 仅镜像）——8-18 默认改镜像优先：GitHub 下载先走加速镜像</summary>
+    public DownloadSourcePreference DownloadSource { get; set; } = DownloadSourcePreference.MirrorFirst;
 
     /// <summary>最大并发下载数（0 = 默认）</summary>
     public int MaxConcurrentDownloads { get; set; }

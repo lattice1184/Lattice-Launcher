@@ -8,6 +8,7 @@ using Launcher.App.ViewModels;
 using Launcher.App.Views;
 using Launcher.Core.Services;
 using Launcher.Core.Utils;
+using Microsoft.Extensions.Logging;
 using PCL.Core.App.IoC;
 using PCL.Core.Logging;
 using PCL.Core.UI.Animation.Core;
@@ -86,7 +87,11 @@ public partial class App : Application
 
             // [生命周期引导] 注入 Avalonia 适配层
             AnimationService.UIAccessProviderFactory = () => new AvaloniaUIAccessProvider();
-            LogService.FatalErrorReporter = message => ShowFatalError(message);
+            LogService.FatalErrorReporter = message =>
+            {
+                Launcher.Core.Utils.AppLog.Instance?.LogError(null, "[fatal] {Message}", message);
+                ShowFatalError(message);
+            };
 
             // 启动 PCL.Core 生命周期（Avalonia 驱动消息循环，不运行 WPF 容器）。
             // 任一环节失败只记日志，不得阻止窗口出现；窗口构造失败则仍为 fatal。
@@ -104,6 +109,22 @@ public partial class App : Application
 
             Guard("Lifecycle.OnLoading", () => Lifecycle.OnLoading());
             Guard("Lifecycle.OnWindowCreated", () => Lifecycle.OnWindowCreated());
+            // 启动完成埋点（Logger 在 Loading 阶段就绪，此时可用）
+            Launcher.Core.Utils.AppLog.Instance?.LogInformation("[app] startup complete");
+            // 8-18 头像丢失修复：启动早期（账号/网络未就绪）的首次刷新可能失败 → 完成后补刷一次
+            try { if (desktop.MainWindow.DataContext is MainViewModel homeVm) homeVm.Home.RefreshPlayer(); } catch { /* 补刷失败不阻塞 */ }
+            // 8-18 头像排查：3s 后确认属性值（区分「赋值被清」vs「绑定不显示」）
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(3000);
+                try
+                {
+                    if (desktop.MainWindow.DataContext is MainViewModel v)
+                        Launcher.Core.Utils.AppLog.Instance?.LogInformation("[avatar] check3s: {Value}",
+                            v.Home.PlayerAvatar is null ? "null" : v.Home.PlayerAvatar.GetType().Name);
+                }
+                catch { }
+            });
             desktop.Exit += (_, _) =>
             {
                 // 8-22 全栈排查：退出必须停服务端进程——否则孤儿 java 残留占用端口

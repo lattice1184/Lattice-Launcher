@@ -115,6 +115,7 @@ public partial class MainViewModel : ViewModelBase
         IsServerActive = page == "server";
         IsMultiplayerActive = page == "multiplayer";
         IsEcosystemActive = page == "ecosystem";
+        ReleaseOtherPages(); // 8-18 内存让渡：非激活页的大列表延迟释放（切回时各自懒重建）
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
@@ -129,6 +130,20 @@ public partial class MainViewModel : ViewModelBase
             "ecosystem" => EcosystemNav,
             _ => Home,
         };
+    }
+
+    /// <summary>
+    /// 8-18 内存让渡：切页动画（~220ms）完成后释放非激活页的大列表——最大资源给当前模块。
+    /// 延迟 + 释放前校验当前页：快速连续切页不会误清新激活页的数据。
+    /// </summary>
+    private void ReleaseOtherPages()
+    {
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(500); } catch { return; }
+            if (!ReferenceEquals(CurrentPage, Home)) Home.ReleaseData();
+            if (!ReferenceEquals(CurrentPage, Versions)) Versions.ReleaseData();
+        });
     }
 }
 

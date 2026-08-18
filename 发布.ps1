@@ -49,7 +49,12 @@ internal static class BundledCfKeyGen
 "@
     [System.IO.File]::WriteAllText($genFile, $content, [System.Text.Encoding]::UTF8)
     if ($cfKey) {
-        Write-Host "[cf-key] 已注入内置 CF key（来自 LATTICE_CF_KEY）" -ForegroundColor Green
+        # 注入校验：读回生成文件确认混淆值已写入（防替换漏执行 → 带空值上生产线）
+        $back = Get-Content $genFile -Raw
+        if ($back -notmatch ('Obfuscated = "' + [regex]::Escape($obf) + '"')) {
+            throw "[cf-key] 注入校验失败：生成文件未写入混淆值——终止发布，检查磁盘权限"
+        }
+        Write-Host "[cf-key] 已注入内置 CF key（来自 LATTICE_CF_KEY），校验通过" -ForegroundColor Green
     } else {
         Write-Host "[cf-key] 未设 LATTICE_CF_KEY → 内置 key 为空（用户自填 / 官网跳转平替）" -ForegroundColor DarkGray
     }
@@ -58,6 +63,9 @@ internal static class BundledCfKeyGen
 function Publish-One([string]$finalName, [switch]$SelfContained) {
     $stage = Join-Path $out "stage"
     $pubDir = Join-Path $root "src\Launcher.App\bin\Release\net10.0-windows\win-x64\publish"
+    # 8-18 根治：清 RID obj 缓存强制全量重编译——Avalonia 增量缓存会把 ResourceInclude
+    # 资源字典改动漏编译（实机：NavIcons.axaml 菱形图标改动没进 dll，用户验收旧界面）
+    Remove-Item (Join-Path $root "src\Launcher.App\obj\Release\net10.0-windows\win-x64") -Recurse -Force -ErrorAction SilentlyContinue
     Inject-BundledCfKey
     # 两步 publish：先出 DLL 形式供发布期处理，再 --no-build 打包单文件
     Write-Host "  [1/3] dotnet publish（非单文件，供混淆）..." -ForegroundColor DarkGray

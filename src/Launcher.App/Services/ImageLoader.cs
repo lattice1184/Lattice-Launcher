@@ -34,6 +34,12 @@ public static class ImageLoader
             onLoaded(null);
             return;
         }
+        // 8-18 失败重试窗：失败缓存只锁 60s——启动早期网络未就绪的失败不能永久锁死头像/图标
+        if (_failedAt.TryGetValue(url, out var f) && Environment.TickCount64 - f < FailRetryMs)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(null));
+            return;
+        }
         try
         {
             TrimIfNeeded(); // 8-22 超限整体清空（磁盘缓存兜底）
@@ -48,10 +54,18 @@ public static class ImageLoader
         catch
         {
             // 失败也缓存 null：切 tab 反复重建视图时不再重复请求坏图（秒切换的关键）
-            Cache[url] = Task.FromResult<Bitmap?>(null);
+            // 8-18 修正：null 缓存改为失败时间戳 + 60s 重试窗（原逻辑永久锁死——启动早期失败永不恢复）
+            _failedAt[url] = Environment.TickCount64;
+            Cache.TryRemove(url, out _);
             Avalonia.Threading.Dispatcher.UIThread.Post(() => onLoaded(null));
         }
     }
+
+    /// <summary>失败重试窗（毫秒，8-18）：失败后此窗内直接返回 null 不再请求，窗外重新尝试</summary>
+    private const long FailRetryMs = 60_000;
+
+    /// <summary>url → 最近失败时间戳（8-18 替代永久 null 缓存）</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _failedAt = new();
 
     /// <summary>容量裁剪：超过上限整体清空（近似 LRU 的最简实现——位图重新解码有磁盘缓存兜底）</summary>
     private static void TrimIfNeeded()
