@@ -49,7 +49,7 @@ public sealed class VersionManifestService
     public VersionManifestService(HttpClient? http = null, string? gameDirectory = null, string? cacheDirectory = null)
     {
         // 清单是元数据小请求：15s 总超时（国内直连官方清单慢/失败时快速失败，不卡修复/刷新）
-        _http = http ?? new HttpClient(HttpClientPool.SharedHandler) { Timeout = TimeSpan.FromSeconds(15) };
+        _http = http ?? HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(15));
         _cacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
     }

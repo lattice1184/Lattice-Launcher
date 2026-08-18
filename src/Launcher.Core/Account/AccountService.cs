@@ -85,7 +85,7 @@ public sealed class AccountService
     {
         if (Current?.Type != "microsoft" || Current.RefreshToken is not { } rt)
             throw new InvalidOperationException("当前不是正版账号");
-        var http = new HttpClient(HttpClientPool.SharedHandler);
+        var http = HttpClientPool.CreateSharedClient();
         // 8-13 刷新前解析 clientId（远程下发/缓存/兜底三层——新进程首刷时生效值就绪）
         await ClientIdRemote.ResolveAsync(http, ct);
         var session = await MicrosoftAuth.RefreshAsync(http, rt, ct);

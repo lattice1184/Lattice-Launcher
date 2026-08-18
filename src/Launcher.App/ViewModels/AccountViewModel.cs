@@ -212,8 +212,7 @@ public partial class AccountViewModel : ViewModelBase
         Status = "";
         try
         {
-            using var http = new HttpClient(Launcher.Core.Download.HttpClientPool.SharedHandler);
-            http.Timeout = TimeSpan.FromSeconds(30);
+            using var http = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(30));
             Status = "正在发起 LittleSkin 授权…";
             var session = await Launcher.Core.Account.LittleSkinOAuth.StartDeviceCodeAsync(
                 http, clientId, CancellationToken.None);
@@ -313,8 +312,7 @@ public partial class AccountViewModel : ViewModelBase
         try
         {
             // 8-13 连接复用：SharedHandler 池化 TCP/TLS（每次登录新建 HttpClient 会白付握手 ~几百 ms）
-            using var http = new HttpClient(Launcher.Core.Download.HttpClientPool.SharedHandler);
-            http.Timeout = TimeSpan.FromSeconds(30);
+            using var http = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(30));
 
             // 0. 解析 clientId（远程下发/缓存/兜底三层）——登录前保证生效值就绪
             await ClientIdRemote.ResolveAsync(http, CancellationToken.None);

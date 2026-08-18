@@ -61,17 +61,21 @@ public sealed class CurseForgeService
         _apiBase = apiBase ?? ApiBase;
         // 8-16 修复「检查 Key 超时」：共享池默认 HTTP/2，api.curseforge.com（CloudFront）的 h2 协商
         // 在国内网络实测挂起（15s 超时；HTTP/1.1 直连 0.4s 200）——CF 强制 HTTP/1.1，连接池照复用
-        _http = http ?? new HttpClient(HttpClientPool.SharedHandler)
-        {
-            // 8-22 15s → 8s：「全部」双源搜索等最慢源——CF 挂起时 15s 干等太久
-            // （双源并行显示逻辑未做「先到先显示」，缩短超时是当前最直接的提速）
-            Timeout = TimeSpan.FromSeconds(8),
-            DefaultRequestVersion = HttpVersion.Version11,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
-        };
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
+        // 8-19 共享 handler 防销毁：CreateSharedClient（disposeHandler:false——此前默认 true，
+        // 服务释放时把共享连接池销毁，后续请求报 disposed）。UA 已由工厂统一设置（含浏览器前缀 + 启动器标识）
+        _http = http ?? CreateCurseClient();
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
+    }
+
+    /// <summary>8-19 CF 专用 client：共享 handler 防销毁 + 强制 HTTP/1.1（CloudFront h2 协商国内挂起，
+    /// 原注释 8-16）+ 8s 超时（8-22：双源搜索等最慢源，CF 挂起时 15s 干等太久）</summary>
+    private static HttpClient CreateCurseClient()
+    {
+        var client = HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(8));
+        client.DefaultRequestVersion = HttpVersion.Version11;
+        client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+        return client;
     }
 
     /// <summary>Key 解析：设置页优先（DPAPI 落盘），回退环境变量，最后内置混淆 key（开箱即用兜底）。

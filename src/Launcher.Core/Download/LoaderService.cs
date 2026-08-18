@@ -44,7 +44,7 @@ public sealed class LoaderService
         _loaderProfileCacheDir = loaderProfileCacheDir;
         _ecoCacheDir = ecoCacheDir;
         // AL28 显式超时：默认 100s 太慢——meta.fabricmc.net 国内访问实测 12s+，超时让失败快速可见（而非干等）
-        _http = http ?? new HttpClient(HttpClientPool.SharedHandler) { Timeout = TimeSpan.FromSeconds(20) };
+        _http = http ?? HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(20));
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         // 探针实测 08-09：不传 downloads 时自建服务必须带 gameDirectory，否则内部下载写到
         // GameDirectory.Detect()（默认安装位）而本服务 gameDirectory 指向别处 → Verify 查错目录报"缺文件"

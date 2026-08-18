@@ -24,7 +24,7 @@ public sealed class VersionInstaller
     public VersionInstaller(HttpClient? http = null, DownloadService? downloads = null, string? gameDirectory = null,
         bool allowForeignMarkers = false)
     {
-        _http = http ?? new HttpClient(HttpClientPool.SharedHandler);
+        _http = http ?? HttpClientPool.CreateSharedClient();
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _allowForeignMarkers = allowForeignMarkers;

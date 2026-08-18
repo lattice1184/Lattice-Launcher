@@ -33,7 +33,7 @@ public sealed class ModpackInstaller
         string? gameDirectory = null, string? curseForgeApiBase = null, string? manifestCacheDir = null,
         string? curseForgeApiKey = null)
     {
-        _http = http ?? new HttpClient(HttpClientPool.SharedHandler);
+        _http = http ?? HttpClientPool.CreateSharedClient();
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
         _cfApiBase = curseForgeApiBase;

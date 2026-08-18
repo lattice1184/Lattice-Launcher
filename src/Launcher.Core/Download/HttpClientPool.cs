@@ -23,21 +23,14 @@ public static class HttpClientPool
     /// <summary>共享 client（DownloadService.CreateClient 用；默认请求版本 HTTP/2，服务器不支持自动降级）</summary>
     public static readonly HttpClient Shared = CreateShared();
 
-    private static HttpClient CreateShared()
-    {
-        var client = new HttpClient(SharedHandler)
-        {
-            DefaultRequestVersion = HttpVersion.Version20,
-            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
-        };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
-        return client;
-    }
+    private static HttpClient CreateShared() => CreateSharedClient();
 
-    /// <summary>创建带 15s 请求超时的 HttpClient（生态 API 用——默认 100s 超时会让慢源拖死整页）</summary>
-    public static HttpClient Create(TimeSpan? timeout = null)
+    /// <summary>8-19 修复：创建共享 handler 的 HttpClient，disposeHandler:false——
+    /// 默认 new HttpClient(handler) 在 Dispose 时会连同共享连接池一起销毁（实机：LittleSkin 登录后
+    /// 后续请求报 Cannot access a disposed object），所有新建 client 必须走这里</summary>
+    public static HttpClient CreateSharedClient(TimeSpan? timeout = null)
     {
-        var client = new HttpClient(SharedHandler)
+        var client = new HttpClient(SharedHandler, disposeHandler: false)
         {
             Timeout = timeout ?? TimeSpan.FromSeconds(15),
             DefaultRequestVersion = HttpVersion.Version20,
@@ -46,6 +39,9 @@ public static class HttpClientPool
         client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         return client;
     }
+
+    /// <summary>创建带 15s 请求超时的 HttpClient（生态 API 用——默认 100s 超时会让慢源拖死整页）</summary>
+    public static HttpClient Create(TimeSpan? timeout = null) => CreateSharedClient(timeout);
 
     /// <summary>
     /// 8-18 浏览器格式 UA：ghproxy.net 实测对非浏览器 UA（YanKa-Launcher/0.1）返回 403——
