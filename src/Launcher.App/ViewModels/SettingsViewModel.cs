@@ -469,6 +469,14 @@ public partial class SettingsViewModel : ViewModelBase
         catch (OperationCanceledException) { }
     }
 
+    /// <summary>8-19 关闭前兜底：取消防抖立即落盘——防抖窗口内关窗/强杀会丢最后值（重启回调的残余根因）。
+    /// Closing 事件不可 await，用「取消 + 立即存」；Save 幂等，无条件调用无害</summary>
+    public void FlushPendingOpacitySave()
+    {
+        _opacityDebounce?.Cancel();
+        LauncherSettings.Current.Save();
+    }
+
     /// <summary>背景图片路径（""=无；预览模式，保存才写盘）</summary>
     [ObservableProperty]
     public partial string BackgroundImagePathText { get; set; } = "";

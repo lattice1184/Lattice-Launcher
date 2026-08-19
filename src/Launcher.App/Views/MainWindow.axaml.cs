@@ -134,7 +134,12 @@ public partial class MainWindow : Window
             if (e.Property == WindowStateProperty)
                 WindowRoot.CornerRadius = WindowState == WindowState.Maximized ? new CornerRadius(0) : new CornerRadius(12);
         };
-        Closing += (_, _) => SaveWindowSize();
+        // 8-19 关闭兜底：尺寸存档 + 透明度防抖立即落盘（防抖窗口内关窗丢最后值——重启回调根因）
+        Closing += (_, _) =>
+        {
+            SaveWindowSize();
+            if (DataContext is MainViewModel main) main.Settings.FlushPendingOpacitySave();
+        };
     }
 
     /// <summary>8-16 点击 Toast 复制内容到剪贴板（错误信息全模块可带走）</summary>
@@ -621,10 +626,16 @@ public partial class MainWindow : Window
         // 8-18：halo 圆块已删（用户拍板），回退只改背景/前景色
     }
 
+    /// <summary>8-19 合成降级双向：失败时整窗不透明 + 隐藏导航层；合成恢复时还原导航层
+    /// （旧实现 IsVisible=false 永不复原——会话中降级后整窗一直"变深"）</summary>
     private void ApplyOpacityFallback()
     {
-        if (ActualTransparencyLevel != WindowTransparencyLevel.None) return;
         if (RootSurface is null || NavSurface is null) return;
+        if (ActualTransparencyLevel != WindowTransparencyLevel.None)
+        {
+            NavSurface.IsVisible = true; // 合成已恢复（幂等 no-op）
+            return;
+        }
         // 合成失败：亚克力材质回退纯色（Material.FallbackColor 已设；这里确保不透明）
         if (RootSurface.Material is ExperimentalAcrylicMaterial m)
             m.FallbackColor = Avalonia.Media.Color.Parse("#FF12161F");
