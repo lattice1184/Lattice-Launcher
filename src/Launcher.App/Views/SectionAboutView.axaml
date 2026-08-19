@@ -12,7 +12,7 @@
                 <TextBlock Text="Lattice Launcher" FontSize="14" FontWeight="SemiBold"/>
                 <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12" VerticalAlignment="Bottom"/>
             </StackPanel>
-            <TextBlock Text="此启动器为 1 学生 1 AI 耗时从 8 月 1 日开始 10 余天开发" Classes="dim" FontSize="11"/>
+            <TextBlock Text="此启动器为 1 学生 + 1 AI 开发" Classes="dim" FontSize="11"/>
             <TextBlock Text="基于 Avalonia / .NET 10，core 库基于 PCL Community（Apache-2.0）" Classes="dim" FontSize="11"/>
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Button Content="管理空间" Classes="ghost" Padding="14,6" Click="OnOpenStorage"/>
@@ -56,9 +56,7 @@
             <!-- 鸣谢 -->
             <TextBlock Text="鸣谢" Classes="setting-label" Margin="0,8,0,0"/>
             <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap"
-                       Text="PCL Community：核心库 PCL.Core 是这启动器的地基——启动、装版本、整合包这些老本行都是踩着它的肩膀做的，Apache-2.0 开源，请你也多多支持 PCL2。"/>
-            <TextBlock Classes="dim" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
-                       Text="其余组成部分：Avalonia（界面框架）与 .NET 10（运行时）、CommunityToolkit.Mvvm（MVVM 工具）、SharpZipLib（压缩）、LiteDB（本地数据库）、fNbt（存档解析）、YamlDotNet（配置）、Terracotta 联机模块（GPL-3.0，源自 BlockHelm-Launcher）、EasyTier 联机隧道（LGPL-3.0）、Lucide 图标（ISC）。完整许可见下方开源声明。"/>
+                       Text="特别感谢 PCL Community：核心库 PCL.Core（Apache-2.0）是启动器的基石，本项目的下载与整合包等大量功能建立在其之上。"/>
 
             <!-- 开源声明 / 第三方依赖 -->
             <TextBlock Text="开源声明" Classes="setting-label" Margin="0,8,0,0"/>
