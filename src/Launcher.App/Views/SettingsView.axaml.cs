@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Controls.Primitives;
+using Avalonia.Threading;
 using Launcher.App.Animations;
 using Launcher.Core.Utils;
 
@@ -45,11 +46,19 @@ public partial class SettingsView : UserControl
         ReplayAppearance(); // 8-19 第二批：Popup 打开可能触发合成层重建致 TintOpacity 回落，打开后重放
     }
 
-    /// <summary>8-19 第二批：汉堡 Popup 开合路径显式重放用户透明度（VM 值已即时落盘，幂等无旧值风险）</summary>
+    /// <summary>8-19 第二批：汉堡 Popup 开合路径显式重放用户透明度（VM 值已即时落盘，幂等无旧值风险）。
+    /// Post 延迟到渲染帧之后：Popup 关闭/合成重建发生在渲染时，立即重放会被重建覆盖</summary>
     private void ReplayAppearance()
     {
-        if (VisualRoot is MainWindow w) w.ApplyAppearanceFromVm();
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (VisualRoot is MainWindow w) w.ApplyAppearanceFromVm();
+        });
     }
+
+    /// <summary>8-19 补充：Popup 任意关闭路径（含外部点击 dismiss——IsLightDismissEnabled 不走
+    /// CloseMenuAnimated）都重放，覆盖上次漏掉的关闭分支</summary>
+    private void OnSettingsMenuClosed(object? sender, EventArgs e) => ReplayAppearance();
 
     /// <summary>☰ 菜单收起：先反向缩放+淡出（120ms），done 后才关。起点取当前值（弹入被中断时无跳变）。
     /// 点击外部 dismiss（IsLightDismissEnabled）是系统行为无法拦截，保持瞬间关闭。</summary>

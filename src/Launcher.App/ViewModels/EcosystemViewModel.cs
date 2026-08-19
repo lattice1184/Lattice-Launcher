@@ -30,8 +30,6 @@ public partial class EcosystemViewModel : ViewModelBase
     private bool _searchStarted;
     /// <summary>8-19 第二批：初始化赋值 SelectedInstance 时抑制一次实例搜索（Activate 统一首搜）</summary>
     private bool _suppressInstanceSearch;
-    /// <summary>8-19 第二批：Activate 早于实例扫描完成时挂起，初始化完成后补首搜</summary>
-    private bool _pendingActivate;
 
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
@@ -313,25 +311,14 @@ public partial class EcosystemViewModel : ViewModelBase
                 ? hit
                 : Instances[0];
         }
-        // 8-19 第二批：预加载期间 Activate 已到（实例未就绪挂起）→ 此刻补首搜；否则等用户点 tab 激活
-        if (_pendingActivate)
-        {
-            _pendingActivate = false;
-            Activate();
-        }
     }
 
     /// <summary>标签激活：首次调用才触发搜索（幂等；切回标签不重搜）。
-    /// 8-19 第二批：实例扫描未完成时挂起（_pendingActivate）——预加载的 InitializeAsync 与 Activate
-    /// 并发时，保证首搜发生在 SelectedInstance 就绪之后（否则 null 实例搜出全量列表再被覆盖，双搜）</summary>
+    /// 8-19 修复：实例未就绪/无实例时直接首搜（null 实例 = 不按实例过滤，RunSearchAsync 合法）——
+    /// 原实现挂起等实例，Instances 为空时永不补搜，搜索死锁（表现：列表一直转圈/空白）</summary>
     public void Activate()
     {
         if (_searchStarted) return;
-        if (Instances.Count == 0)
-        {
-            _pendingActivate = true; // 初始化完成后（InitializeAsync 末尾）补首搜
-            return;
-        }
         _searchStarted = true;
         _ = RunSearchAsync(reset: true);
     }

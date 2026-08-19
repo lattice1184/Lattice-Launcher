@@ -20,9 +20,9 @@
             </StackPanel>
         </Grid>
 
-        <!-- 分类菜单：☰ 点开的下拉（激活项高亮；选完自动收起） -->
+        <!-- 分类菜单：☰ 点开的下拉（激活项高亮；选完自动收起）。Closed 覆盖外部点击 dismiss 路径 -->
         <Popup x:Name="SettingsMenu" Placement="BottomEdgeAlignedLeft" IsLightDismissEnabled="True" IsOpen="False"
-               Opened="OnSettingsMenuOpened">
+               Opened="OnSettingsMenuOpened" Closed="OnSettingsMenuClosed">
             <Border Classes="glass-card" Padding="6">
                 <StackPanel MinWidth="150" Spacing="2">
                     <Button x:Name="SettingsNavGameDir" Content="游戏目录" CommandParameter="0"
