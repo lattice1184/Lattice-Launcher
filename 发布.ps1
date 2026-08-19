@@ -158,3 +158,21 @@ Write-Host "[4/4] 完成！" -ForegroundColor Green
 Write-Host "  -> $finalSelf"
 Write-Host "  -> $finalLite"
 Write-Host "  -> $(Join-Path $out '使用说明.txt')"
+
+# 5) 8-19 安全收尾：注入结束后恢复空占位模板——混淆值绝不留在工作区。
+# （git add -A 会把带值文件整体提交进仓库——8-19 实锤：+7 移位+base64 可逆，key 泄漏进公开历史）
+$genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
+$placeholder = @"
+namespace Launcher.Core.Services;
+
+/// <summary>构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）</summary>
+internal static class BundledCfKeyGen
+{
+    public static readonly string Obfuscated = "";
+
+    /// <summary>预留字段（构建注入模板同步用）</summary>
+    public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
+}
+"@
+[System.IO.File]::WriteAllText($genFile, $placeholder, [System.Text.Encoding]::UTF8)
+Write-Host "[5/5] 注入占位已恢复（key 不留工作区）" -ForegroundColor DarkGray
