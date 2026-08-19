@@ -117,6 +117,23 @@ public sealed class IdleMemoryTuner : IDisposable
         }
     }
 
+    /// <summary>8-19 手动释放（设置页「立即释放内存」按钮）：点击式——立即执行，
+    /// 绕过闲置/冷却/下载跳过（用户主动要求）；返回释放的物理内存字节数</summary>
+    public static async Task<long> ManualTrimAsync()
+    {
+        var before = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+        await Task.Run(() =>
+        {
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
+            GC.WaitForPendingFinalizers(); // 终结器跑完再量，释放量更真实
+            if (LauncherSettings.Current.MemoryTrimEnabled)
+                SetProcessWorkingSetSize(Environment.ProcessId != 0
+                    ? System.Diagnostics.Process.GetCurrentProcess().Handle
+                    : IntPtr.Zero, -1, -1);
+        });
+        return Math.Max(0, before - System.Diagnostics.Process.GetCurrentProcess().WorkingSet64);
+    }
+
     [DllImport("kernel32.dll")]
     private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, int min, int max);
 

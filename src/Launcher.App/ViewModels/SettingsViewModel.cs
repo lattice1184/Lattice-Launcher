@@ -132,8 +132,28 @@ public partial class SettingsViewModel : ViewModelBase
         }
     }
 
-    /// <summary>当前进程占用（设置页内存优化区实时显示）</summary>
+    /// <summary>当前进程占用（设置页内存优化区实时显示；释放后刷新）</summary>
     public string CurrentMemoryText => $"{Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB";
+
+    /// <summary>8-19 手动释放内存（点击式按钮）：立即执行并反馈释放量（不弹确认——用户主动点击即授权）</summary>
+    [RelayCommand]
+    private async Task TrimMemoryNow()
+    {
+        try
+        {
+            var freed = await IdleMemoryTuner.ManualTrimAsync();
+            OnPropertyChanged(nameof(CurrentMemoryText));
+            var currentMb = Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024;
+            if (freed >= 1024 * 1024)
+                NotificationService.Success($"已释放内存 {freed / 1024 / 1024} MB，当前占用 {currentMb} MB");
+            else
+                NotificationService.Info($"当前占用 {currentMb} MB，无需释放");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error($"内存释放失败：{ex.Message}");
+        }
+    }
 
     // ---------- 下载 ----------
 
