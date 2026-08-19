@@ -147,7 +147,7 @@ public partial class SettingsViewModel : ViewModelBase
             if (freed >= 1024 * 1024)
                 NotificationService.Success($"已释放内存 {freed / 1024 / 1024} MB，当前占用 {currentMb} MB");
             else
-                NotificationService.Info($"当前占用 {currentMb} MB，无需释放");
+                NotificationService.Info($"内存已优化，当前占用 {currentMb} MB");
         }
         catch (Exception ex)
         {

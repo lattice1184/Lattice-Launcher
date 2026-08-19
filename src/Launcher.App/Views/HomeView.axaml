@@ -59,6 +59,9 @@
                                 VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding LaunchState}" FontSize="12" Foreground="{DynamicResource TextSecondary}"/>
                     </StackPanel>
+                    <Button Grid.Column="5" Content="内存优化" Classes="ghost" FontSize="11" Padding="10,4" Cursor="Hand"
+                            Command="{Binding Settings.TrimMemoryNowCommand}"
+                            ToolTip.Tip="立即释放内存：点击即执行，释放后提示省下多少"/>
                 </Grid>
 
                 <!-- 行2：阶段指示条 + 状态文字（仅启动时显示，平时保持卡矮小） -->

@@ -21,6 +21,9 @@ namespace Launcher.App.ViewModels;
 /// </summary>
 public partial class HomeViewModel : ViewModelBase
 {
+    /// <summary>8-19 主页快捷入口（百宝箱式）：复用设置页的点击式释放命令</summary>
+    public SettingsViewModel Settings => MainViewModel.Current?.Settings!;
+
     private static readonly string[] StageNames =
         ["解析版本", "检测 Java", "解压 natives", "启动 JVM", "游戏加载中", "运行中"];
 

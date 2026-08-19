@@ -117,8 +117,10 @@ public sealed class IdleMemoryTuner : IDisposable
         }
     }
 
-    /// <summary>8-19 手动释放（设置页「立即释放内存」按钮）：点击式——立即执行，
-    /// 绕过闲置/冷却/下载跳过（用户主动要求）；返回释放的物理内存字节数</summary>
+    /// <summary>8-19 手动释放（点击式，PCL 百宝箱同款效果）：点击立即执行——
+    /// GC 压缩 + 终结器回收 + **工作集修剪**（把驻留物理页还给系统，占用数字立降）。
+    /// 用户主动点击 = 明确授权，忽略 MemoryTrimEnabled 开关与冷却；返回释放的物理内存字节数。
+    /// 代价：被摘页下次访问需重新驻留（缺页换回），但点击式低频执行可接受</summary>
     public static async Task<long> ManualTrimAsync()
     {
         var before = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
@@ -126,10 +128,10 @@ public sealed class IdleMemoryTuner : IDisposable
         {
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
             GC.WaitForPendingFinalizers(); // 终结器跑完再量，释放量更真实
-            if (LauncherSettings.Current.MemoryTrimEnabled)
-                SetProcessWorkingSetSize(Environment.ProcessId != 0
-                    ? System.Diagnostics.Process.GetCurrentProcess().Handle
-                    : IntPtr.Zero, -1, -1);
+            // PCL 式工作集修剪：进程工作集压到最小（脏页进 standby，数字立即大幅下降）
+            SetProcessWorkingSetSize(Environment.ProcessId != 0
+                ? System.Diagnostics.Process.GetCurrentProcess().Handle
+                : IntPtr.Zero, -1, -1);
         });
         return Math.Max(0, before - System.Diagnostics.Process.GetCurrentProcess().WorkingSet64);
     }
