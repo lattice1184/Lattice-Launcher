@@ -54,7 +54,10 @@ public partial class MainWindow : Window
         ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ActualTransparencyLevel) && ActualTransparencyLevel != WindowTransparencyLevel.None)
+            {
                 ApplyAppearanceDefensive();
+                ApplyOpacityFallback(); // 8-19 第二批：合成恢复时导航层一并还原（原恢复分支是死代码）
+            }
         };
         // 8-18 输入框失焦：点击窗口任意非输入控件处 → 清除焦点（Avalonia 默认点击面板/空白不移除 TextBox 焦点）
         PointerPressed += (_, e) =>
@@ -644,7 +647,9 @@ public partial class MainWindow : Window
 
     /// <summary>8-19 透明度硬性要求：统一入口——取 VM 实时值应用外观（VM 缺失时回退持久值）。
     /// 透明度改动已即时落盘，VM 值 == 持久值，任何时机重放都不会把观感打回旧值。</summary>
-    private void ApplyAppearanceFromVm()
+    /// <summary>8-19 第二批：设置页汉堡 Popup 等路径显式重放透明度（Popup 合成重建后 TintOpacity
+    /// 可能回落 XAML 初值，而 ActualTransparencyLevel 事件不报）——internal 供 SettingsView 调用</summary>
+    internal void ApplyAppearanceFromVm()
     {
         if (DataContext is MainViewModel main)
             ApplyAppearance(main.Settings.WindowOpacity, (DensityMode)main.Settings.DensityIndex);

@@ -42,6 +42,13 @@ public partial class SettingsView : UserControl
             tx.ScaleX = 0.9 + 0.1 * e2;
             tx.ScaleY = 0.9 + 0.1 * e2;
         }, null, child);
+        ReplayAppearance(); // 8-19 第二批：Popup 打开可能触发合成层重建致 TintOpacity 回落，打开后重放
+    }
+
+    /// <summary>8-19 第二批：汉堡 Popup 开合路径显式重放用户透明度（VM 值已即时落盘，幂等无旧值风险）</summary>
+    private void ReplayAppearance()
+    {
+        if (VisualRoot is MainWindow w) w.ApplyAppearanceFromVm();
     }
 
     /// <summary>☰ 菜单收起：先反向缩放+淡出（120ms），done 后才关。起点取当前值（弹入被中断时无跳变）。
@@ -58,7 +65,11 @@ public partial class SettingsView : UserControl
             child.Opacity = fromO * (1 - e);
             tx.ScaleX = fromS + (0.9 - fromS) * e;
             tx.ScaleY = tx.ScaleX;
-        }, () => SettingsMenu.IsOpen = false, child);
+        }, () =>
+        {
+            SettingsMenu.IsOpen = false;
+            ReplayAppearance(); // 8-19 第二批：收起后同样重放（合成层复原）
+        }, child);
     }
 
     private void OnSettingsNavClick(object? sender, RoutedEventArgs e)

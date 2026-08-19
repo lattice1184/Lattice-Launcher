@@ -449,6 +449,10 @@ public partial class SettingsViewModel : ViewModelBase
     // 否则合成降级恢复时防御重放会拿旧持久值把观感打回默认（实机：交互几次后透明度被重置）
     partial void OnWindowOpacityChanged(double value)
     {
+        // 8-19 第二批：入口钳制到滑块范围 [0.7,1.0]——旧数据越界时 Slider 会钳制回写，
+        // 观感像「透明度被重置」
+        if (value < 0.7) value = 0.7;
+        else if (value > 1.0) value = 1.0;
         PreviewChanged?.Invoke();
         if (_loading) return;
         LauncherSettings.Current.WindowOpacity = value;
