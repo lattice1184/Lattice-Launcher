@@ -82,8 +82,15 @@ public partial class AccountViewModel : ViewModelBase
         {
             if (acc.Type == "littleskin")
             {
-                _ = ImageLoader.LoadAsync(Launcher.Core.Account.LittleSkinApi.SkinFileUrl(acc.Name),
-                    bmp => Avatar = bmp);
+                // 8-19 LittleSkin 弹窗头像：/skin/{name}.png 实测 404，走 profile 解析真纹理 URL
+                var lsUuid = acc.Uuid ?? "";
+                _ = Task.Run(async () =>
+                {
+                    using var http = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(8));
+                    var url = await Launcher.Core.Account.LittleSkinSkinSync.ResolveTextureUrlAsync(http, lsUuid);
+                    if (string.IsNullOrEmpty(url)) return;
+                    ImageLoader.LoadAsync(url, bmp => Avatar = bmp);
+                });
             }
             else
             {
@@ -256,13 +263,22 @@ public partial class AccountViewModel : ViewModelBase
                 catch { /* 打不开则用户手动访问 */ }
                 return;
             }
-            var uuid = await api.GetUuidByNameAsync(name, CancellationToken.None);
+            var uuid = await api.GetUuidByNameAsync(name, CancellationToken.None) ?? "";
+            if (uuid.Length == 0)
+            {
+                // 8-19 不再回退假 uuid（MD5 离线式会污染进服身份/皮肤链路）——失败明示重试
+                IsDeviceCodeMode = false;
+                DeviceCodeText = "";
+                Status = "获取角色 UUID 失败（LittleSkin 接口异常），稍后重试";
+                NotificationService.Error("获取角色 UUID 失败，登录未完成。稍后重新点一次登录即可");
+                return;
+            }
             _accounts.LoginLittleskin(name, uuid);
             // 8-19 回归修复：登录即同步皮肤到本地（SkinPack 注入条件 = 本地文件存在——
             // 旧邮箱流程有下载、OAuth 重构丢失，不下载则游戏内永远是默认 Steve/Alex）
             try
             {
-                if (!await Launcher.Core.Account.LittleSkinSkinSync.DownloadToLocalAsync(http, name))
+                if (!await Launcher.Core.Account.LittleSkinSkinSync.DownloadToLocalAsync(http, name, uuid))
                     Status = $"已登录 Littleskin {name}（皮肤同步失败，游戏内暂时是默认皮肤）";
             }
             catch { /* 皮肤同步失败不阻塞登录 */ }

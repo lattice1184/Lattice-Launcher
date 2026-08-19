@@ -82,32 +82,41 @@ public sealed class LittleSkinApi
     }
 
     /// <summary>
-    /// 8-18 角色名 → yggdrasil UUID（GET users/profiles/minecraft/{name}——LittleSkin 实现 yggdrasil 标准）。
-    /// 拉取失败回退离线式 UUID（MD5(name) 定长格式化——与离线登录同款），保证连接即登录不阻塞。
+    /// 8-19 角色名 → yggdrasil UUID。实机 8-19：GET users/profiles/minecraft/{name} 是 404 死端点
+    /// （LittleSkin 未实现），正确方式是 authlib-injector 批量端点 POST /api/yggdrasil/api/profiles/minecraft
+    /// （返回 32 位无横线 UUID，这里格式化为带横线）。旧实现 404 后回退 MD5 离线式 UUID——登录存的
+    /// 全是假 uuid（进服身份错误、皮肤 profile 查不到），必须真值。
     /// </summary>
-    public async Task<string> GetUuidByNameAsync(string name, CancellationToken ct)
+    public async Task<string?> GetUuidByNameAsync(string name, CancellationToken ct)
     {
         try
         {
-            using var doc = await GetJsonAsync($"{BaseUrl}/users/profiles/minecraft/{Uri.EscapeDataString(name)}", ct);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/yggdrasil/api/profiles/minecraft")
             {
-                var uuid = id.GetString();
-                if (!string.IsNullOrWhiteSpace(uuid)) return uuid;
+                Content = new StringContent($"[{System.Text.Json.JsonSerializer.Serialize(name)}]", Encoding.UTF8, "application/json"),
+            };
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return null;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                if (!el.TryGetProperty("name", out var n) || !n.GetString()!.Equals(name, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!el.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) continue;
+                return FormatUuid(id.GetString() ?? "");
             }
         }
-        catch { /* 拉取失败回退离线式 */ }
-        return OfflineUuid(name);
+        catch { /* 查询失败 → null，调用方决定（不再回退假 uuid） */ }
+        return null;
     }
 
-    /// <summary>离线式 UUID（MD5(name) → 8-4-4-4-12 格式）——yggdrasil 拉不到时的兜底</summary>
-    private static string OfflineUuid(string name)
+    /// <summary>32 位无横线 → 带横线（8-4-4-4-12）</summary>
+    private static string FormatUuid(string undashed)
     {
-        var md5 = System.Security.Cryptography.MD5.HashData(
-            System.Text.Encoding.UTF8.GetBytes("OfflinePlayer:" + name));
-        var hex = Convert.ToHexString(md5).ToLowerInvariant();
-        return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
+        undashed = undashed.Replace("-", "");
+        if (undashed.Length != 32) return undashed;
+        return $"{undashed[..8]}-{undashed[8..12]}-{undashed[12..16]}-{undashed[16..20]}-{undashed[20..]}";
     }
 
     /// <summary>应用皮肤到角色（PUT /api/players/{pid}/textures body {"skin": tid}）——游戏内 yggdrasil 立即生效</summary>
@@ -124,9 +133,6 @@ public sealed class LittleSkinApi
 
     /// <summary>缩略图 URL（免 token，ImageLoader 直接复用）</summary>
     public static string PreviewUrl(int tid) => $"{SkinFileBase}/preview/{tid}";
-
-    /// <summary>皮肤原图 URL（yggdrasil 纹理路径；角色没应用过纹理时可能 404，调用方降级 /textures/{hash}）</summary>
-    public static string SkinFileUrl(string playerName) => $"{SkinFileBase}/skin/{Uri.EscapeDataString(playerName)}.png";
 
     // ---------- 内部 ----------
 

@@ -104,7 +104,7 @@ public class LittleSkinApiTests
     public void StaticUrls_WellFormed()
     {
         Assert.Equal("https://littleskin.cn/preview/42", LittleSkinApi.PreviewUrl(42));
-        Assert.Equal("https://littleskin.cn/skin/Steve.png", LittleSkinApi.SkinFileUrl("Steve"));
+        // 8-19 SkinFileUrl 已删（/skin/{name}.png 实测 404 死路径，纹理走 yggdrasil profile 解析）
     }
 
     /// <summary>状态码序列 + 记录请求的 stub（队列空用最后一个；默认 200）</summary>

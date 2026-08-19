@@ -329,7 +329,7 @@ public partial class HomeViewModel : ViewModelBase
         Launcher.Core.Utils.AppLog.Instance?.LogInformation("[avatar] refresh: {Name}, skin={Exists}", acc.Name, File.Exists(skinPath));
         if (acc.Type == "littleskin")
         {
-            LoadLittleSkinAvatar(acc.Name, skinPath);
+            LoadLittleSkinAvatar(acc.Name, skinPath, acc.Uuid ?? "");
             return;
         }
         _ = ImageLoader.LoadAsync($"https://minotar.net/helm/{Uri.EscapeDataString(acc.Name)}/64.png", bmp =>
@@ -345,7 +345,7 @@ public partial class HomeViewModel : ViewModelBase
 
     /// <summary>8-19 LittleSkin 头像：本地皮肤（标准布局）裁脸 → yggdrasil 纹理图裁脸 → 首字母。
     /// 皮肤库应用皮肤会写本地并触发 RefreshPlayer——头像随皮肤库即时更新</summary>
-    private void LoadLittleSkinAvatar(string name, string skinPath)
+    private void LoadLittleSkinAvatar(string name, string skinPath, string uuid)
     {
         // 本地皮肤优先（皮肤库应用后已写入；标准 64×64/64×32 布局，脸在 (8,8)-(16,16)）
         if (File.Exists(skinPath))
@@ -363,17 +363,23 @@ public partial class HomeViewModel : ViewModelBase
             }
             catch { /* 本地图损坏走网络 */ }
         }
-        // 网络 yggdrasil 纹理（免 token）；非标准布局不裁（整图兜底观感已可接受）
-        _ = ImageLoader.LoadAsync(Launcher.Core.Account.LittleSkinApi.SkinFileUrl(name), bmp =>
+        // 网络 yggdrasil 纹理（免 token；/skin/{name}.png 实测 404，走 profile 解析的真纹理 URL）
+        _ = Task.Run(async () =>
         {
-            if (bmp is null) return;
-            try
+            using var http = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(8));
+            var url = await Launcher.Core.Account.LittleSkinSkinSync.ResolveTextureUrlAsync(http, uuid);
+            if (string.IsNullOrEmpty(url)) return;
+            ImageLoader.LoadAsync(url, bmp => // 回调已封送 UI 线程
             {
-                PlayerAvatar = bmp.PixelSize.Width == 64 && (bmp.PixelSize.Height is 64 or 32)
-                    ? new Avalonia.Media.Imaging.CroppedBitmap(bmp, new Avalonia.PixelRect(8, 8, 8, 8))
-                    : bmp;
-            }
-            catch { PlayerAvatar = bmp; } // 裁脸失败整图兜底
+                if (bmp is null) return;
+                try
+                {
+                    PlayerAvatar = bmp.PixelSize.Width == 64 && (bmp.PixelSize.Height is 64 or 32)
+                        ? new Avalonia.Media.Imaging.CroppedBitmap(bmp, new Avalonia.PixelRect(8, 8, 8, 8))
+                        : bmp;
+                }
+                catch { PlayerAvatar = bmp; } // 裁脸失败整图兜底
+            });
         });
     }
 
@@ -609,15 +615,21 @@ public partial class HomeViewModel : ViewModelBase
                     return;
                 }
             }
+            // 8-19 进服皮肤：LittleSkin 账号把角色皮肤纹理 URL 透传给服务端（offline 服其他玩家可见真实皮肤）。
+            // 8-19 修死 URL：/skin/{name}.png 实测 404，走 yggdrasil profile 解析真纹理 URL（拿不到则不透传）
+            string? skinUrl = null;
+            if (account.Type == "littleskin" && !string.IsNullOrEmpty(account.Uuid))
+            {
+                using var skinHttp = Launcher.Core.Download.HttpClientPool.CreateSharedClient(TimeSpan.FromSeconds(8));
+                skinUrl = await Launcher.Core.Account.LittleSkinSkinSync.ResolveTextureUrlAsync(skinHttp, account.Uuid);
+            }
             _running = await Task.Run(() => _launcher.LaunchAsync(
                 version.Name, gameDir, account.Name, account.Uuid, accessToken,
                 memoryMb: memMb, extraJvmArgs: extraArgs,
                 onLog: AppendLog, onStage: st => Dispatcher.UIThread.Post(() => SetStage(st)),
                 ct: CancellationToken.None, extraGameArgs: extraGameArgs,
                 userType: account.Type == "microsoft" ? "msa" : "legacy",
-                // 8-19 进服皮肤：LittleSkin 账号把角色皮肤 URL 透传给服务端（offline 服其他玩家可见真实皮肤）
-                skinUrl: account.Type == "littleskin"
-                    ? Launcher.Core.Account.LittleSkinApi.SkinFileUrl(account.Name) : null));
+                skinUrl: skinUrl));
 
             // 游戏进程已启动（窗口拉起）
             IsLaunching = false;

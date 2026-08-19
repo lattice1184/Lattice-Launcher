@@ -63,7 +63,11 @@ public partial class SkinLibraryViewModel : ViewModelBase
         IsBusy = true;
         try
         {
-            var uuid = await _api.GetUuidByNameAsync(p.Name, CancellationToken.None);
+            if (await _api.GetUuidByNameAsync(p.Name, CancellationToken.None) is not { } uuid)
+            {
+                NotificationService.Error("获取角色 UUID 失败，请稍后重试");
+                return;
+            }
             Launcher.Core.Account.AccountService.Shared.LoginLittleskin(p.Name, uuid);
             NotificationService.Success($"已切换为 LittleSkin 账号 {p.Name}");
             OnPropertyChanged(nameof(CanSetAsGameAccount));
@@ -141,7 +145,8 @@ public partial class SkinLibraryViewModel : ViewModelBase
                     var players = await _api.GetPlayersAsync(CancellationToken.None);
                     var name = players.FirstOrDefault()?.Name;
                     if (string.IsNullOrEmpty(name)) return;
-                    var uuid = await _api.GetUuidByNameAsync(name, CancellationToken.None);
+                    // 8-19 uuid 查询失败不再回退假值——账号同步跳过（用户可从账号弹窗登录拿真值）
+                    if (await _api.GetUuidByNameAsync(name, CancellationToken.None) is not { } uuid) return;
                     Launcher.Core.Account.AccountService.Shared.LoginLittleskin(name, uuid);
                     NotificationService.Success($"已切换为 LittleSkin 账号 {name}");
                 }
@@ -294,7 +299,7 @@ public partial class SkinLibraryViewModel : ViewModelBase
     /// <summary>下载皮肤原图写本地（yggdrasil 纹理路径 404 → 降级 /textures/{hash}）；返回是否成功。
     /// 8-19 实现移到共享类 LittleSkinSkinSync（登录流程也用它——登录即同步皮肤）</summary>
     private Task<bool> DownloadToLocalAsync(string playerName, LittleSkinApi.ClosetItem item)
-        => LittleSkinSkinSync.DownloadToLocalAsync(_http, playerName, item.Hash);
+        => LittleSkinSkinSync.DownloadToLocalAsync(_http, playerName, fallbackHash: item.Hash);
 
     /// <summary>刷新主页头像（应用/下载成功后本地头像即时更新）</summary>
     private static void RefreshHomeAvatar()
