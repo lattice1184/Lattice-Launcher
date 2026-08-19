@@ -28,6 +28,10 @@ public partial class EcosystemViewModel : ViewModelBase
 
     private bool _suppressSearch;
     private bool _searchStarted;
+    /// <summary>8-19 第二批：初始化赋值 SelectedInstance 时抑制一次实例搜索（Activate 统一首搜）</summary>
+    private bool _suppressInstanceSearch;
+    /// <summary>8-19 第二批：Activate 早于实例扫描完成时挂起，初始化完成后补首搜</summary>
+    private bool _pendingActivate;
 
     public EcosystemViewModel(ProjectType type = ProjectType.Mod)
     {
@@ -237,10 +241,12 @@ public partial class EcosystemViewModel : ViewModelBase
     partial void OnSelectedLoaderChanged(string? value) => _ = RunSearchAsync(reset: true);
     partial void OnSelectedGameVersionChanged(GameVersionOption? value) => _ = RunSearchAsync(reset: true);
 
-    /// <summary>切换目标实例 → 立即按新实例重新搜索（列表与实例保持一致）；已打开的详情页跟随刷新（AL56）</summary>
+    /// <summary>切换目标实例 → 立即按新实例重新搜索（列表与实例保持一致）；已打开的详情页跟随刷新（AL56）。
+    /// 8-19 第二批：初始化赋值（_suppressInstanceSearch）不触发搜索——首搜统一由 Activate 门控制</summary>
     partial void OnSelectedInstanceChanged(VersionInstanceVM? value)
     {
-        _ = RunSearchAsync(reset: true);
+        if (_suppressInstanceSearch) _suppressInstanceSearch = false;
+        else if (_searchStarted) _ = RunSearchAsync(reset: true);
         if (Detail is { } d) d.UpdateContext(value);
     }
     partial void OnSelectedCategoryChanged(CategoryOption? value) => _ = RunSearchAsync(reset: true);
@@ -299,18 +305,33 @@ public partial class EcosystemViewModel : ViewModelBase
 
         // 全局版本绑定：主页当前版本优先选中（AF1），否则第一个；8-19 开关关 = 只取第一个不跟随
         if (Instances.Count > 0)
+        {
+            _suppressInstanceSearch = true; // 8-19 第二批：赋值不触发搜索（Activate 统一首搜）
             SelectedInstance = Launcher.Core.Utils.LauncherSettings.Current.EcoFollowInstance
                 && MainViewModel.Current?.CurrentVersion is { } cur
                 && Instances.FirstOrDefault(i => i.Name.Equals(cur.Name, StringComparison.OrdinalIgnoreCase)) is { } hit
                 ? hit
                 : Instances[0];
-        // 搜索推迟到标签首次激活（Activate）——预加载不搜
+        }
+        // 8-19 第二批：预加载期间 Activate 已到（实例未就绪挂起）→ 此刻补首搜；否则等用户点 tab 激活
+        if (_pendingActivate)
+        {
+            _pendingActivate = false;
+            Activate();
+        }
     }
 
-    /// <summary>标签激活：首次调用才触发搜索（幂等；切回标签不重搜）</summary>
+    /// <summary>标签激活：首次调用才触发搜索（幂等；切回标签不重搜）。
+    /// 8-19 第二批：实例扫描未完成时挂起（_pendingActivate）——预加载的 InitializeAsync 与 Activate
+    /// 并发时，保证首搜发生在 SelectedInstance 就绪之后（否则 null 实例搜出全量列表再被覆盖，双搜）</summary>
     public void Activate()
     {
         if (_searchStarted) return;
+        if (Instances.Count == 0)
+        {
+            _pendingActivate = true; // 初始化完成后（InitializeAsync 末尾）补首搜
+            return;
+        }
         _searchStarted = true;
         _ = RunSearchAsync(reset: true);
     }
