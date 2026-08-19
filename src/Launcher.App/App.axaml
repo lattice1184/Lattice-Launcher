@@ -211,12 +211,18 @@
             <Setter Property="behaviors:HoverBrushBehavior.HoverForeground" Value="{DynamicResource AccentLight}"/>
         </Style>
 
-        <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动） -->
+        <!-- 生态 Tab（hover 默认 BgHover 由全局行为驱动；8-19 选中态 150ms 渐变） -->
         <Style Selector="Button.tab">
             <Setter Property="Padding" Value="16,7"/>
             <Setter Property="Background" Value="{DynamicResource BgRaised}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusLarge}"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                    <BrushTransition Property="Foreground" Duration="0:0:0.15"/>
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Button.tab.active">
             <Setter Property="Background" Value="{DynamicResource AccentDark}"/>
