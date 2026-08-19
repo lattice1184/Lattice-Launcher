@@ -65,6 +65,26 @@ public static class UiAnim
         public string? Slot;
     }
 
+    /// <summary>8-19 修复：窗口失焦（详情窗口等新窗口打开）时强制所有动画落终值——
+    /// 此前进行中的动画若因失焦/合成变化中断，TweenBrush 本地色停在中间值 → hover 阴影残留不消失</summary>
+    public static void FinishAll()
+    {
+        for (var i = Active.Count - 1; i >= 0; i--)
+        {
+            var a = Active[i];
+            if (a.Canceled)
+            {
+                a.CancelReg?.Dispose();
+                Active.RemoveAt(i);
+                continue;
+            }
+            a.Set(1.0);
+            a.Done?.Invoke();
+            a.CancelReg?.Dispose();
+            Active.RemoveAt(i);
+        }
+    }
+
     private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
     private static readonly List<ActiveAnim> Active = new();
     private static DispatcherTimer? _fallbackTimer;

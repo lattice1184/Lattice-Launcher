@@ -41,7 +41,11 @@ public partial class MainWindow : Window
         PointerWheelChanged += (_, _) => _idleTuner.OnUserActivity();
         KeyDown += (_, _) => _idleTuner.OnUserActivity();
         // 8-18 失焦/最小化 → 立即修剪（用户离开马上让资源，不等 3 分钟；回来活动自动重置）
-        Deactivated += (_, _) => _idleTuner.TrimNow();
+        Deactivated += (_, _) =>
+        {
+            _idleTuner.TrimNow();
+            UiAnim.FinishAll(); // 8-19：新窗口打开（详情/弹窗）失焦时强制动画落终值，防 hover 色残留
+        };
         ((System.ComponentModel.INotifyPropertyChanged)this).PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(WindowState) && WindowState == WindowState.Minimized)
