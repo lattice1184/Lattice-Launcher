@@ -20,3 +20,26 @@ obfuscar.xml
 scripts/check-obfuscation.py
 scripts/attach-test.ps1
 午夜对局总结.md
+
+# 开发过程文档（8-19 清理：仅本地留存，不进仓库主页）
+/.claude/
+/docs/
+/BLOCKHELM_UI_NOTES.md
+/BUGS-FULLSCAN-APP.md
+/BUGS-FULLSCAN-CORE.md
+/BUGS.md
+/BUGS2.md
+/CLAUDE.md
+/CONTEXT_OVERFLOW.md
+/EXPLORE_DOWNLOAD.md
+/NEXT_ROUND_PLAN.md
+/PATCHES.md
+/PROJECT_STATE.md
+/REVIEW-A.md
+/REVIEW-B.md
+/REVIEW-C.md
+/REVIEW-D.md
+/REVIEW-F.md
+/TERRACOTTA_SPEC.md
+/shot_*.png
+/shot_*.jpg
