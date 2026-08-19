@@ -132,7 +132,9 @@ public partial class MainViewModel : ViewModelBase
         if (page == "download") Downloads.ActivateDefault();
         if (page == "home") { Home.RefreshConfigText(); _ = Home.RefreshVersionsAsync(); } // 切回主页刷新配置摘要+已装版本
         if (page == "version") _ = Versions.LoadAsync(); // 每次进入强制重扫（下载补全后 JarMissing 红字同步消失——AG2）
-        if (page == "server") _ = Server.RefreshVersionsAsync(); // 每次进开服页刷新已装版本（新装的立即可见）
+        if (page == "server") { _ = Server.RefreshVersionsAsync(); Server.OnPageActive(); } // 进开服页：刷新已装版本 + 启状态轮询
+        // 8-19 内存瘦身：离开开服页停轮询（_server 守卫——属性访问会触发惰性构造，未建过就不碰）
+        else if (_server is { } s) s.OnPageInactive();
         CurrentPage = page switch
         {
             "version" => Versions,

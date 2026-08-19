@@ -274,6 +274,15 @@ public partial class ServerViewModel : ViewModelBase
 
     private readonly DispatcherTimer _statusTimer;
 
+    /// <summary>8-19 内存瘦身：机器状态轮询只在开服页显示时运行——此前构造即常驻，
+    /// 从不进开服页的会话也每 5 秒轮询内存/CPU/磁盘（后台采样 + UI 线程触发）</summary>
+    public void OnPageActive()
+    {
+        if (!_statusTimer.IsEnabled) _statusTimer.Start();
+    }
+
+    public void OnPageInactive() => _statusTimer.Stop();
+
     /// <summary>建议配置编辑值（机器状态卡内直接可改，ApplySuggestion 应用）</summary>
     [ObservableProperty]
     public partial string SuggestionMemoryText { get; set; } = "2048";
