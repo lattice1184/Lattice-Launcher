@@ -261,6 +261,9 @@ public partial class SettingsViewModel : ViewModelBase
         "网络诊断条 + 下载队列调度",
     ];
 
+    /// <summary>8-19 精简：关于页默认只列最近 5 条，完整日志收进折叠</summary>
+    public IEnumerable<string> ChangelogItemsRecent => ChangelogItems.Take(5);
+
     /// <summary>「存储」分区（存储占用/上限/清理）</summary>
     public StorageSettingsViewModel Storage { get; } = new();
 
