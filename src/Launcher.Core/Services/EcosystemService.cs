@@ -403,11 +403,15 @@ public sealed class EcosystemService
         if (type == ProjectType.Modpack)
             return Path.Combine(gameDirectory, "downloads", "modpacks");
         var sub = ResolveSubDir(type)!;
-        // 版本隔离判定：版本目录已存在 → 装版本目录（隔离/PCL 实例）；否则装共享目录（非隔离共享 mods）
-        var versionDir = Path.Combine(gameDirectory, "versions", instanceId);
-        return Directory.Exists(versionDir)
-            ? Path.Combine(versionDir, sub)
-            : Path.Combine(gameDirectory, sub);
+        // 8-19 第二批：落点跟随版本隔离设置，不再用「目录是否存在」猜——旧启发式在隔离开时
+        // 把 mod 装进实例目录（游戏 game_directory=根、只读根 mods → 装完游戏不加载）；
+        // 隔离关恒装共享目录；隔离开恒装实例目录（缺则创建——手改路径后新建实例也装对地方）
+        var isolated = Launcher.Core.Utils.LauncherSettings.Current.VersionIsolation;
+        var baseDir = isolated
+            ? Path.Combine(gameDirectory, "versions", instanceId)
+            : gameDirectory;
+        if (isolated) Directory.CreateDirectory(baseDir);
+        return Path.Combine(baseDir, sub);
     }
 
     /// <summary>从实例名解析游戏版本：1.21.1 → true/"1.21.1"；1.21.1-Fabric → true；自定义名 → false</summary>

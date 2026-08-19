@@ -449,6 +449,7 @@ public sealed class LoaderService
 
             // 安装器写出的版本目录名不确定 → 取安装后最新修改的版本目录
             _lastInstalledVersionId = FindNewestVersionDir();
+            DeleteInstaller(installerPath); // 8-19 第二批：装完即删，不留 .minecraft/installers 残留
             return;
         }
 
@@ -462,6 +463,13 @@ public sealed class LoaderService
             line => progress?.Invoke(new DownloadProgress(line, null, 0, 0, 0)), ct);
         if (exitCode != 0)
             throw new InvalidOperationException($"安装器执行失败（退出码 {exitCode}），请查看安装器输出");
+        DeleteInstaller(installerPath); // 8-19 第二批：装完即删（旧路径同样清理）
+    }
+
+    /// <summary>8-19 第二批：安装器跑完即删——此前 installers 目录只增不减（每次装 Forge/NeoForge 留一个 jar）</summary>
+    private static void DeleteInstaller(string installerPath)
+    {
+        try { File.Delete(installerPath); } catch { /* 删除失败不阻塞安装结果 */ }
     }
 
     /// <summary>官方安装器要求 launcher_profiles.json（否则 "no minecraft launcher profile" 中止）——

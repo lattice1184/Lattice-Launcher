@@ -44,13 +44,22 @@ public static class StorageScanner
             : [];
         groups.Add(new("server", "服务端", serverItems, Sum(serverItems)));
 
-        // 下载缓存（*.parts 分片目录 + AppData 缓存 + 整合包导出，可删）
+        // 下载缓存（*.parts 分片目录 + AppData 缓存 + 整合包导出 + 直接下载的 mod + 失败下载残留，可删）
         var dlItems = new List<StorageLocation>();
         if (Directory.Exists(gameDir))
+        {
             foreach (var d in Directory.EnumerateDirectories(gameDir, "*.parts", SearchOption.AllDirectories))
                 dlItems.Add(new StorageLocation(d, false, true));
+            // 8-19 第二批：失败/中断下载的残留（.tmp/.race*）——TargetPath 为空的组内任务终态不清理，
+            // 这里统一兜底可统计可清理
+            foreach (var f in Directory.EnumerateFiles(gameDir, "*.tmp", SearchOption.AllDirectories))
+                dlItems.Add(new StorageLocation(f, true, true));
+            foreach (var f in Directory.EnumerateFiles(gameDir, "*.race*", SearchOption.AllDirectories))
+                dlItems.Add(new StorageLocation(f, true, true));
+        }
         dlItems.Add(new StorageLocation(Path.Combine(appData, "cache"), false, true));
         dlItems.Add(new StorageLocation(Path.Combine(gameDir, "downloads", "modpacks"), false, true));
+        dlItems.Add(new StorageLocation(Path.Combine(gameDir, "downloads", "mods"), false, true)); // 8-19 第二批：详情页「直接下载」落点，可清理
         groups.Add(new("downloads", "下载缓存", dlItems, Sum(dlItems)));
 
         // 日志（游戏日志 + 崩溃报告 + 启动器日志，可删）
