@@ -1,6 +1,7 @@
 using System.Net;
 using Launcher.Core.Model.Modrinth;
 using Launcher.Core.Services;
+using Launcher.Core.Utils;
 
 namespace Launcher.Core.Tests;
 
@@ -105,22 +106,34 @@ public class EcosystemServiceTests
     [Fact]
     public void ResolveInstallPath_InstanceDirectories()
     {
-        // AF2：版本目录已存在 → 装版本目录（隔离/PCL 实例）；不存在 → 共享目录（非隔离共享 mods）
+        // 8-19 第二批：落点跟随版本隔离设置（默认隔离开）——不再用目录存在性猜
         var temp = Path.Combine(Path.GetTempPath(), "yanla-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(temp, "versions", "1.21.1"));
+        var prev = LauncherSettings.Current.VersionIsolation;
         try
         {
+            LauncherSettings.Current.VersionIsolation = true;
             Assert.Equal(Path.Combine(temp, "versions", "1.21.1", "mods"),
                 EcosystemService.ResolveInstallPath(temp, "1.21.1", ProjectType.Mod));
             Assert.Equal(Path.Combine(temp, "versions", "1.21.1", "shaderpacks"),
                 EcosystemService.ResolveInstallPath(temp, "1.21.1", ProjectType.Shader));
-            Assert.Equal(Path.Combine(temp, "mods"),
-                EcosystemService.ResolveInstallPath(temp, "1.20.1", ProjectType.Mod)); // 无版本目录 → 共享
+            // 实例目录缺失时也装实例目录（隔离开恒实例，落点目录被创建）
+            Assert.Equal(Path.Combine(temp, "versions", "1.20.1", "mods"),
+                EcosystemService.ResolveInstallPath(temp, "1.20.1", ProjectType.Mod));
+            Assert.True(Directory.Exists(Path.Combine(temp, "versions", "1.20.1")));
             Assert.Equal(Path.Combine(temp, "downloads", "modpacks"),
                 EcosystemService.ResolveInstallPath(temp, "any", ProjectType.Modpack));
+
+            // 隔离关：目录存在与否都装共享目录（游戏 game_directory=根，只读根 mods）
+            LauncherSettings.Current.VersionIsolation = false;
+            Assert.Equal(Path.Combine(temp, "mods"),
+                EcosystemService.ResolveInstallPath(temp, "1.21.1", ProjectType.Mod));
+            Assert.Equal(Path.Combine(temp, "shaderpacks"),
+                EcosystemService.ResolveInstallPath(temp, "1.20.1", ProjectType.Shader));
         }
         finally
         {
+            LauncherSettings.Current.VersionIsolation = prev;
             try { Directory.Delete(temp, true); } catch { }
         }
     }
