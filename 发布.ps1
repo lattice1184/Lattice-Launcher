@@ -139,7 +139,8 @@ function Inject-BundledCfKey {
     }
     $content = $script:CfKeyPlaceholder.Replace('public static readonly string Encrypted = "";',
         "public static readonly string Encrypted = `"$enc`";")
-    [System.IO.File]::WriteAllText($genFile, $content, [System.Text.Encoding]::UTF8)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($genFile, $content, $utf8NoBom)
     if ($cfKey) {
         # 注入校验：读回生成文件确认密文已写入（防替换漏执行 → 带空值上生产线）
         $back = Get-Content $genFile -Raw
@@ -255,6 +256,7 @@ Write-Host "  -> $(Join-Path $out '使用说明.txt')"
 # （git add -A 会把带值文件整体提交进仓库——8-19 实锤：混淆值可逆，key 泄漏进公开历史；
 #  AES-HMAC 密文同样不能留：二进制可逆推理，占位必须恢复）
 $genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
-# 模板自带文件尾换行（与 git 模板字节一致，发布后 git status 保持干净）
-[System.IO.File]::WriteAllText($genFile, $script:CfKeyPlaceholder, [System.Text.Encoding]::UTF8)
+# 模板自带文件尾换行 + 无 BOM（与 git 模板字节一致，发布后 git status 保持干净）
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($genFile, $script:CfKeyPlaceholder, $utf8NoBom)
 Write-Host "[5/5] 注入占位已恢复（key 不留工作区）" -ForegroundColor DarkGray
