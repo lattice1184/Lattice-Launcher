@@ -263,7 +263,7 @@
                             </Border.Transitions>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Ellipse Width="8" Height="8" Fill="{Binding Dot}" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Message}" Foreground="{Binding MessageBrush}"
+                                <TextBlock Text="{Binding DisplayMessage}" Foreground="{Binding MessageBrush}"
                                            FontSize="12" TextWrapping="Wrap" MaxWidth="360"/>
                             </StackPanel>
                         </Border>

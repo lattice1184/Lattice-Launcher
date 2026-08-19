@@ -14,6 +14,20 @@ public partial class ToastItem : ObservableObject
     public string Message { get; }
     public ToastType Type { get; }
 
+    /// <summary>8-19 第二批：相同文案合并计数（视图显示「文案 ×N」）；1 时显示原文</summary>
+    [ObservableProperty]
+    public partial int Count { get; set; } = 1;
+
+    public string DisplayMessage => Count > 1 ? $"{Message} ×{Count}" : Message;
+
+    partial void OnCountChanged(int value) => OnPropertyChanged(nameof(DisplayMessage));
+
+    /// <summary>生效中的淡出计时（折叠续期时取消重启）；null = 未开始淡出</summary>
+    public CancellationTokenSource? FadeCts { get; set; }
+
+    /// <summary>已进入淡出阶段（不可再合并）</summary>
+    public bool Removing { get; set; }
+
     public IBrush Dot => Type switch
     {
         ToastType.Success => new SolidColorBrush(Color.Parse("#5AD07C")),
@@ -55,16 +69,34 @@ public static class NotificationService
 {
     public static ObservableCollection<ToastItem> Toasts { get; } = [];
 
-    /// <summary>弹一条 Toast（淡入 + 停留 + 淡出，自动移除；全流程封送 UI 线程）</summary>
+    /// <summary>弹一条 Toast（淡入 + 停留 + 淡出，自动移除；全流程封送 UI 线程）。
+    /// 8-19 第二批：相同 (文案, 类型) 的未过期条目折叠为 ×N 并重置停留计时——不再堆一串</summary>
     public static void Show(string message, ToastType type = ToastType.Info, int durationMs = 3200)
     {
         var toast = new ToastItem(message, type);
         Dispatcher.UIThread.Post(() =>
         {
+            // 折叠：同文案同类型且尚未淡出的条目合并（如多条「仍在搜索（网络较慢）」）
+            foreach (var existing in Toasts)
+            {
+                if (existing.Type == type && existing.Message == message && !existing.Removing)
+                {
+                    existing.Count++;
+                    existing.FadeCts?.Cancel(); // 旧计时作废
+                    StartFade(existing, durationMs); // 重新计停留
+                    return;
+                }
+            }
             Toasts.Add(toast);
             toast.Opacity = 1; // 淡入（容器 realize 后触发 0→1 过渡）
+            StartFade(toast, durationMs);
         });
-        _ = FadeOutAsync(toast, durationMs);
+    }
+
+    private static void StartFade(ToastItem toast, int durationMs)
+    {
+        toast.FadeCts = new CancellationTokenSource();
+        _ = FadeOutAsync(toast, durationMs, toast.FadeCts.Token);
     }
 
     /// <summary>信息提示快捷方式</summary>
@@ -76,9 +108,17 @@ public static class NotificationService
     /// <summary>错误提示快捷方式</summary>
     public static void Error(string message, int durationMs = 4500) => Show(message, ToastType.Error, durationMs);
 
-    private static async Task FadeOutAsync(ToastItem toast, int durationMs)
+    private static async Task FadeOutAsync(ToastItem toast, int durationMs, CancellationToken ct)
     {
-        await Task.Delay(durationMs);
+        try
+        {
+            await Task.Delay(durationMs, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // 折叠续期替换了本计时，原任务静默退出
+        }
+        toast.Removing = true;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             toast.OnRemoving?.Invoke(); // 视图层滑出（180ms，与下方 Delay(260) 同步收尾）
