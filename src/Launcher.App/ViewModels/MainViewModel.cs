@@ -164,6 +164,9 @@ public partial class MainViewModel : ViewModelBase
 
     /// <summary>退出清理：开服页进程停止（惰性 VM 未创建则无事可做）</summary>
     public void StopServerIfRunning() => _server?.StopOnExit();
+
+    /// <summary>8-19 内存优化：开服中标记（_server 惰性守卫——未创建不触发构造）</summary>
+    public bool IsServerRunning => _server?.IsRunning == true;
 }
 
 /// <summary>全局运行状态（AG2）：Kind = 客户端 / 服务端</summary>

@@ -6,13 +6,15 @@ using Microsoft.Extensions.Logging;
 namespace Launcher.App.Services;
 
 /// <summary>
-/// 闲置内存让渡（8-18 批次 80）：用户无操作 3 分钟后，后台 GC 压缩 + 工作集修剪——
-/// 物理页还给系统（任务管理器"内存"数字立降），数据不丢（活动时缺页自然重新驻留）。
-/// 用户输入只更新原子时间戳（零开销），修剪一次后不再重复；活动即重置。
+/// 闲置内存优化（8-18 批次 80 引入；8-19 第二批重写为「低写盘」设计）。
+/// 触发式 + 冷却，不做 PCL 那种定时反复修剪：
+/// - 轻度（默认，零盘写）：闲置后后台 GC 压缩——托管对象移动全在 RAM，配合 GCHeapHardLimit 压堆
+/// - 工作集修剪（默认关）：GC 后可选 SetProcessWorkingSetSize，把脏页写入页面文件换回物理内存
+///   （UI 文案明示会增加硬盘读写——用户要求对硬盘损伤小，故默认关）
+/// - 修剪前检查：工作集超阈值才修剪；下载/开服进行中跳过；相邻修剪冷却 10 分钟
 /// </summary>
 public sealed class IdleMemoryTuner : IDisposable
 {
-    private static readonly TimeSpan IdleDelay = TimeSpan.FromMinutes(3);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(30) };
     private long _lastActivityTick = Environment.TickCount64;
     private bool _trimmed;
@@ -28,16 +30,32 @@ public sealed class IdleMemoryTuner : IDisposable
     }
     private static long _lastStartupTrimTick;
 
+    /// <summary>相邻修剪冷却（毫秒）：杜绝频繁摘-换页面导致的缺页抖动与页面文件读写放大</summary>
+    private const long TrimCooldownMs = 10 * 60 * 1000;
+    private static long _lastTrimTick;
+
+    /// <summary>工作集低于此值不修剪（本来就不大，修剪纯属制造缺页）</summary>
+    private const long MinTrimWorkingSetBytes = 200L * 1024 * 1024;
+
     public IdleMemoryTuner()
     {
         _timer.Tick += OnTick;
         _timer.Start();
     }
 
-    /// <summary>用户活动通知（MainWindow 全局输入事件调用——只写时间戳，零开销）</summary>
-    public void OnUserActivity() => Interlocked.Exchange(ref _lastActivityTick, Environment.TickCount64);
+    /// <summary>用户活动通知（MainWindow 全局输入事件调用——只写时间戳，零开销）。
+    /// 8-19 第二批修复：活动即复位修剪标记并重启心跳——此前只更新时间戳、修剪后永不再修剪</summary>
+    public void OnUserActivity()
+    {
+        Interlocked.Exchange(ref _lastActivityTick, Environment.TickCount64);
+        if (_trimmed)
+        {
+            _trimmed = false;
+            if (!_timer.IsEnabled) _timer.Start();
+        }
+    }
 
-    /// <summary>8-18 立即修剪（窗口失焦/最小化——用户离开马上让资源，不等 3 分钟闲置）</summary>
+    /// <summary>立即修剪（窗口失焦/最小化——用户离开马上让资源，不等闲置间隔）</summary>
     public void TrimNow()
     {
         if (_trimmed) return; // 已修剪过（等用户活动重置）
@@ -50,24 +68,48 @@ public sealed class IdleMemoryTuner : IDisposable
     {
         if (_trimmed) return;
         var elapsed = Environment.TickCount64 - Interlocked.Read(ref _lastActivityTick);
-        if (elapsed < (long)IdleDelay.TotalMilliseconds) return;
+        if (elapsed < (long)IdleMinutes.TotalMilliseconds) return;
         _trimmed = true;
         _timer.Stop();
         _ = Task.Run(TrimAsync);
     }
 
+    /// <summary>闲置多久才修剪（设置可配，默认 5 分钟）</summary>
+    private static TimeSpan IdleMinutes
+        => TimeSpan.FromMinutes(Math.Clamp(LauncherSettings.Current.MemoryIdleMinutes, 1, 60));
+
+    /// <summary>跳过条件：下载中 / 开服中——不拖累正在进行的任务</summary>
+    private static bool ShouldSkip()
+    {
+        if (Launcher.Core.Download.DownloadManager.Instance.ActiveCount > 0) return true;
+        if (Launcher.App.ViewModels.MainViewModel.Current?.IsServerRunning == true) return true;
+        return false;
+    }
+
     private static void TrimAsync()
     {
-        AppLog.Instance?.LogInformation("[memory] idle 3min, trim working set");
         try
         {
-            // 压缩 GC：先收紧托管堆（可移动对象压实 → 空闲页真正可归还）
+            // 总开关（设置页「内存优化」）
+            if (!LauncherSettings.Current.MemoryOptimizeEnabled) return;
+            if (ShouldSkip()) return; // 下载/开服中让路
+            var now = Environment.TickCount64;
+            if (now - _lastTrimTick < TrimCooldownMs) return; // 冷却中（频繁失焦场景不反复修剪）
+            _lastTrimTick = now;
+
+            AppLog.Instance?.LogInformation("[memory] idle trim (gc + trim={Trim})",
+                LauncherSettings.Current.MemoryTrimEnabled);
+            // 轻度：压缩 GC——可移动对象压实，空闲页真正可归还（全程 RAM 内，零盘写）
             GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
-            // 工作集修剪：把驻留物理页还给系统（-1,-1 = 修剪到最小；下次访问缺页自动换回）
-            SetProcessWorkingSetSize(Environment.ProcessId != 0
-                ? System.Diagnostics.Process.GetCurrentProcess().Handle
-                : IntPtr.Zero, -1, -1);
-            AppLog.Instance?.LogInformation("[memory] working set trimmed");
+            // 可选：工作集修剪（PCL 式，写页面文件）——默认关，且工作集过小不修剪
+            if (LauncherSettings.Current.MemoryTrimEnabled
+                && System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 > MinTrimWorkingSetBytes)
+            {
+                SetProcessWorkingSetSize(Environment.ProcessId != 0
+                    ? System.Diagnostics.Process.GetCurrentProcess().Handle
+                    : IntPtr.Zero, -1, -1);
+                AppLog.Instance?.LogInformation("[memory] working set trimmed");
+            }
         }
         catch (Exception ex)
         {

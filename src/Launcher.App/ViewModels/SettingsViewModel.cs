@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Launcher.App.Services;
@@ -108,6 +109,31 @@ public partial class SettingsViewModel : ViewModelBase
     /// <summary>启动随机小提示（彩蛋开关）</summary>
     [ObservableProperty]
     public partial bool StartupTipEnabled { get; set; } = true;
+
+    // ---------- 内存优化（8-19 第二批：轻度 GC 零盘写默认开；工作集修剪默认关） ----------
+
+    [ObservableProperty]
+    public partial bool MemoryOptimizeEnabled { get; set; } = true;
+
+    [ObservableProperty]
+    public partial bool MemoryTrimEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial int MemoryIdleMinutes { get; set; } = 5;
+
+    /// <summary>闲置分钟输入框文本（int↔string；空/非法输入不落盘）</summary>
+    public string MemoryIdleMinutesText
+    {
+        get => MemoryIdleMinutes.ToString();
+        set
+        {
+            if (int.TryParse(value, out var v) && v is >= 1 and <= 60)
+                MemoryIdleMinutes = v;
+        }
+    }
+
+    /// <summary>当前进程占用（设置页内存优化区实时显示）</summary>
+    public string CurrentMemoryText => $"{Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB";
 
     // ---------- 下载 ----------
 
@@ -315,6 +341,9 @@ public partial class SettingsViewModel : ViewModelBase
         SelectedJvmProfile = JvmProfileOptions.FirstOrDefault(o => o.Value == s.JvmProfile) ?? JvmProfileOptions[1];
         SelectedGamePriority = GamePriorityOptions.FirstOrDefault(o => o.Value == s.GamePriority) ?? GamePriorityOptions[1];
         StartupTipEnabled = s.StartupTipEnabled;
+        MemoryOptimizeEnabled = s.MemoryOptimizeEnabled; // 8-19 内存优化
+        MemoryTrimEnabled = s.MemoryTrimEnabled;
+        MemoryIdleMinutes = s.MemoryIdleMinutes;
         SelectedDownloadSource = DownloadSourceOptions.FirstOrDefault(o => o.Value == s.DownloadSource) ?? DownloadSourceOptions[0];
         MaxConcurrentDownloads = s.MaxConcurrentDownloads;
         SpeedLimitKbps = s.DownloadSpeedLimitKbps;
@@ -372,6 +401,9 @@ public partial class SettingsViewModel : ViewModelBase
         s.JvmProfile = SelectedJvmProfile?.Value ?? PerformanceProfile.Medium;
         s.GamePriority = SelectedGamePriority?.Value ?? GamePriority.Normal;
         s.StartupTipEnabled = StartupTipEnabled;
+        s.MemoryOptimizeEnabled = MemoryOptimizeEnabled; // 8-19 内存优化
+        s.MemoryTrimEnabled = MemoryTrimEnabled;
+        s.MemoryIdleMinutes = MemoryIdleMinutes;
         s.MaxConcurrentDownloads = MaxConcurrentDownloads;
         s.DownloadSpeedLimitKbps = SpeedLimitKbps;
         s.ChunkCount = ChunkCount;
@@ -395,6 +427,11 @@ public partial class SettingsViewModel : ViewModelBase
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();
+
+    // 8-19 内存优化：开关即时落盘；间隔防抖
+    partial void OnMemoryOptimizeEnabledChanged(bool value) => Save();
+    partial void OnMemoryTrimEnabledChanged(bool value) => Save();
+    partial void OnMemoryIdleMinutesChanged(int value) => DebouncedSave();
 
     partial void OnSelectedMemoryPresetChanged(MemoryPresetVM? value)
     {
