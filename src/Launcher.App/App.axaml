@@ -307,7 +307,7 @@
             <Setter Property="Opacity" Value="0.5"/>
         </Style>
 
-        <!-- 玻璃卡片（液态玻璃点缀；日志/控制台保持实色 card 保证对比度） -->
+        <!-- 玻璃卡片（液态玻璃点缀；8-19 日志卡已改半透明跟随窗口透明度，见 HomeView 内联覆写） -->
         <Style Selector="Border.glass-card">
             <Setter Property="Background" Value="#E6242A36"/>
             <Setter Property="CornerRadius" Value="{StaticResource RadiusMedium}"/>

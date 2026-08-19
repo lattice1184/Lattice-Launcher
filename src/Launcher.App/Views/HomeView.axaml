@@ -104,11 +104,13 @@
             </StackPanel>
         </Border>
 
-        <!-- ② 日志卡（全宽；Tab 双视图：控制台 / 启动记录） -->
-        <Border Classes="card" Grid.Row="1" Padding="0">
+        <!-- ② 日志卡（全宽；Tab 双视图：控制台 / 启动记录）。
+             8-19 半透明化：日志卡实色与 72% 透明内容区反差大（透明度高时观感"变深割裂"），
+             改 80%/90% 半透明跟随窗口透明度 -->
+        <Border Classes="card" Grid.Row="1" Padding="0" Background="#CC1D222C">
             <DockPanel>
                 <!-- 头部 Tab -->
-                <Border DockPanel.Dock="Top" Background="{DynamicResource BgSurface}" Padding="12,8"
+                <Border DockPanel.Dock="Top" Background="#E6242A36" Padding="12,8"
                         BorderBrush="{DynamicResource BorderColor}" BorderThickness="0,0,0,1">
                 <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
                     <Button Content="控制台" Classes="tab" Classes.active="{Binding IsConsoleTabSelected}"
@@ -175,7 +177,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding}" FontFamily="Consolas" FontSize="12"
-                                                   Foreground="#B8C2D4" TextWrapping="NoWrap"/>
+                                                   Foreground="{StaticResource TextLog}" TextWrapping="NoWrap"/>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
