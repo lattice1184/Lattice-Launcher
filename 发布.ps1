@@ -72,14 +72,17 @@ internal static class BundledCfKeyGen
         return "AES-HMAC|" + Convert.ToBase64String(outBuf);
     }
 
-    /// <summary>运行时解密；失败返回空（安全降级 → 用户自填 key）</summary>
-    public static string Decrypt()
+    /// <summary>运行时解密（读注入字段）；失败返回空（安全降级 → 用户自填 key）</summary>
+    public static string Decrypt() => Decrypt(Encrypted);
+
+    /// <summary>解密指定密文；失败返回空（测试/篡改检测用）</summary>
+    public static string Decrypt(string? encrypted)
     {
         try
         {
-            if (string.IsNullOrEmpty(Encrypted)) return "";
-            if (!Encrypted.StartsWith("AES-HMAC|", StringComparison.Ordinal)) return "";
-            var raw = Convert.FromBase64String(Encrypted["AES-HMAC|".Length..]);
+            if (string.IsNullOrEmpty(encrypted)) return "";
+            if (!encrypted.StartsWith("AES-HMAC|", StringComparison.Ordinal)) return "";
+            var raw = Convert.FromBase64String(encrypted["AES-HMAC|".Length..]);
             // 布局：iv(16) | hmac(32) | cipher(rest)
             if (raw.Length < 16 + 32 + 16) return "";
             var iv = raw[..16];
@@ -125,7 +128,8 @@ function Inject-BundledCfKey {
         $aes.Key = $key; $aes.IV = $iv
         $plainBytes = [Text.Encoding]::UTF8.GetBytes($cfKey)
         $encBytes = $aes.CreateEncryptor().TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
-        $hmac = New-Object System.Security.Cryptography.HMACSHA256($key)
+        # PS 5.1 坑：New-Object HMACSHA256($key) 会把 byte[] 拆成参数列表（报"参数为:32"）——用 ::new()
+        $hmac = [System.Security.Cryptography.HMACSHA256]::new($key)
         $hmacBytes = $hmac.ComputeHash($encBytes)
         $out = New-Object byte[] (16 + 32 + $encBytes.Length)
         [Array]::Copy($iv, 0, $out, 0, 16)
