@@ -173,6 +173,8 @@ internal static class BundledCfKeyGen
     /// <summary>预留字段（构建注入模板同步用）</summary>
     public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
 }
+
 "@
+# } 后留空行 → 占位内容带文件尾换行（与 git 模板字节一致，发布后 git status 保持干净）
 [System.IO.File]::WriteAllText($genFile, $placeholder, [System.Text.Encoding]::UTF8)
 Write-Host "[5/5] 注入占位已恢复（key 不留工作区）" -ForegroundColor DarkGray
