@@ -25,36 +25,124 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 
 # 2) 发布函数：publish → 取 exe → 移动到 发布\ 对应名字（跑两遍：自包含 + 轻量版）
-function Inject-BundledCfKey {
-    # 构建注入内置 CF key（PCL/HMCL 式：key 不进源码仓库，发布时从环境变量注入混淆值覆盖生成文件）
-    # 设 LATTICE_CF_KEY 才注入；否则生成空占位（用户自填 key 或走官网跳转平替）。
-    $genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
-    $cfKey = $env:LATTICE_CF_KEY
-    $obf = ""
-    if ($cfKey) {
-        $chars = $cfKey.ToCharArray() | ForEach-Object { [char]([int]$_ + 7) }
-        $obf = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($chars -join '')))
-    }
-    $content = @"
+# 8-19 密钥派生盐（必须与 BundledCfKeyGen.KeySalt 一致——改动两处同步）
+$script:CfKeySalt = "Lattice.CfKey.Internal.v2"
+
+# 构建注入占位模板（无 key 版本；注入/收尾共用——含 Decrypt/EncryptForTest 完整实现）
+$script:CfKeyPlaceholder = @"
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Launcher.Core.Services;
 
-/// <summary>构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）</summary>
+/// <summary>
+/// 构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）。
+/// 8-19 升级（对齐 PCL2 AES-HMAC 思路）：内置值 = AES-256-CBC + HMAC-SHA256 密文，
+/// 密钥由内嵌常量派生（SHA256）——直接 grep 二进制搜不到密钥与明文（旧版 +7 移位可逆 30 秒还原）。
+/// </summary>
 internal static class BundledCfKeyGen
 {
-    public static readonly string Obfuscated = "$obf";
+    /// <summary>构建注入字段：AES-HMAC|base64(iv+cipher+hmac)；空 = 无内置 key（用户自填兜底）</summary>
+    public static readonly string Encrypted = "";
 
     /// <summary>预留字段（构建注入模板同步用）</summary>
     public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
+
+    /// <summary>密钥派生盐（发布脚本同款；改动必须两处同步——发布.ps1 的 Inject-BundledCfKey）</summary>
+    private const string KeySalt = "Lattice.CfKey.Internal.v2";
+
+    /// <summary>加密镜像（测试往返用；与发布.ps1 Inject-BundledCfKey 的 PowerShell 实现一一对应：
+    /// iv(16)|hmac(32)|cipher，AES-256-CBC + HMAC-SHA256，密钥 = SHA256(KeySalt)）</summary>
+    public static string EncryptForTest(string plain)
+    {
+        using var aes = Aes.Create();
+        aes.Key = SHA256.HashData(Encoding.UTF8.GetBytes(KeySalt));
+        aes.GenerateIV();
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        byte[] cipher;
+        using (var enc = aes.CreateEncryptor())
+            cipher = enc.TransformFinalBlock(Encoding.UTF8.GetBytes(plain), 0, plain.Length);
+        using var h = new HMACSHA256(aes.Key);
+        var hmac = h.ComputeHash(cipher);
+        var outBuf = new byte[16 + 32 + cipher.Length];
+        Buffer.BlockCopy(aes.IV, 0, outBuf, 0, 16);
+        Buffer.BlockCopy(hmac, 0, outBuf, 16, 32);
+        Buffer.BlockCopy(cipher, 0, outBuf, 48, cipher.Length);
+        return "AES-HMAC|" + Convert.ToBase64String(outBuf);
+    }
+
+    /// <summary>运行时解密；失败返回空（安全降级 → 用户自填 key）</summary>
+    public static string Decrypt()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(Encrypted)) return "";
+            if (!Encrypted.StartsWith("AES-HMAC|", StringComparison.Ordinal)) return "";
+            var raw = Convert.FromBase64String(Encrypted["AES-HMAC|".Length..]);
+            // 布局：iv(16) | hmac(32) | cipher(rest)
+            if (raw.Length < 16 + 32 + 16) return "";
+            var iv = raw[..16];
+            var hmac = raw[16..48];
+            var cipher = raw[48..];
+            var key = SHA256.HashData(Encoding.UTF8.GetBytes(KeySalt));
+            // HMAC 校验（防篡改/防误写）
+            using var h = new HMACSHA256(key);
+            var expected = h.ComputeHash(cipher);
+            if (!CryptographicOperations.FixedTimeEquals(hmac, expected)) return "";
+            using var aes = Aes.Create();
+            aes.Key = key;
+            aes.IV = iv;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            using var dec = aes.CreateDecryptor();
+            var plain = dec.TransformFinalBlock(cipher, 0, cipher.Length);
+            return Encoding.UTF8.GetString(plain);
+        }
+        catch { return ""; }
+    }
 }
+
 "@
+
+function Inject-BundledCfKey {
+    # 构建注入内置 CF key（PCL/HMCL 式：key 不进源码仓库，发布时从环境变量注入 AES-HMAC 密文覆盖生成文件）
+    # 设 LATTICE_CF_KEY 才注入；否则生成空占位（用户自填 key 或走官网跳转平替）。
+    $genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
+    $cfKey = $env:LATTICE_CF_KEY
+    $enc = ""
+    if ($cfKey) {
+        # AES-256-CBC + HMAC-SHA256（对齐 PCL2 AES-HMAC 思路）：密钥 = SHA256(盐)，
+        # 布局 iv(16)|hmac(32)|cipher —— 与 BundledCfKeyGen.Decrypt() 严格对应
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        $key = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($script:CfKeySalt))
+        $iv = New-Object byte[] 16
+        (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($iv)
+        $aes = New-Object System.Security.Cryptography.RijndaelManaged
+        $aes.KeySize = 256; $aes.BlockSize = 128
+        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+        $aes.Key = $key; $aes.IV = $iv
+        $plainBytes = [Text.Encoding]::UTF8.GetBytes($cfKey)
+        $encBytes = $aes.CreateEncryptor().TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+        $hmac = New-Object System.Security.Cryptography.HMACSHA256($key)
+        $hmacBytes = $hmac.ComputeHash($encBytes)
+        $out = New-Object byte[] (16 + 32 + $encBytes.Length)
+        [Array]::Copy($iv, 0, $out, 0, 16)
+        [Array]::Copy($hmacBytes, 0, $out, 16, 32)
+        [Array]::Copy($encBytes, 0, $out, 48, $encBytes.Length)
+        $enc = "AES-HMAC|" + [Convert]::ToBase64String($out)
+    }
+    $content = $script:CfKeyPlaceholder.Replace('public static readonly string Encrypted = "";',
+        "public static readonly string Encrypted = `"$enc`";")
     [System.IO.File]::WriteAllText($genFile, $content, [System.Text.Encoding]::UTF8)
     if ($cfKey) {
-        # 注入校验：读回生成文件确认混淆值已写入（防替换漏执行 → 带空值上生产线）
+        # 注入校验：读回生成文件确认密文已写入（防替换漏执行 → 带空值上生产线）
         $back = Get-Content $genFile -Raw
-        if ($back -notmatch ('Obfuscated = "' + [regex]::Escape($obf) + '"')) {
-            throw "[cf-key] 注入校验失败：生成文件未写入混淆值——终止发布，检查磁盘权限"
+        if ($back -notmatch ('Encrypted = "' + [regex]::Escape($enc) + '"')) {
+            throw "[cf-key] 注入校验失败：生成文件未写入密文——终止发布，检查磁盘权限"
         }
-        Write-Host "[cf-key] 已注入内置 CF key（来自 LATTICE_CF_KEY），校验通过" -ForegroundColor Green
+        Write-Host "[cf-key] 已注入内置 CF key（AES-HMAC 加密，来自 LATTICE_CF_KEY），校验通过" -ForegroundColor Green
     } else {
         Write-Host "[cf-key] 未设 LATTICE_CF_KEY → 内置 key 为空（用户自填 / 官网跳转平替）" -ForegroundColor DarkGray
     }
@@ -159,22 +247,10 @@ Write-Host "  -> $finalSelf"
 Write-Host "  -> $finalLite"
 Write-Host "  -> $(Join-Path $out '使用说明.txt')"
 
-# 5) 8-19 安全收尾：注入结束后恢复空占位模板——混淆值绝不留在工作区。
-# （git add -A 会把带值文件整体提交进仓库——8-19 实锤：+7 移位+base64 可逆，key 泄漏进公开历史）
+# 5) 8-19 安全收尾：注入结束后恢复空占位模板——密文绝不留在工作区。
+# （git add -A 会把带值文件整体提交进仓库——8-19 实锤：混淆值可逆，key 泄漏进公开历史；
+#  AES-HMAC 密文同样不能留：二进制可逆推理，占位必须恢复）
 $genFile = Join-Path $root "src\Launcher.Core\Services\BundledCfKeyGen.cs"
-$placeholder = @"
-namespace Launcher.Core.Services;
-
-/// <summary>构建注入生成——勿手改/勿提交含 key 版本（发布.ps1 覆盖）</summary>
-internal static class BundledCfKeyGen
-{
-    public static readonly string Obfuscated = "";
-
-    /// <summary>预留字段（构建注入模板同步用）</summary>
-    public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
-}
-
-"@
-# } 后留空行 → 占位内容带文件尾换行（与 git 模板字节一致，发布后 git status 保持干净）
-[System.IO.File]::WriteAllText($genFile, $placeholder, [System.Text.Encoding]::UTF8)
+# 模板自带文件尾换行（与 git 模板字节一致，发布后 git status 保持干净）
+[System.IO.File]::WriteAllText($genFile, $script:CfKeyPlaceholder, [System.Text.Encoding]::UTF8)
 Write-Host "[5/5] 注入占位已恢复（key 不留工作区）" -ForegroundColor DarkGray
