@@ -59,6 +59,11 @@
                             <Border Classes="modcard" Background="Transparent"
                                     Padding="12,9" BorderBrush="{DynamicResource BorderColor}"
                                     BorderThickness="0,0,0,1">
+                                <Border.Transitions>
+                                    <Transitions>
+                                        <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                    </Transitions>
+                                </Border.Transitions>
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
                                     <!-- favicon（失败降级首字母块） -->
                                     <Grid Width="36" Height="36" VerticalAlignment="Center">

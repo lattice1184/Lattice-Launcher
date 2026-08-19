@@ -138,6 +138,11 @@
                                     <Border Classes="modcard" Background="Transparent"
                                             Padding="10,8" BorderBrush="{DynamicResource BorderColor}"
                                             BorderThickness="0,0,0,1">
+                                        <Border.Transitions>
+                                            <Transitions>
+                                                <BrushTransition Property="Background" Duration="0:0:0.15"/>
+                                            </Transitions>
+                                        </Border.Transitions>
                                         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
                                             <Border Width="40" Height="40" CornerRadius="{StaticResource RadiusLarge}"
                                                     ClipToBounds="True" Background="{DynamicResource BgActive}"
