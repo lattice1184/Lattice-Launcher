@@ -512,6 +512,10 @@ public partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     public void RemoveBackgroundImage() => BackgroundImagePathText = "";
 
+    /// <summary>设置-游戏目录「打开文件夹」：explorer 定位当前安装目录</summary>
+    [RelayCommand]
+    private void OpenGameDirectory() => FolderOpener.Open(GameDirectory.InstallDir());
+
     /// <summary>保存并应用外观（写盘 + 持久应用）</summary>
     [RelayCommand]
     private void SaveAppearance()
