@@ -28,7 +28,11 @@ public partial class DownloadViewModel : ViewModelBase
     /// <summary>下载历史（终态任务记录，跨会话保持）</summary>
     public ObservableCollection<DownloadHistoryEntry> History { get; } = [];
 
-    private readonly HashSet<DownloadTask> _recorded = [];
+    /// <summary>8-19 内存瘦身：终态任务 → 终态时间戳（此前 HashSet 永久持有——组任务保留整个
+    /// Children 子树（每库/每模组一个子任务，含 CTS/TCS/闭包），长会话数千任务常驻数十 MB）。
+    /// 终态 10 分钟后剪掉；历史记录已有 DownloadHistoryService 持久层兜底</summary>
+    private readonly Dictionary<DownloadTask, long> _recorded = [];
+    private const long RecordedKeepMs = 10 * 60 * 1000;
 
     /// <summary>跳转②来源页（入队时经 NavigateToDownloadQueue(returnTo) 设置；任务终态跳回一次后清空）</summary>
     private string? _returnTo;
@@ -159,7 +163,8 @@ public partial class DownloadViewModel : ViewModelBase
         if (e.PropertyName != nameof(DownloadTask.State)) return;
         if (sender is not DownloadTask t) return;
         if (t.State is not (DownloadTaskState.Completed or DownloadTaskState.Failed or DownloadTaskState.Canceled)) return;
-        if (!_recorded.Add(t)) return; // 终态只记一次（暂停 Paused 不是终态）
+        if (!_recorded.TryAdd(t, Environment.TickCount64)) return; // 终态只记一次（暂停 Paused 不是终态）
+        PruneRecorded();
         DownloadHistoryService.Record(t);
         // 完成/失败弹 Toast（滑入动画由 ToastHost 处理）；8-18 首败将自动重试时抑制「失败」Toast——
         // 重试提示由 OnAutoRetryScheduled 弹（一条红 Toast，防双弹）；重试耗尽终败照常
@@ -174,6 +179,14 @@ public partial class DownloadViewModel : ViewModelBase
             _returnTo = null;
             Avalonia.Threading.Dispatcher.UIThread.Post(() => MainViewModel.Current?.NavigateTo(page));
         }
+    }
+
+    /// <summary>8-19 剪枝：移除 10 分钟前的终态任务（任务对象与其 Children 子树可回收）</summary>
+    private void PruneRecorded()
+    {
+        var cutoff = Environment.TickCount64 - RecordedKeepMs;
+        foreach (var (t, ts) in _recorded.Where(kv => kv.Value < cutoff).ToList())
+            _recorded.Remove(t);
     }
 
     private void ReloadHistory()

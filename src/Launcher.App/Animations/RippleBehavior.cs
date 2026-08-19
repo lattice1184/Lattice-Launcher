@@ -28,6 +28,13 @@ public static class RippleBehavior
         EnabledProperty.Changed.AddClassHandler<Control>(OnEnabledChanged);
     }
 
+    /// <summary>8-19 内存瘦身：控件移出视觉树（切页销毁）即释放缓存——此前 Hosts 永久持有已销毁按钮
+    /// 及其 Canvas，按钮子树无法 GC（每次切页都有新按钮挂载，长时间会话累积）</summary>
+    private static void OnDetached(object? s, VisualTreeAttachmentEventArgs e)
+    {
+        if (s is Control c) Hosts.TryRemove(c, out _);
+    }
+
     public static bool GetEnabled(Visual v) => v.GetValue(EnabledProperty);
     public static void SetEnabled(Visual v, bool value) => v.SetValue(EnabledProperty, value);
 
@@ -37,11 +44,14 @@ public static class RippleBehavior
         {
             c.PointerPressed += OnPressed;
             if (c is TemplatedControl tc) tc.TemplateApplied += OnTemplateApplied;
+            c.DetachedFromVisualTree += OnDetached;
         }
         else
         {
             c.PointerPressed -= OnPressed;
             if (c is TemplatedControl tc) tc.TemplateApplied -= OnTemplateApplied;
+            c.DetachedFromVisualTree -= OnDetached;
+            Hosts.TryRemove(c, out _);
         }
     }
 

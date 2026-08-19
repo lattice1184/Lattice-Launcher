@@ -55,6 +55,8 @@ public partial class App : Application
                     window?.ApplyBackgroundImage(mainVm.Settings.BackgroundImagePathText);
                 };
             }
+            // 8-19 内存瘦身：图片磁盘缓存后台清理（30 天前的图标文件），不阻塞启动
+            _ = Task.Run(() => ImageLoader.CleanupDiskCache());
             // 启动序列在 Opened 里触发（小窗 logo → 窗口放大）；这里同步做初始化，任一失败只记日志不阻止窗口出现
             // 启动时确保自建游戏目录结构（D 盘优先；无 D 盘回退 Downloads\YanKa Launcher\.minecraft）
             Guard("GameDirectory.EnsureDefault", GameDirectory.EnsureDefault);

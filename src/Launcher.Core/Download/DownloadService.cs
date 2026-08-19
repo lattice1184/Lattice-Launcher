@@ -17,8 +17,16 @@ namespace Launcher.Core.Download;
 /// </summary>
 public sealed class DownloadService
 {
-    /// <summary>同目标文件并发下载锁（同一 destPath 串行——避免并发写同一 jar 写坏）</summary>
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks = new();
+    /// <summary>同目标文件并发下载锁（同一 destPath 串行——避免并发写同一 jar 写坏）。
+    /// 8-19 内存瘦身：+使用计数用完即删——旧实现只增不减（每下载一个文件驻留 entry：
+    /// 路径串 + SemaphoreSlim + 内核句柄），长会话数千 entry 数 MB 且永不回收</summary>
+    private sealed class FileLockEntry
+    {
+        public readonly SemaphoreSlim Sem = new(1, 1);
+        public int Users;
+    }
+
+    private static readonly ConcurrentDictionary<string, FileLockEntry> FileLocks = new();
 
     // 256KB 以上走 8 连接分片：国内直连 Modrinth CDN 单连接被限速（几十 KB/s），
     // 多连接分片可显著提速；弱网分片失败自动回退单连接（DownloadChunkedAsync catch）
@@ -232,16 +240,29 @@ public sealed class DownloadService
         string url, string destPath, string? expectedSha1, long? expectedSize,
         DownloadProgressHandler? progress = null, CancellationToken ct = default)
     {
-        // 同目标串行（并发任务下载同一 jar 时避免互相覆盖/写坏）
-        var fileLock = FileLocks.GetOrAdd(destPath, _ => new SemaphoreSlim(1, 1));
-        await fileLock.WaitAsync(ct);
+        // 同目标串行（并发任务下载同一 jar 时避免互相覆盖/写坏）。
+        // 8-19 用完即删：Users 归零且字典仍指向本条目才 TryRemove（条件删除原子）；
+        // 等待期间条目被删的竞态 → 校验字典指向 → 不成立则释放重试一轮（串行语义不破）
+        FileLockEntry entry;
+        while (true)
+        {
+            entry = FileLocks.GetOrAdd(destPath, _ => new FileLockEntry());
+            Interlocked.Increment(ref entry.Users);
+            await entry.Sem.WaitAsync(ct);
+            if (FileLocks.TryGetValue(destPath, out var cur) && ReferenceEquals(cur, entry))
+                break;
+            entry.Sem.Release(); // 条目已被替换：让出，重试拿新条目
+            Interlocked.Decrement(ref entry.Users);
+        }
         try
         {
             await DownloadFileCoreAsync(url, destPath, expectedSha1, expectedSize, progress, ct);
         }
         finally
         {
-            fileLock.Release();
+            entry.Sem.Release();
+            if (Interlocked.Decrement(ref entry.Users) == 0)
+                FileLocks.TryRemove(new KeyValuePair<string, FileLockEntry>(destPath, entry));
         }
     }
 

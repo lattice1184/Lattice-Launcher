@@ -67,12 +67,37 @@ public static class ImageLoader
     /// <summary>url → 最近失败时间戳（8-18 替代永久 null 缓存）</summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _failedAt = new();
 
-    /// <summary>容量裁剪：超过上限整体清空（近似 LRU 的最简实现——位图重新解码有磁盘缓存兜底）</summary>
+    /// <summary>容量裁剪：超过上限整体清空（近似 LRU 的最简实现——位图重新解码有磁盘缓存兜底）。
+    /// 8-19 内存瘦身：失败时间戳同步剪枝——窗外的条目已无意义（下次失败会重新覆盖），只增不减长期累积</summary>
     private static void TrimIfNeeded()
     {
+        var cutoff = Environment.TickCount64 - FailRetryMs;
+        foreach (var (url, ts) in _failedAt.Where(kv => kv.Value < cutoff))
+            _failedAt.TryRemove(url, out _);
         if (Cache.Count <= CacheMaxEntries) return;
         foreach (var key in Cache.Keys)
             Cache.TryRemove(key, out _);
+    }
+
+    /// <summary>磁盘缓存清理（8-19 启动 fire-and-forget）：删除超过 30 天未访问的缓存文件——
+    /// imgcache 里的图标 URL 随版本更新会永久失效（旧项目页/已删模组），磁盘只增不减</summary>
+    public static void CleanupDiskCache(TimeSpan? maxAge = null)
+    {
+        maxAge ??= TimeSpan.FromDays(30);
+        try
+        {
+            if (!Directory.Exists(CacheDir)) return;
+            var cutoff = DateTime.UtcNow - maxAge.Value;
+            foreach (var file in Directory.EnumerateFiles(CacheDir))
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private static async Task<Bitmap?> DownloadAsync(string url, int decodeWidth)
