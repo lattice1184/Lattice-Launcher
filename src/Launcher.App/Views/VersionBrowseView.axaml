@@ -190,24 +190,21 @@
                             <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.ModsCountText}" FontSize="13" FontWeight="SemiBold"/>
-                                    <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                    <Button Content="打开 mods 文件夹" Classes="ghost" FontSize="12" Padding="8,3" Cursor="Hand"
                                             HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenModsFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.ModsPreview}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="vm:ModItemVM">
-                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
+                                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,2">
                                                     <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextSecondary}"
                                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
                                                                VerticalAlignment="Center"/>
-                                                    <Button Grid.Column="2" Content="{Binding UpdateText}" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.CheckOrUpdateCommand}"
-                                                            CommandParameter="{Binding}" IsEnabled="{Binding CanCheckUpdate}"/>
-                                                    <Button Grid.Column="3" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
+                                                    <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.ToggleModCommand}"
                                                             CommandParameter="{Binding}"/>
-                                                    <Button Grid.Column="4" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
+                                                    <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.DeleteModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
@@ -224,7 +221,7 @@
                             <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.PacksCountText}" FontSize="13" FontWeight="SemiBold"/>
-                                    <Button Content="打开 resourcepacks 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                    <Button Content="打开 resourcepacks 文件夹" Classes="ghost" FontSize="12" Padding="8,3" Cursor="Hand"
                                             HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenPacksFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.PacksPreview}">
                                         <ItemsControl.ItemTemplate>
@@ -235,17 +232,17 @@
                                                     <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
                                                                VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.ToggleModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.DeleteModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="{Binding Detail.Manage.ShaderCountText}" FontSize="13" FontWeight="SemiBold" Margin="0,6,0,0"/>
-                                    <Button Content="打开 shaderpacks 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                    <Button Content="打开 shaderpacks 文件夹" Classes="ghost" FontSize="12" Padding="8,3" Cursor="Hand"
                                             HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenShaderFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.ShaderPreview}">
                                         <ItemsControl.ItemTemplate>
@@ -256,10 +253,10 @@
                                                     <TextBlock Grid.Column="1" Text="{Binding SizeText}" Classes="dim" FontSize="10"
                                                                VerticalAlignment="Center"/>
                                                     <Button Grid.Column="2" Content="启停" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.ToggleModCommand}"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.ToggleModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                     <Button Grid.Column="3" Content="删除" Classes="danger" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.DeleteModCommand}"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.DeleteModCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
@@ -272,7 +269,7 @@
                             <Border Classes="card" Padding="12" IsVisible="{Binding Detail.Manage, Converter={x:Static ObjectConverters.IsNotNull}}">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="{Binding Detail.Manage.SavesCountText}" FontSize="13" FontWeight="SemiBold"/>
-                                    <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="11" Padding="8,3"
+                                    <Button Content="打开 saves 文件夹" Classes="ghost" FontSize="12" Padding="8,3" Cursor="Hand"
                                             HorizontalAlignment="Left" Command="{Binding Detail.Manage.OpenSavesFolderCommand}"/>
                                     <ItemsControl ItemsSource="{Binding Detail.Manage.Saves}">
                                         <ItemsControl.ItemTemplate>
@@ -284,7 +281,7 @@
                                                         <TextBlock Text="{Binding LastPlayedText}" Classes="dim" FontSize="10"/>
                                                     </StackPanel>
                                                     <Button Grid.Column="1" Content="打开" Classes="ghost" FontSize="10" Padding="8,2"
-                                                            Command="{Binding $parent[Border].((vm:InstalledVersionDetailVM)DataContext).Manage.OpenSaveFolderCommand}"
+                                                            Command="{Binding $parent[UserControl].((vm:VersionBrowseViewModel)DataContext).Detail.Manage.OpenSaveFolderCommand}"
                                                             CommandParameter="{Binding}"/>
                                                 </Grid>
                                             </DataTemplate>
@@ -308,7 +305,7 @@
                                         <Button Content="导出整合包（.zip 格式）" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.ExportModpackCommand}"
                                                 IsEnabled="{Binding !Detail.Manage.IsBusy}"/>
-                                        <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4"
+                                        <Button Content="打开文件夹" Classes="ghost" FontSize="12" Padding="12,5" Margin="0,0,8,4" Cursor="Hand"
                                                 Command="{Binding Detail.Manage.OpenFolderCommand}"/>
                                         <Button Content="删除" Classes="danger" FontSize="12" Padding="12,5" Margin="0,0,8,4"
                                                 Command="{Binding Detail.Manage.DeleteCommand}"/>

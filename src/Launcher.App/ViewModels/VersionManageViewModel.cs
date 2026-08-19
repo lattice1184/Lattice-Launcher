@@ -145,8 +145,17 @@ public partial class VersionManageViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleMod(ModItemVM mod)
+    private async Task ToggleMod(ModItemVM mod)
     {
+        // 8-19 二次确认（用户反馈）：启停/删除都是误触不可逆操作，先问再动
+        var owner = DialogService.MainWindow();
+        if (owner is null) return;
+        var enabling = mod.Path.EndsWith(".disabled", StringComparison.OrdinalIgnoreCase);
+        var name = Path.GetFileName(mod.Path);
+        var ok = enabling
+            ? await DialogService.Confirm(owner, $"启用 {name}？", "启用 MOD", "启用", "取消")
+            : await DialogService.Confirm(owner, $"禁用 {name}？", "禁用 MOD", "禁用", "取消");
+        if (!ok) return;
         try
         {
             var path = mod.Path;
@@ -160,8 +169,12 @@ public partial class VersionManageViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void DeleteMod(ModItemVM mod)
+    private async Task DeleteMod(ModItemVM mod)
     {
+        var owner = DialogService.MainWindow();
+        if (owner is null) return;
+        if (!await DialogService.Confirm(owner, $"删除 {Path.GetFileName(mod.Path)}？此操作不可撤销。", "删除文件", "删除", "取消"))
+            return;
         try { File.Delete(mod.Path); } catch { }
         ReloadMods();
     }
@@ -200,82 +213,6 @@ public partial class VersionManageViewModel : ViewModelBase
 
     [RelayCommand]
     private void OpenShaderFolder() => OpenFolder(Path.Combine(RootDir, "shaderpacks"));
-
-    // ---------- MOD 更新检查（8-14）：文件名 slug → Modrinth 搜项目 → 最新版本对比 → 有更新可一键替换 ----------
-
-    private readonly EcosystemService _eco = new();
-    private readonly DownloadService _dl = new();
-
-    /// <summary>检查/更新二合一（行按钮）：未查则检查，有更新则应用更新</summary>
-    [RelayCommand]
-    private async Task CheckOrUpdateAsync(ModItemVM mod)
-    {
-        if (mod.IsChecking) return;
-        if (mod.HasUpdate) await ApplyUpdateAsync(mod);
-        else await CheckUpdateAsync(mod);
-    }
-
-    private async Task CheckUpdateAsync(ModItemVM mod)
-    {
-        mod.IsChecking = true;
-        try
-        {
-            // slug：文件名首段（去 .jar/.disabled），小写字母数字——如 alexscaves-2.0.2.jar → alexscaves
-            var baseName = mod.Name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase)
-                ? mod.Name[..^".jar".Length] : mod.Name;
-            var slug = Regex.Match(baseName, @"^[a-zA-Z][a-zA-Z0-9_-]*").Value.ToLowerInvariant();
-            if (string.IsNullOrEmpty(slug)) { mod.UpdateText = "未找到"; return; }
-
-            var resp = await _eco.SearchAsync(ProjectType.Mod, slug, limit: 1, offset: 0);
-            var hit = resp?.Hits?.FirstOrDefault();
-            if (hit is null) { mod.UpdateText = "未找到"; return; }
-
-            var latest = await _eco.FindBestVersionAsync(hit.ProjectId, ExtractMcVersion(_versionId), null);
-            var file = latest is null ? null : EcosystemService.PickPrimaryFile(latest.Files);
-            if (latest is null || file is null) { mod.UpdateText = "已最新"; return; }
-
-            // 版本号相同（或新版文件名已存在）→ 已最新
-            if (string.Equals(CurrentVersionOf(mod.Name), latest.VersionNumber, StringComparison.OrdinalIgnoreCase))
-            { mod.UpdateText = "已最新"; return; }
-
-            mod.UpdateUrl = file.Url;
-            mod.UpdateSha1 = file.Hashes?.Sha1;
-            mod.UpdateSize = file.Size;
-            mod.UpdateVersion = latest.VersionNumber;
-            mod.UpdateFileName = file.FileName;
-            mod.UpdateText = $"更新 {latest.VersionNumber}";
-            mod.HasUpdate = true;
-        }
-        catch { mod.UpdateText = "检查失败"; }
-        finally { mod.IsChecking = false; }
-    }
-
-    private async Task ApplyUpdateAsync(ModItemVM mod)
-    {
-        if (mod.UpdateUrl is null || mod.UpdateFileName is null) return;
-        mod.IsChecking = true;
-        try
-        {
-            var dir = Path.Combine(RootDir, "mods");
-            Directory.CreateDirectory(dir);
-            var target = Path.Combine(dir, mod.UpdateFileName);
-            var tmp = target + ".tmp";
-            await _dl.DownloadFileAsync(mod.UpdateUrl, tmp, mod.UpdateSha1, mod.UpdateSize, null, CancellationToken.None);
-            // 新文件名与旧不同则删旧（保持启停态：新文件默认启用）
-            if (!string.Equals(Path.GetFileName(target), mod.Name, StringComparison.OrdinalIgnoreCase))
-            { try { File.Delete(mod.Path); } catch { } }
-            File.Move(tmp, target, true);
-            mod.UpdateText = "已最新";
-            mod.HasUpdate = false;
-            ReloadMods();
-        }
-        catch { mod.UpdateText = "更新失败"; }
-        finally { mod.IsChecking = false; }
-    }
-
-    /// <summary>文件名中的版本号（alexscaves-2.0.2.jar → 2.0.2；匹配不到返回空）</summary>
-    private static string? CurrentVersionOf(string name)
-        => Regex.Match(name, @"\d+(\.\d+){1,3}").Value is { Length: > 0 } v ? v : null;
 
     // ---------- 存档（借用 PCL.Core SaveManager 解析 level.dat） ----------
 
@@ -642,32 +579,6 @@ public sealed partial class ModItemVM : ObservableObject
     }
 
     public string SizeText => SizeBytes >= 1024 * 1024 ? $"{SizeBytes / 1024.0 / 1024:0.0} MB" : $"{SizeBytes / 1024:0} KB";
-
-    /// <summary>检查中（按钮禁用）</summary>
-    [ObservableProperty]
-    public partial bool IsChecking { get; set; }
-
-    /// <summary>有可更新版本（显示「更新 vX」）</summary>
-    [ObservableProperty]
-    public partial bool HasUpdate { get; set; }
-
-    /// <summary>更新按钮文案：检查更新 / 检查中… / 更新 vX / 已最新 / 未找到 / 检查失败</summary>
-    [ObservableProperty]
-    public partial string UpdateText { get; set; } = "检查更新";
-
-    /// <summary>最新版下载信息（URL / SHA1 / 大小 / 版本号 / 文件名）</summary>
-    public string? UpdateUrl { get; set; }
-    public string? UpdateSha1 { get; set; }
-    public long UpdateSize { get; set; }
-    public string? UpdateVersion { get; set; }
-    public string? UpdateFileName { get; set; }
-
-    /// <summary>行内更新按钮可用性（检查中或已到最新时禁用）</summary>
-    public bool CanCheckUpdate => !IsChecking && !HasUpdate && UpdateText != "已最新";
-
-    partial void OnIsCheckingChanged(bool value) => OnPropertyChanged(nameof(CanCheckUpdate));
-    partial void OnHasUpdateChanged(bool value) => OnPropertyChanged(nameof(CanCheckUpdate));
-    partial void OnUpdateTextChanged(string value) => OnPropertyChanged(nameof(CanCheckUpdate));
 }
 
 /// <summary>存档项（世界名 / 最后游玩 / 路径，来自 PCL.Core SaveManager 解析 level.dat）</summary>
