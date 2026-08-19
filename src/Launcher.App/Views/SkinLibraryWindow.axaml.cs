@@ -10,6 +10,7 @@ public partial class SkinLibraryWindow : Window
     public SkinLibraryWindow()
     {
         InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
         // 关闭即取消设备码轮询——防窗口关了后台还在空轮询
         Closing += (_, _) =>
         {

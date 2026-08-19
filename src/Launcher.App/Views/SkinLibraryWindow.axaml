@@ -9,7 +9,7 @@
         MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterOwner">
 
-    <DockPanel Margin="14">
+    <DockPanel x:Name="Root" Margin="14">
         <!-- 顶部状态区：未连接 / 连接中（配对码）/ 已连接（角色选择） -->
         <Border DockPanel.Dock="Top" Classes="card" Padding="12" Margin="0,0,0,10">
             <StackPanel Spacing="8">

@@ -4,5 +4,9 @@ namespace Launcher.App.Views;
 
 public partial class ServerWindow : Window
 {
-    public ServerWindow() => InitializeComponent();
+    public ServerWindow()
+    {
+        InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
+    }
 }

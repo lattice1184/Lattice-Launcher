@@ -41,6 +41,7 @@ public partial class StorageWindow : Window
     public StorageWindow()
     {
         InitializeComponent();
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root);
         DataContext = this;
         Opened += async (_, _) => await LoadAsync();
     }

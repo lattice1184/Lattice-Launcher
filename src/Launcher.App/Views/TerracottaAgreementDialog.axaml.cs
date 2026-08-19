@@ -14,7 +14,7 @@ public partial class TerracottaAgreementDialog : Window
     public TerracottaAgreementDialog(TerracottaProvisioningService provisioning)
     {
         InitializeComponent();
-        Opened += (_, _) => UiAnim.PopIn(Root); // 弹入动画（项目对话框风格）
+        global::Launcher.App.Animations.UiAnim.AttachDialog(this, Root); // 8-19 开窗淡入+右滑、关窗滑出动画
         DataContext = new TerracottaAgreementDialogViewModel(
             provisioning,
             result =>
