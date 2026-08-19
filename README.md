@@ -75,10 +75,10 @@ GitHub 上的文件，启动器会同时从这些源中筛出胜利者并起跑�
 
 ## 工程与安全
 
-- 自动化测试 680+ 项（下载引擎、登录、JSON 解析、主题数学等，CI 可跑）
+- 自动化测试 700+ 项（下载引擎、登录、JSON 解析、主题数学等）
 - 发布脚本一键签名（自签名；SmartScreen 提示「更多信息 → 仍要运行」属正常，见下）
-- CurseForge API Key：构建时注入并混淆，源码仓库里没有明文；用户设置里也可以填自己的 Key并检查是否有效(并且离开输入框会自动DPAPI加密到内存以最大程度防护你的KEY不会泄露)
-- GitHub Token：支持，同样 DPAPI 加密
+- CurseForge 下载：开箱即用，无需任何配置；想用自己的 Key 也可以在设置里填，离开输入框自动加密保护
+- GitHub Token：可选配置，同样加密保护
 
 ## 安装
 
@@ -93,25 +93,17 @@ GitHub 上的文件，启动器会同时从这些源中筛出胜利者并起跑�
 **Windows 拦截说明**：自签名发布者，SmartScreen 提示「更多信息 → 仍要运行」属正常。Win11 新装机会被智能应用控制（SAC）无提示阻止——不信任此启动器的话，可以 Win+S 搜索「智能」，打开「智能应用控制」页面关闭该功能。
 ## 构建
 
-> 网络较劲的备胎方案：国内连 api.curseforge.com 不稳时，可以自建 Cloudflare Worker 的免费代理
-> （设置页「CF API 地址覆盖」填入即用），教程见 [docs/cf-proxy.md](docs/cf-proxy.md)。
-
 ```bash
 dotnet build            # Debug 构建
 ```
 
-发布（Windows）：`powershell -ExecutionPolicy Bypass -File 发布.ps1`
-
-产物在 `发布\`：`Lattice启动器.exe`（自包含，双击即用）与 `Lattice启动器-轻量版.exe`（需 .NET 10 Runtime）。
+发布（Windows）：`dotnet publish` 后运行签名脚本，产物在 `发布\`：`Lattice启动器.exe`（自包含，双击即用）与 `Lattice启动器-轻量版.exe`（需 .NET 10 Runtime）。
 
 ## 目录结构
 
 ```
 src/          # 源码（Launcher.App / Launcher.Core / Launcher.Animation / Tests）
-PCL.Core/     # vendored PCL-CE 核心库（Apache-2.0，见 PATCHES.md）
-发布/         # 一键发布产物（勿手改）
-发布.ps1      # 一键发布脚本
-scripts/      # 签名等辅助脚本
+PCL.Core/     # vendored PCL-CE 核心库（Apache-2.0，见 NOTICE）
 ```
 
 ## 许可
