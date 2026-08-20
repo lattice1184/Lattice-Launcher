@@ -702,7 +702,7 @@ public partial class EcosystemViewModel : ViewModelBase
             path = await _eco.InstallAsync(projectId, version, instanceName, type, null, ct, gameDirOverride);
         else
         {
-            var child = ctx.AddChild($"主文件 {version.Name}", 0,
+            var child = ctx.AddChild($"主文件 {version.Name}", EcosystemService.PickPrimaryFile(version.Files)?.Size ?? 0,
                 (p, c) => _eco.InstallAsync(projectId, version, instanceName, type, p, c, gameDirOverride));
             await child.Completion.WaitAsync(ct);
         }

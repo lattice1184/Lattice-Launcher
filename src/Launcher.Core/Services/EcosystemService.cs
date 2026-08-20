@@ -291,10 +291,11 @@ public sealed class EcosystemService
     {
         var report = new DependencyInstallReport();
 
-        // 1. 主文件
+        // 1. 主文件（8-19 生态修缮：weight 传真实大小——此前 0 导致组聚合 total=0 进度恒空）
         try
         {
-            var mainPath = await InstallOneAsync(ctx, $"主文件 {version.Name}", 0,
+            var mainPath = await InstallOneAsync(ctx, $"主文件 {version.Name}",
+                PickPrimaryFile(version.Files)?.Size ?? 0,
                 (p, c) => InstallAsync(projectId, version, instanceId, type, p, c, gameDirOverride), ct);
             report.Installed.Add(new InstalledDependency(projectId, version.Id, mainPath));
         }
@@ -304,7 +305,8 @@ public sealed class EcosystemService
             return report;
         }
 
-        // 2. 解析依赖树
+        // 2. 解析依赖树——8-19 生态修缮：解析是网络密集（逐依赖拉版本列表），放子任务占位，
+        // 组 Stage 显示「解析依赖」而非无响应（原实现同步阻塞且组内无活跃子任务 = 卡死观感）
         var resolver = new ModDependencyResolver();
         var request = new ModDependencyRequest
         {
@@ -313,7 +315,22 @@ public sealed class EcosystemService
             RequiredDependencies = EcosystemDependencyAdapter.ToDependencyReferences(version),
             ProjectResolver = EcosystemDependencyAdapter.CreateResolver(this, gameVersion, loader),
         };
-        var result = resolver.Resolve(request);
+        ModDependencyResolutionResult result;
+        if (ctx is not null)
+        {
+            ModDependencyResolutionResult? resolved = null;
+            var child = ctx.AddChild("解析依赖", 0, (_, _) => Task.Run(() =>
+            {
+                resolved = resolver.Resolve(request);
+                return Task.CompletedTask;
+            }));
+            await child.Completion.WaitAsync(ct);
+            result = resolved ?? new ModDependencyResolutionResult();
+        }
+        else
+        {
+            result = await Task.Run(() => resolver.Resolve(request), ct);
+        }
 
         // 3. 依赖并行安装（依赖均为 MOD 类型，装到实例 mods 目录；结果收集加锁——多线程写 report）
         using var gate = new SemaphoreSlim(4);
@@ -333,7 +350,8 @@ public sealed class EcosystemService
                         lock (report) report.Failed.Add(new FailedDependency(dep.ProjectId, "依赖版本已不存在"));
                         return;
                     }
-                    var path = await InstallOneAsync(ctx, $"依赖 {depVersion.Name}", 0,
+                    var path = await InstallOneAsync(ctx, $"依赖 {depVersion.Name}",
+                        PickPrimaryFile(depVersion.Files)?.Size ?? 0,
                         (p, c) => InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, p, c, gameDirOverride), ct);
                     lock (report) report.Installed.Add(new InstalledDependency(dep.ProjectId, depVersion.Id, path));
                 }

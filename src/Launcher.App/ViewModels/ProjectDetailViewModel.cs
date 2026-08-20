@@ -637,7 +637,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
                     path = await _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, dp, t, gameDirFor);
                 else
                 {
-                    var child = gctx.AddChild($"主文件 {version.Name}", 0,
+                    var child = gctx.AddChild($"主文件 {version.Name}", EcosystemService.PickPrimaryFile(version.Files)?.Size ?? 0,
                         (p, c) => _eco.InstallAsync(_card.Id, version, instanceName, _card.Type, p, c, gameDirFor));
                     await child.Completion.WaitAsync(t);
                 }
