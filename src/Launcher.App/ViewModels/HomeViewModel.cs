@@ -299,6 +299,12 @@ public partial class HomeViewModel : ViewModelBase
                 var (loader, mc) = VersionScan.Inspect(dir, id);
                 InstalledVersions.Add(new VersionInstanceVM(id, LabelFor(id, dir), dir, loader, mc));
             }
+            // 8-19 修复：切走主页时 ReleaseData 清空列表但 SelectedVersion 保留旧对象——
+            // 重建后旧对象不在新列表 → 版本下拉显示空白（SelectedItem 不在 ItemsSource）但启动仍用旧对象（能启动）。
+            // 按名字重新匹配新对象；匹配不到置 null 走自动选第一个
+            if (SelectedVersion is { } sv
+                && !InstalledVersions.Any(v => v.Name.Equals(sv.Name, StringComparison.OrdinalIgnoreCase)))
+                SelectedVersion = null;
             if (InstalledVersions.Count > 0 && SelectedVersion is null)
                 SelectedVersion = InstalledVersions[0];
         }
