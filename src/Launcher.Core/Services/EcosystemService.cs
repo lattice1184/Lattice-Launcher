@@ -418,13 +418,22 @@ public sealed class EcosystemService
 
     public static string ResolveInstallPath(string gameDirectory, string instanceId, ProjectType type)
     {
+        var norm = gameDirectory.TrimEnd('\\', '/').Replace('\\', '/');
         if (type == ProjectType.Modpack)
+        {
+            // 幂等（8-19 生态修缮）：输入已是 downloads\modpacks（弹窗默认值/浏览选中落点）→ 不重复拼接
+            if (norm.EndsWith("downloads/modpacks", StringComparison.OrdinalIgnoreCase)) return gameDirectory;
             return Path.Combine(gameDirectory, "downloads", "modpacks");
+        }
         var sub = ResolveSubDir(type)!;
         // 8-19 第二批：落点跟随版本隔离设置，不再用「目录是否存在」猜——旧启发式在隔离开时
         // 把 mod 装进实例目录（游戏 game_directory=根、只读根 mods → 装完游戏不加载）；
         // 隔离关恒装共享目录；隔离开恒装实例目录（缺则创建——手改路径后新建实例也装对地方）
         var isolated = Launcher.Core.Utils.LauncherSettings.Current.VersionIsolation;
+        // 幂等（8-19 生态修缮）：输入已是最终落点不再重复拼接——隔离开识别 {base}\versions\{id}\{sub}；
+        // 隔离关识别 {base}\{sub}（PCL 式：弹窗默认值/浏览选中 mods 文件夹直达安装）
+        var needle = (isolated ? Path.Combine("versions", instanceId, sub) : sub).Replace('\\', '/');
+        if (norm.EndsWith(needle, StringComparison.OrdinalIgnoreCase)) return gameDirectory;
         var baseDir = isolated
             ? Path.Combine(gameDirectory, "versions", instanceId)
             : gameDirectory;

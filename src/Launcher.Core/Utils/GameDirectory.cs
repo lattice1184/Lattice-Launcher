@@ -103,6 +103,12 @@ public static class GameDirectory
             && x.Source is GameDirectorySource.OwnDefault or GameDirectorySource.Custom);
     }
 
+    /// <summary>8-19 生态修缮：MOD 安装落点基准——本启动器目录的实例装原目录；
+    /// PCL/官方等外来实例「只读不写」：启动器下载的东西一律归类到启动器自己的目录
+    /// （读 PCL 目录和往 PCL 目录里放是两回事）</summary>
+    public static string ModInstallBaseDir(string instanceDir)
+        => IsOwnInstallDir(instanceDir) ? instanceDir : InstallDir();
+
     /// <summary>解析 junction/符号链接到最终物理路径（尾部斜杠归一化；解析失败回退原路径）</summary>
     private static string ResolvePhysical(string dir)
     {

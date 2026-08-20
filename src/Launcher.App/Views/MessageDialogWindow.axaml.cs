@@ -60,7 +60,9 @@ public partial class MessageDialogWindow : Window
         var win = new MessageDialogWindow { Title = "确认安装位置" };
         win.MessageText.Text = "安装目录（可以改成别的实例目录或自定义文件夹）：";
         win.PathPanel.IsVisible = true;
-        win.PathInput.Text = gameDir;
+        // 8-19 生态修缮：默认直达最终落点（{base}\versions\{id}\mods）——PCL 式精确到 mods 文件夹
+        // （ResolveInstallPath 已幂等：这个值再算一遍仍是它本身，预览不重复拼接）
+        win.PathInput.Text = EcosystemService.ResolveInstallPath(gameDir, instanceId, type);
         win._instanceId = instanceId;
         win._pathType = type;
         win.UpdatePathPreview();

@@ -602,8 +602,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var loader = EcosystemService.GuessLoader(_instance?.Name ?? "");
             var instanceName = _instance?.Name ?? "modpack";
             // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2
+            // 8-19 生态修缮：外来（PCL/官方）实例只读不写——下载落点归类启动器目录
             var gameDirFor = _instance is { GameDir.Length: > 0 } inst
-                ? inst.GameDir
+                ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
                 : Launcher.Core.Utils.GameDirectory.InstallDir();
 
             // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
@@ -806,8 +807,9 @@ public partial class ProjectDetailViewModel : ViewModelBase
             var loader = _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null;
             var instanceName = _instance?.Name ?? "modpack";
             // MOD 落点：版本来源目录（PCL 扫描版本 → PCL 目录；自建版本 → 自建目录）——AF2
+            // 8-19 生态修缮：外来（PCL/官方）实例只读不写——下载落点归类启动器目录
             var gameDirFor = _instance is { GameDir.Length: > 0 } inst
-                ? inst.GameDir
+                ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
                 : Launcher.Core.Utils.GameDirectory.InstallDir();
 
             // 安装前路径确认（8-22 可编辑目录 + 实时预览落点）——null = 取消；改了就用新目录
