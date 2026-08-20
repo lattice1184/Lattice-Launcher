@@ -398,7 +398,7 @@ public partial class EcosystemViewModel : ViewModelBase
     {
         // AL63 中文分流：查询含中文 → MC百科汉化链路（Modrinth 索引是英文标题，中文查询 0 命中）
         var resp = McmodSearchService.ContainsChinese(Query)
-            ? await SlowQueryNotifier.WatchAsync(_eco.SearchChineseAsync(_type, Query, ct),
+            ? await SlowQueryNotifier.WatchAsync(_eco.SearchChineseAsync(_type, Query, gameVersion, loader, ct),
                 "正在通过 MC百科搜索中文结果（较慢），请稍候…", TimeSpan.FromSeconds(3))
             : await SlowQueryNotifier.WatchAsync(_eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
@@ -453,7 +453,7 @@ public partial class EcosystemViewModel : ViewModelBase
         // B5：中文 query 在「全部」双源模式也走 MC百科链（Modrinth 索引是英文，直搜 0 命中）
         var isChinese = Launcher.Core.Services.McmodSearchService.ContainsChinese(Query);
         var mrTask = isChinese
-            ? _eco.SearchChineseAsync(_type, Query, ct)
+            ? _eco.SearchChineseAsync(_type, Query, gameVersion, loader, ct)
             : _eco.SearchAsync(_type, Query, gameVersion, loader, category,
                 index: SelectedSort?.Index ?? EcosystemService.SortIndex.Relevance,
                 limit: PageSize, offset: CurrentPage * PageSize, ct);

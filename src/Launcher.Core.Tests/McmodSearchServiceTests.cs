@@ -54,12 +54,20 @@ public class McmodSearchServiceTests
     }
 
     [Fact]
-    public void ModAliasTable_Resolve_LongestMatchWins()
+    public void ModAliasTable_Resolve_MultiWordUnion()
     {
-        // 「钠扩展」必须命中 sodium-extra 而不是钠→sodium（最长匹配优先）
+        // 8-19 生态修缮：多词并集——「钠 锂」两词都命中（旧实现只中一个键，多词搜索丢一半）
+        var slugs = ModAliasTable.Resolve("钠 锂");
+        Assert.Contains("sodium", slugs);
+        Assert.Contains("lithium", slugs);
+    }
+
+    [Fact]
+    public void ModAliasTable_Resolve_SubstringKeepsSpecificSlug()
+    {
+        // 「钠扩展」仍必须含 sodium-extra（并集语义下 sodium 本体出现可接受——用户搜扩展看到本体无害）
         var slugs = ModAliasTable.Resolve("钠扩展");
         Assert.Contains("sodium-extra", slugs);
-        Assert.DoesNotContain("sodium", slugs);
     }
 
     [Fact]

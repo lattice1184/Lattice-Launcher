@@ -29,7 +29,8 @@ public sealed class EcosystemService
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("YanKa-Launcher/0.1");
         _downloads = downloads ?? new DownloadService();
         _gameDirectory = gameDirectory ?? GameDirectory.Detect();
-        _mcmod = mcmod ?? new McmodSearchService();
+        // 8-19 生态修缮：mcmod 搜索/详情页共享同一缓存目录（TTL 24h，重复搜索零网络）
+        _mcmod = mcmod ?? new McmodSearchService(cacheDir);
         // 8-16 批次 53：缓存目录可注入（测试隔离——磁盘缓存跨测试共享会污染请求计数断言）
         _cacheDir = cacheDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache");
@@ -38,9 +39,10 @@ public sealed class EcosystemService
     /// <summary>
     /// 中文搜索（AL63）：MC百科汉化链路——中文 → mcmod 条目 → 解 Modrinth slug → 项目详情 → 搜索结果。
     /// 无分页（mcmod 搜索不分页；结果上限 10）。中文查询走此路，英文查询走 SearchAsync。
+    /// 8-19 生态修缮：gameVersion/loader 命中项目按版本列表过滤（不支持该版本/加载器的项目不出现在结果）
     /// </summary>
     public async Task<ModrinthSearchResponse?> SearchChineseAsync(
-        ProjectType type, string query, CancellationToken ct = default)
+        ProjectType type, string query, string? gameVersion = null, string? loader = null, CancellationToken ct = default)
     {
         // 8-22 别名直搜优先（PCL 式精准）：中文 query 命中内置映射 → 直接查 Modrinth slug
         // （缓存秒回）——「钠」直接出 Sodium 本体；MC百科结果合并去重（<em> 高亮/无外链都不再挡）
@@ -56,6 +58,12 @@ public sealed class EcosystemService
                 var detail = await GetProjectAsync(aliasSlug, timeout.Token);
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!seen.Add(detail.Slug)) continue;
+                // 8-19 生态修缮：目标版本/加载器无匹配构建 → 过滤（版本列表走缓存，重复搜索零网络）
+                if (gameVersion is not null || loader is not null)
+                {
+                    var support = await GetVersionsAsync(detail.Id, gameVersion, NormalizeLoaderForDependency(loader), timeout.Token);
+                    if (support.Count == 0) continue;
+                }
                 hits.Add(new ModrinthSearchHit(detail.Id, detail.ProjectType, detail.Slug, "",
                     ModAliasTable.TitleFor(query, detail.Slug), detail.Description, detail.Categories, null,
                     detail.Versions, detail.IconUrl, detail.Downloads, detail.Follows,
@@ -79,6 +87,12 @@ public sealed class EcosystemService
                 if (detail is null || !detail.ProjectType.Equals(typeName, StringComparison.OrdinalIgnoreCase))
                     return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
                 if (!seen.Add(detail.Slug)) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle); // 别名已出，去重
+                // 8-19 生态修缮：目标版本/加载器无匹配构建 → 过滤（版本列表走缓存，重复搜索零网络）
+                if (gameVersion is not null || loader is not null)
+                {
+                    var support = await GetVersionsAsync(detail.Id, gameVersion, NormalizeLoaderForDependency(loader), timeout.Token);
+                    if (support.Count == 0) return (Hit: (ModrinthSearchHit?)null, item.ChineseTitle);
+                }
                 // 8-22 标题用 MC百科中文名（搜「钠」看到「钠」而不是 Sodium——用户友好）；
                 // 描述/图标/下载量仍取 Modrinth
                 return (Hit: (ModrinthSearchHit?)new ModrinthSearchHit(detail.Id, detail.ProjectType,

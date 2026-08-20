@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Launcher.Core.Download;
@@ -15,6 +16,56 @@ namespace Launcher.Core.Services;
 public sealed class McmodSearchService
 {
     private static readonly HttpClient Http = HttpClientPool.Create();
+
+    /// <summary>8-19 生态修缮：搜索页/详情页磁盘缓存 TTL（mcmod 静态 HTML 稳定，重复搜索零网络）</summary>
+    private static readonly long TtlSeconds = 24 * 3600;
+    private readonly string _cacheDir;
+
+    public McmodSearchService(string? cacheDir = null)
+        => _cacheDir = cacheDir ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "cache", "mcmod");
+
+    /// <summary>缓存文件：{dir}/{sha256(key)}.html，内容 = 8 字节 unix 时间戳 + HTML</summary>
+    private string CachePath(string key)
+        => Path.Combine(_cacheDir, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))) + ".html");
+
+    private async Task<string?> ReadCachedAsync(string key, CancellationToken ct)
+    {
+        try
+        {
+            var path = CachePath(key);
+            if (!File.Exists(path)) return null;
+            var bytes = await File.ReadAllBytesAsync(path, ct);
+            if (bytes.Length < 8) return null;
+            if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() - BitConverter.ToInt64(bytes, 0) > TtlSeconds) return null;
+            return Encoding.UTF8.GetString(bytes, 8, bytes.Length - 8);
+        }
+        catch { return null; }
+    }
+
+    private async Task WriteCachedAsync(string key, string html, CancellationToken ct)
+    {
+        try
+        {
+            Directory.CreateDirectory(_cacheDir);
+            var body = Encoding.UTF8.GetBytes(html);
+            var bytes = new byte[8 + body.Length];
+            BitConverter.GetBytes(DateTimeOffset.UtcNow.ToUnixTimeSeconds()).CopyTo(bytes, 0);
+            body.CopyTo(bytes, 8);
+            await File.WriteAllBytesAsync(CachePath(key), bytes, ct);
+        }
+        catch { /* 缓存失败无妨——下次直连 */ }
+    }
+
+    /// <summary>带缓存取页面：缓存命中（TTL 内）直读；否则网络 + 回写</summary>
+    private async Task<string?> GetPageAsync(string key, string url, CancellationToken ct)
+        => await ReadCachedAsync(key, ct) ?? await FetchAsync(url, ct);
+
+    private async Task<string?> FetchAsync(string url, CancellationToken ct)
+    {
+        try { return await Http.GetStringAsync(url, ct); }
+        catch { return null; }
+    }
 
     /// <summary>搜索结果条目：&lt;a target="_blank" href="https://www.mcmod.cn/class/{id}.html"&gt;{中文标题，可能含 &lt;em&gt; 高亮}&lt;/a&gt;。
     /// 8-22 修复：旧正则要求标题首个字符非 &lt;（`[^&lt;]{1,60}`）——MC百科对命中词用 &lt;em&gt; 包裹，
@@ -59,14 +110,15 @@ public sealed class McmodSearchService
         catch { return null; }
     }
 
-    /// <summary>中文查询 → (Modrinth slug, 中文标题) 列表（去重，上限 maxResults；失败/无外链条目跳过）</summary>
+    /// <summary>中文查询 → (Modrinth slug, 中文标题) 列表（去重，上限 maxResults；失败/无外链条目跳过）。
+    /// 8-19 生态修缮：搜索页 + 详情页磁盘缓存（TTL 24h）——重复搜索零网络（此前每次重打 ≤11 请求）</summary>
     public async Task<List<(string Slug, string ChineseTitle)>> SearchSlugsAsync(
         string query, int maxResults, CancellationToken ct)
     {
         var searchUrl = $"https://search.mcmod.cn/s?key={Uri.EscapeDataString(query)}";
-        string html;
-        try { html = await Http.GetStringAsync(searchUrl, ct); }
-        catch { return []; }
+        var html = await GetPageAsync($"s:{query}", searchUrl, ct);
+        if (html is null) return [];
+        await WriteCachedAsync($"s:{query}", html, ct);
 
         var slugs = new List<(string, string)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -76,13 +128,10 @@ public sealed class McmodSearchService
         var tasks = entries.Select(async entry =>
         {
             await gate.WaitAsync(ct);
-            try
-            {
-                var detail = await Http.GetStringAsync($"https://www.mcmod.cn/class/{entry.ClassId}.html", ct);
-                return (Slug: DecodeModrinthSlug(detail), entry.Title);
-            }
-            catch { return (Slug: (string?)null, entry.Title); }
-            finally { gate.Release(); }
+            var detail = await GetPageAsync($"d:{entry.ClassId}",
+                $"https://www.mcmod.cn/class/{entry.ClassId}.html", ct);
+            if (detail is not null) await WriteCachedAsync($"d:{entry.ClassId}", detail, ct);
+            return (Slug: detail is null ? null : DecodeModrinthSlug(detail), entry.Title);
         }).ToArray();
         foreach (var t in tasks)
         {
@@ -131,23 +180,42 @@ public static class ModAliasTable
         ["懒加载语言"] = ["lazy-language-loader"],
         ["模组菜单"] = ["modmenu"],
         ["布匹配置"] = ["cloth-config"],
+        // 8-19 生态修缮：字典扩充（Modrinth 存在性已核对）
+        ["机械动力"] = ["create"],
+        ["暮色森林"] = ["twilight-forest"],
+        ["匠魂"] = ["tconstruct"],
+        ["jei"] = ["jei"],
+        ["rei"] = ["roughly-enough-items"],
+        ["投影"] = ["litematica"],
+        ["迷你hud"] = ["minihud"],
+        ["动态光源"] = ["lambdabetterlighting"],
+        ["更好的f3"] = ["betterf3"],
+        ["实体剔除"] = ["entityculling"],
+        ["实体渲染优化"] = ["entityculling"],
+        ["沉浸式传送门"] = ["immersive-portals"],
+        ["夸克"] = ["quark"],
+        ["预生成区块"] = ["chunk-pregenerator"],
+        ["旅行者背包"] = ["travelersbackpack"],
+        ["等价交换"] = ["projecte"],
+        ["农夫乐事"] = ["farmers-delight"],
+        ["幸运方块"] = ["lucky-block"],
+        ["创世神"] = ["worldedit"],
+        ["宝可梦"] = ["cobblemon"],
+        ["滚轮整理"] = ["inventory-profiles-next"],
     };
 
-    /// <summary>中文 query → 命中的别名 slug 列表（最长匹配优先；无命中空）。「钠扩展」命中扩展不命中「钠」。</summary>
+    /// <summary>中文 query → 命中的别名 slug 列表（8-19 生态修缮：多词查询命中全部键并集——
+    /// 「钠 锂」→ sodium + lithium；旧实现只中一个键，多词搜索丢一半；无命中空）</summary>
     public static IReadOnlyList<string> Resolve(string? query)
     {
         if (string.IsNullOrWhiteSpace(query)) return [];
-        var best = "";
         var result = new List<string>();
         foreach (var (key, slugs) in Map)
         {
-            if (query.Contains(key, StringComparison.OrdinalIgnoreCase) && key.Length > best.Length)
-            {
-                best = key;
-                result = [.. slugs];
-            }
+            if (query.Contains(key, StringComparison.OrdinalIgnoreCase))
+                result.AddRange(slugs);
         }
-        return result;
+        return result.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>命中时显示的中文标题（取命中的键——「钠」→「钠 (Sodium)」）</summary>
