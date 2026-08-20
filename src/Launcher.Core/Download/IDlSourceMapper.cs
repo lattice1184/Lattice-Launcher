@@ -58,6 +58,11 @@ public sealed class BmclapiDlSourceMapper : IDlSourceMapper
 
     public string Map(string url)
     {
+        // 8-20 下载提速：Modrinth 文件 CDN 备用域名竞速——官方 cdn.modrinth.com 实测 307 重定向到
+        // cdn-alt.modrinth.com（国内实测 88KB/s vs 官方 275B/s，快 300 倍但波动大）；
+        // 双候选走引擎竞速：谁快用谁，波动由竞速兜底
+        if (url.Contains("cdn.modrinth.com"))
+            return url.Replace("https://cdn.modrinth.com", "https://cdn-alt.modrinth.com");
         if (url.Contains("piston-meta.mojang.com") || url.Contains("launcher.mojang.com")
             || url.Contains("resources.download.minecraft.net"))
         {

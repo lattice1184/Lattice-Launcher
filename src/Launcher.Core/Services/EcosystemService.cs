@@ -14,7 +14,14 @@ namespace Launcher.Core.Services;
 /// </summary>
 public sealed class EcosystemService
 {
-    private const string ApiBase = "https://api.modrinth.com/v2";
+    private const string ApiBaseOfficial = "https://api.modrinth.com/v2";
+
+    /// <summary>8-20 下载提速：Modrinth API 镜像基地址（mcimirror 同构路径，实测快 4 倍）。
+    /// 仅当设置开启镜像时替换（第三方镜像默认关——官方直连优先）；路径同构（/v2 后不变）</summary>
+    public static string ApiBase =>
+        Launcher.Core.Utils.LauncherSettings.Current.ModrinthMirrorEnabled
+            ? "https://mod.mcimirror.top/modrinth/v2"
+            : ApiBaseOfficial;
 
     private readonly HttpClient _http;
     private readonly DownloadService _downloads;

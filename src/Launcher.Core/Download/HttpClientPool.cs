@@ -11,19 +11,64 @@ namespace Launcher.Core.Download;
 /// </summary>
 public static class HttpClientPool
 {
-    /// <summary>共享 handler：连接池 + 连接参数 + HTTP/2 多路复用</summary>
-    public static readonly SocketsHttpHandler SharedHandler = new()
+    private static readonly object Gate = new();
+    private static SocketsHttpHandler? _handler;
+    private static HttpClient? _client;
+
+    /// <summary>共享 handler：连接池 + 连接参数 + HTTP/2 多路复用。
+    /// 8-20 代理支持：构造时读 LauncherSettings.ProxyAddress——配置后全局走代理（加速器场景）；
+    /// 设置变更后 RebuildShared 重建（惰性：下次访问 Shared 才建新 handler）</summary>
+    public static SocketsHttpHandler SharedHandler
     {
-        ConnectTimeout = TimeSpan.FromSeconds(5),     // AL32：慢源 5s 判死（原 15s 直连卡 TCP/TLS）
-        PooledConnectionLifetime = TimeSpan.FromMinutes(5),   // 防陈旧连接/DNS 变更
-        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2), // 突发下载期保持连接热
-        EnableMultipleHttp2Connections = true,         // HTTP/2 同 host 多连接
-    };
+        get { lock (Gate) { return _handler ??= CreateHandler(); } }
+    }
 
     /// <summary>共享 client（DownloadService.CreateClient 用；默认请求版本 HTTP/2，服务器不支持自动降级）</summary>
-    public static readonly HttpClient Shared = CreateShared();
+    public static HttpClient Shared
+    {
+        get { lock (Gate) { return _client ??= CreateShared(); } }
+    }
+
+    private static SocketsHttpHandler CreateHandler()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(5),     // AL32：慢源 5s 判死（原 15s 直连卡 TCP/TLS）
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),   // 防陈旧连接/DNS 变更
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2), // 突发下载期保持连接热
+            EnableMultipleHttp2Connections = true,         // HTTP/2 同 host 多连接
+        };
+        // 8-20 代理支持：host:port（加速器本地端口）→ 全局走代理；留空直连。仅 Http 代理（socks 加速器填 http 端口）
+        var proxy = Launcher.Core.Utils.LauncherSettings.Current.ProxyAddress;
+        if (!string.IsNullOrWhiteSpace(proxy))
+        {
+            handler.Proxy = new System.Net.WebProxy(proxy.Contains("://") ? proxy : "http://" + proxy);
+            handler.UseProxy = true;
+        }
+        return handler;
+    }
 
     private static HttpClient CreateShared() => CreateSharedClient();
+
+    /// <summary>8-20 代理设置变更后重建共享连接池（设置页保存时调用）：
+    /// 下次访问 Shared/SharedHandler 惰性建新 handler（带新代理）；旧 handler 延迟 30s 释放——
+    /// 正在进行的下载任务仍持有旧连接，等它们结束后再回收，不打断进行中的任务</summary>
+    public static void RebuildShared()
+    {
+        SocketsHttpHandler? old;
+        lock (Gate)
+        {
+            old = _handler;
+            _handler = null;
+            _client = null;
+        }
+        if (old is not null)
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(30));
+                try { old.Dispose(); } catch { /* 释放失败无妨 */ }
+            });
+    }
 
     /// <summary>8-19 修复：创建共享 handler 的 HttpClient，disposeHandler:false——
     /// 默认 new HttpClient(handler) 在 Dispose 时会连同共享连接池一起销毁（实机：LittleSkin 登录后

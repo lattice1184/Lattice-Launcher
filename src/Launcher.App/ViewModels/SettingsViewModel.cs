@@ -251,6 +251,10 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string CurseForgeApiBaseText { get; set; } = "";
 
+    /// <summary>8-20 全局代理（host:port，如 127.0.0.1:7890；空 = 直连）。仅 Http 代理——加速器开本地端口填这里</summary>
+    [ObservableProperty]
+    public partial string ProxyAddressText { get; set; } = "";
+
     // ---------- 外观 ----------
 
     /// <summary>窗口透明度（0.7-1.0）</summary>
@@ -371,6 +375,7 @@ public partial class SettingsViewModel : ViewModelBase
         // CF key 不回显（PasswordBox 留空）；设置里的值是 DPAPI 密文，状态区显示验证结果
         CurseForgeCdnPrefixText = s.CurseForgeCdnPrefix ?? "";
         CurseForgeApiBaseText = s.CurseForgeApiBase ?? "";
+        ProxyAddressText = s.ProxyAddress ?? "";
         WindowOpacity = s.WindowOpacity;
         DensityIndex = (int)s.Density;
         BackgroundImagePathText = s.BackgroundImagePath ?? "";
@@ -429,6 +434,7 @@ public partial class SettingsViewModel : ViewModelBase
         s.ChunkCount = ChunkCount;
         s.CurseForgeCdnPrefix = CurseForgeCdnPrefixText.Trim();
         s.CurseForgeApiBase = CurseForgeApiBaseText.Trim();
+        s.ProxyAddress = ProxyAddressText.Trim(); // 8-20 全局代理（host:port）
         // CF key：仅输入框有非空内容才覆盖（留空 = 保留现有 key，防误清空）；Save 内 DPAPI 加密落盘
         if (!string.IsNullOrWhiteSpace(CurseForgeApiKeyInput))
         {
@@ -444,6 +450,8 @@ public partial class SettingsViewModel : ViewModelBase
         // 8-13 微软 client_id：设置页已移除（登录有远程下发/缓存/内置三层兜底，无需用户填；
         // LauncherSettings.MicrosoftClientId 字段保留——高级用户可手动编辑 settings.json 覆盖）
         s.Save();
+        // 8-20 代理变更后重建共享连接池：新下载任务立即走新代理（进行中任务不受影响）
+        Launcher.Core.Download.HttpClientPool.RebuildShared();
     }
 
     partial void OnVersionIsolationChanged(bool value) => Save();

@@ -122,6 +122,15 @@
                                ToolTip.Tip="限制下载速度，0 是不限"><Path/></Border>
                 </StackPanel>
             </Grid>
+            <!-- 8-20 全局代理：加速器/代理软件开本地端口填这里（如 127.0.0.1:7890），下载/API 全走代理 -->
+            <Grid Classes="setting-row" ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Text="代理服务器" Classes="setting-label" VerticalAlignment="Center"/>
+                <TextBox Grid.Column="1" Text="{Binding ProxyAddressText}"
+                         Watermark="如 127.0.0.1:7890（留空 = 直连）" FontFamily="Consolas" FontSize="12"/>
+                <Path Grid.Column="2" Classes="help-hint"
+                           ToolTip.Tip="填加速器/代理软件显示的本地端口（仅 HTTP 代理）。模组下载慢或连不上境外 CDN 时用这个。保存后对新下载立即生效"
+                           VerticalAlignment="Center"/>
+            </Grid>
 
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="清理下载缓存" Classes="ghost" FontSize="12" Padding="12,5"

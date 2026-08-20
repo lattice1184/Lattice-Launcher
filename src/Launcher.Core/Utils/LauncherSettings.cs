@@ -79,6 +79,13 @@ public sealed class LauncherSettings
     /// <summary>下载限速（KB/s；0 = 不限速）</summary>
     public int DownloadSpeedLimitKbps { get; set; }
 
+    /// <summary>8-20 代理服务器（host:port，如 127.0.0.1:7890；留空 = 直连）。仅 Http 代理。
+    /// 下载/API 全局生效（新任务用）；已运行中任务不受影响。</summary>
+    public string? ProxyAddress { get; set; }
+
+    /// <summary>8-20 Modrinth API 走 mcimirror 镜像（默认关——第三方镜像；官方直连慢时开）</summary>
+    public bool ModrinthMirrorEnabled { get; set; }
+
     /// <summary>下载并发档位（分片数：低 8 / 中 16 / 高 24）；默认中档——PCL2 参考上限 63，16 仍保守</summary>
     public DownloadTier DownloadTier { get; set; } = DownloadTier.Medium;
 
