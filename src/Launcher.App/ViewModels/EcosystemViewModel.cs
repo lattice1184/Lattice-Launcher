@@ -665,10 +665,14 @@ public partial class EcosystemViewModel : ViewModelBase
                 }
                 else
                 {
+                    // 8-19 生态修缮：前置失败不再静默——Toast 明示 N 个前置未装 + 首个原因
+                    var failedNote = report is { Failed.Count: > 0 }
+                        ? $"（{report.Failed.Count} 个前置未安装：{report.Failed[0].Reason}）"
+                        : "";
                     NotificationService.Success(
                         report is { Installed.Count: > 0 }
-                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
-                            : $"{card.Title} 安装完成", 4500);
+                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}{failedNote}"
+                            : $"{card.Title} 安装完成{failedNote}", 6000);
                 }
             }
             else if (task.Error is { } err)
@@ -794,10 +798,14 @@ public partial class EcosystemViewModel : ViewModelBase
                 }
                 else
                 {
+                    // 8-19 生态修缮：前置失败不再静默——Toast 明示 N 个前置未装 + 首个原因
+                    var failedNote = report is { Failed.Count: > 0 }
+                        ? $"（{report.Failed.Count} 个前置未安装：{report.Failed[0].Reason}）"
+                        : "";
                     NotificationService.Success(
                         report is { Installed.Count: > 0 }
-                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}"
-                            : $"{card.Title} 安装完成", 4500);
+                            ? $"{card.Title} 安装完成 → {report.Installed[0].Path}{failedNote}"
+                            : $"{card.Title} 安装完成{failedNote}", 6000);
                 }
             }
             else if (task.Error is { } err)

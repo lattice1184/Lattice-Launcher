@@ -516,6 +516,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
             Changelog = mv.Changelog ?? "";
             VersionHint = $"已选择: {mv.Name} ({mv.VersionNumber})";
             RefreshFiles(mv);
+            // 8-19 生态修缮（对齐 CF 分支）：选新版本后重查依赖——不同版本依赖树不同，
+            // 此前留旧版本提示、安装装新版本（提示与实装不一致；安装内部会再解析，此处只为提示正确）
+            DependencyHint = "正在查询前置依赖…";
+            _ = ResolveDependencyHintAsync(mv,
+                _instance is not null && EcosystemService.TryParseGameVersion(_instance.Name, out var gv1) ? gv1 : null,
+                _instance is not null ? EcosystemService.GuessLoader(_instance.Name) : null);
         }
         else if (option.Source is CurseforgeFile cf)
         {

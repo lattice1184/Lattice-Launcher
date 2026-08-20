@@ -218,6 +218,8 @@ public sealed class EcosystemService
     public async Task<List<string>> ResolveDependencyNamesAsync(
         ModrinthVersion version, string? gameVersion, string? loader, CancellationToken ct = default)
     {
+        // 8-19 生态修缮：iris/optifine → 承载 loader（依赖匹配与版本查询两处共用）
+        loader = NormalizeLoaderForDependency(loader);
         var resolver = new ModDependencyResolver();
         var request = new ModDependencyRequest
         {
@@ -289,6 +291,8 @@ public sealed class EcosystemService
         DownloadProgressHandler? progress = null, CancellationToken ct = default, string? gameDirOverride = null,
         DownloadGroupContext? ctx = null)
     {
+        // 8-19 生态修缮：iris/optifine → 承载 loader（依赖解析 TargetLoaders 与依赖版本查询共用）
+        loader = NormalizeLoaderForDependency(loader);
         var report = new DependencyInstallReport();
 
         // 1. 主文件（8-19 生态修缮：weight 传真实大小——此前 0 导致组聚合 total=0 进度恒空）
@@ -478,6 +482,17 @@ public sealed class EcosystemService
         }
         return null;
     }
+
+    /// <summary>8-19 生态修缮（依赖只装单个根治）：iris/optifine 不是 Modrinth loader 分类——
+    /// 依赖解析按「承载 loader」过滤：iris 实例的 sodium 等依赖 TargetLoaders=[fabric] 才匹配
+    /// （此前 iris → TargetLoaders=["iris"] → IsCompatibleFile 对 fabric 依赖全部失败 → 依赖静默跳过只装主文件）；
+    /// optifine 保守映射 forge；未知透传</summary>
+    public static string? NormalizeLoaderForDependency(string? loader) => loader switch
+    {
+        "iris" => "fabric",
+        "optifine" => "forge",
+        _ => loader,
+    };
 
     /// <summary>
     /// 游戏版本语义比较：点分数字逐段比（26.2 &gt; 1.21.6、1.21.10 &gt; 1.21.6——字符串序会判反）；
