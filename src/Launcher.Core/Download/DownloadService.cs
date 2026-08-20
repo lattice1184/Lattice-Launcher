@@ -335,7 +335,9 @@ public sealed class DownloadService
                 // 与原子 rename 语义；竞速只用于多源场景
                 try
                 {
-                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, null, ct, throttle);
+                    // 8-20：单候选禁慢速判死——无镜像可换，判死 = 把能下的慢源杀掉（6GB ISO 报错的根因）
+                    await DownloadFromSourceAsync(candidates[0], destPath, expectedSha1, expectedSize, progress, null, ct, throttle,
+                        allowSlowDeath: false);
                     LogWrapper.Info($"[下载] 完成 {ShortUrl(url)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
                     return;
                 }
@@ -888,10 +890,14 @@ public sealed class DownloadService
         catch { }
     }
 
-    /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计</summary>
+    /// <summary>单个候选源：定长走分片，否则单连接；前后计时记入源质量统计。
+    /// allowSlowDeath：慢速判死是否启用——单候选（无镜像）时禁用：判死本意是「换源」，
+    /// 单候选判死只会把「能下但慢」的源杀掉直接报错（8-20 实测：Ubuntu 官方源 6GB ISO 国内
+    /// <100KB/s 被判死 → 「下载错误」；慢速大文件应继续硬啃而非放弃）</summary>
     private async Task DownloadFromSourceAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle,
+        bool allowSlowDeath = true)
     {
         // 黑科技 A：ghapi 占位 URL → GitHub API 换签名直链（null = 换链失败，快速失败不影响竞速）
         if (url.StartsWith(GitHubApiDirect.Scheme))
@@ -906,9 +912,9 @@ public sealed class DownloadService
         try
         {
             if (totalSize >= ChunkThreshold)
-                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, livePush, ct, throttle);
+                await DownloadChunkedAsync(url, destPath, totalSize, expectedSha1, progress, livePush, ct, throttle, allowSlowDeath);
             else
-                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct, throttle);
+                await DownloadSingleAsync(url, destPath, expectedSha1, totalSize, progress, livePush, ct, throttle, allowSlowDeath);
             sw.Stop();
             _sourceStats.RecordSuccess(url, totalSize, sw.ElapsedMilliseconds);
         }
@@ -921,10 +927,12 @@ public sealed class DownloadService
 
     /// <summary>单连接下载（断点续传 + 416 防御 + 校验失败抛 InvalidDataException 由外层换源）。
     /// AL29 H1：写入一律走 destPath+".tmp"，校验通过后原子 rename——崩溃/断电残留只可能是 .tmp，
-    /// 不会出现「File.Exists 通过但内容半截」的 destPath。</summary>
+    /// 不会出现「File.Exists 通过但内容半截」的 destPath。
+    /// allowSlowDeath：慢速判死开关（单候选禁用——见 DownloadFromSourceAsync 注释）</summary>
     private async Task DownloadSingleAsync(
         string url, string destPath, string? expectedSha1, long? expectedSize,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle,
+        bool allowSlowDeath = true)
     {
         var tmp = destPath + ".tmp";
         var from = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
@@ -973,7 +981,8 @@ public sealed class DownloadService
                 read += n;
                 livePush?.Invoke(read, Environment.TickCount64); // 逐读推拍（陪跑采样——绕开 250ms 上报节流量化）
                 // 8-22 补：剩余不足一片不判死（同分片路径——弃尾清零净亏，等流读完；total 未知时保持原判死行为）
-                if ((total <= 0 || total - read >= ChunkSizeFor(total)) && slowDetector.ShouldAbort(read, ct))
+                // 8-20：单候选（allowSlowDeath=false）不判死——慢速大文件继续硬啃
+                if (allowSlowDeath && (total <= 0 || total - read >= ChunkSizeFor(total)) && slowDetector.ShouldAbort(read, ct))
                     throw new SlowSourceException(_options.SlowSpeedBps, slowDetector.LastSpeed);
                 if (reportSw.ElapsedMilliseconds - lastReportMs >= 250)
                 {
@@ -1063,7 +1072,8 @@ public sealed class DownloadService
     /// → 合并 → 总长/SHA1 校验；整体失败回退单连接</summary>
     private async Task DownloadChunkedAsync(
         string url, string destPath, long totalSize, string? expectedSha1,
-        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle)
+        DownloadProgressHandler? progress, Action<long, long>? livePush, CancellationToken ct, ThrottleState throttle,
+        bool allowSlowDeath = true)
     {
         try
         {
@@ -1103,7 +1113,7 @@ public sealed class DownloadService
                         speedIdx++;
                         // 8-22 补：AL61 持续低速判死同样受剩余守卫约束（同 679 行末尾判死）——
                         // 剩余不足一片时不判死（弃尾清零净亏，等最后一片下完）
-                        if (totalSize - bytes >= chunkSize && slowDetector.ShouldAbort(bytes, slowCts.Token))
+                        if (allowSlowDeath && totalSize - bytes >= chunkSize && slowDetector.ShouldAbort(bytes, slowCts.Token))
                         {
                             Volatile.Write(ref slowAborted, 1);
                             slowCts.Cancel();
