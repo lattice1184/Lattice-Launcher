@@ -234,6 +234,8 @@ public partial class DownloadTask : ObservableObject
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
+            // 8-19 生态修缮阶段3：真取消清理中间产物（.parts/.tmp/.race*）；暂停保留 .parts 续传材料
+            if (s == DownloadTaskState.Canceled) CleanupOnTerminalFailure();
         }
         catch (OperationCanceledException ex)
         {
@@ -330,6 +332,8 @@ public partial class DownloadTask : ObservableObject
             var s = _suspendRequested ? DownloadTaskState.Paused : DownloadTaskState.Canceled;
             TerminalState = s;
             SetState(s);
+            // 8-19 生态修缮阶段3：真取消清理中间产物；暂停保留 .parts 续传材料
+            if (s == DownloadTaskState.Canceled) CleanupOnTerminalFailure();
         }
         catch (OperationCanceledException ex)
         {

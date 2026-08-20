@@ -66,9 +66,10 @@ public sealed class VersionDownloadPipeline
         // 1. client jar
         if (version.Downloads?.Client is { } client)
         {
+            var clientPath = Path.Combine(versionDir, $"{version.Id}.jar");
             tasks.Add(ctx.AddChild($"{version.Id}.jar", client.Size ?? 0, (p, c) =>
-                _downloads.DownloadFileAsync(client.Url, Path.Combine(versionDir, $"{version.Id}.jar"),
-                    client.Sha1, client.Size, p, c)).Completion);
+                _downloads.DownloadFileAsync(client.Url, clientPath,
+                    client.Sha1, client.Size, p, c), clientPath).Completion);
         }
 
         // 2. libraries（每库文件一个子任务，共享并发门——创建即排队，不阻塞编排）
@@ -87,7 +88,7 @@ public sealed class VersionDownloadPipeline
                     await libGate.WaitAsync(c);
                     try { await _downloads.DownloadFileAsync(artifact.Url, path, artifact.Sha1, artifact.Size, p, c); }
                     finally { libGate.Release(); }
-                }).Completion);
+                }, path).Completion);
             }
 
             if (lib.Natives is { } natives && natives.TryGetValue("windows", out var classifierKey)
@@ -100,7 +101,7 @@ public sealed class VersionDownloadPipeline
                     await libGate.WaitAsync(c);
                     try { await _downloads.DownloadFileAsync(nativeFile.Url, nativePath, nativeFile.Sha1, nativeFile.Size, p, c); }
                     finally { libGate.Release(); }
-                }).Completion);
+                }, nativePath).Completion);
             }
 
             // AL10.1：Fabric/Forge 库无 downloads.artifact，顶层 url + Maven 坐标拼下载地址（如 maven.fabricmc.net）
@@ -113,7 +114,7 @@ public sealed class VersionDownloadPipeline
                     await libGate.WaitAsync(c);
                     try { await _downloads.DownloadFileAsync(dlUrl, path, lib.Sha1, lib.Size, p, c); }
                     finally { libGate.Release(); }
-                }).Completion);
+                }, path).Completion);
             }
         }
 
@@ -123,7 +124,7 @@ public sealed class VersionDownloadPipeline
             var fileName = Path.GetFileName(new Uri(logFile.Url).LocalPath);
             var logPath = Path.Combine(assetsDir, "log_configs", fileName);
             tasks.Add(ctx.AddChild(fileName, logFile.Size ?? 0, (p, c) =>
-                _downloads.DownloadFileAsync(logFile.Url, logPath, logFile.Sha1, logFile.Size, p, c)).Completion);
+                _downloads.DownloadFileAsync(logFile.Url, logPath, logFile.Sha1, logFile.Size, p, c), logPath).Completion);
         }
 
         // 4. assets 差量（index 已前置，Weight 直接入聚合——进度单调，无挂载跳水）

@@ -245,11 +245,12 @@ public sealed class ModpackInstaller
                         return;
                     }
                     // 8-22 全栈排查：子任务 Completion 永不抛——失败被计为「已装」（导入报告全绿但缺模组）
+                    // 8-19 生态修缮阶段3：targetPath 传入——失败/取消自动清 .parts 中间产物
                     var child = ctx.AddChild($"模组 {Path.GetFileName(f.Path)}", f.Size, async (p, c) =>
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                         await _downloads.DownloadFileAsync(url, target, f.Sha1, f.Size, p, c);
-                    });
+                    }, target);
                     await child.Completion.WaitAsync(ct);
                     if (child.TerminalState == DownloadTaskState.Failed)
                         lock (skipped) skipped.Add((f.Path, child.Error ?? "下载失败"));
@@ -333,7 +334,9 @@ public sealed class ModpackInstaller
                     await ctx.AddChild($"模组 {file.fileName}", file.fileLength, async (p, c) =>
                     {
                         await cf.InstallAsync(f.ProjectId, file, packId, ProjectType.Mod, p, c);
-                    }).Completion.WaitAsync(ct);
+                    }, Path.Combine(
+                        EcosystemService.ResolveInstallPath(_gameDirectory, packId, ProjectType.Mod), file.fileName))
+                        .Completion.WaitAsync(ct);
                     installed++;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

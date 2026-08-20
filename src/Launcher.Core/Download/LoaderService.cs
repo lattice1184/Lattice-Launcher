@@ -299,6 +299,8 @@ public sealed class LoaderService
     private async Task InstallFabricApiAsync(string versionId, string mcVersion, CancellationToken ct,
         ProgressReporter? rep = null, DownloadTask? child = null)
     {
+        // 8-19 生态修缮阶段3：预知落点（try 外声明——catch 显式清理要用）
+        string? destPath = null;
         try
         {
             // AL46.1：Modrinth 境外慢——30s 超时兜底（实测卡 2 分钟不可接受）；超时走 catch 静默
@@ -325,6 +327,13 @@ public sealed class LoaderService
             // Fabric API 阶段进度不再静止（「卡进度条」根治——聚合每轮按 Children 重算 total）
             var size = best.Files?.FirstOrDefault(f => f.Primary)?.Size ?? 0;
             if (size > 0 && child is not null) child.Weight = size;
+            // 8-19 生态修缮阶段3：预知落点挂子任务——终态失败/取消自动清 .parts（残留根治：
+            // 此前子任务无 TargetPath，中途失败吞异常 → 子任务 Completed → 清理链不触发，.parts 永久残留）
+            var primary = best.Files?.FirstOrDefault(f => f.Primary);
+            destPath = primary is null ? null : Path.Combine(
+                EcosystemService.ResolveInstallPath(_gameDirectory, versionId, ProjectType.Mod),
+                Path.GetFileName(primary.FileName));
+            if (child is not null && destPath is not null) child.TargetPath = destPath;
             rep?.ReportStage("正在下载 Fabric API…");
             // REVIEW-卡完成：reporter 透传——组内子任务有真实下载速度（真机 2.8MB/s 可见）+ 节流
             await eco.InstallAsync(project.Id, best, versionId, ProjectType.Mod,
@@ -335,6 +344,9 @@ public sealed class LoaderService
         catch (Exception ex)
         {
             Debug.WriteLine($"[Loader] Fabric API 安装失败（不阻断）：{ex.Message}");
+            // 8-19 生态修缮阶段3：吞异常 = 子任务 Completed → 失败清理链不触发，这里显式清残留
+            // （保留「API 失败不阻断加载器安装」语义，LoaderServiceTests 已锁定）
+            if (child is not null && destPath is not null) DownloadService.CleanupResiduals(destPath);
         }
     }
 

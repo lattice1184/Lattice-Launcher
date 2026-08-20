@@ -294,9 +294,12 @@ public sealed class EcosystemService
         // 1. 主文件（8-19 生态修缮：weight 传真实大小——此前 0 导致组聚合 total=0 进度恒空）
         try
         {
-            var mainPath = await InstallOneAsync(ctx, $"主文件 {version.Name}",
-                PickPrimaryFile(version.Files)?.Size ?? 0,
-                (p, c) => InstallAsync(projectId, version, instanceId, type, p, c, gameDirOverride), ct);
+            var primary = PickPrimaryFile(version.Files);
+            var mainPath = await InstallOneAsync(ctx, $"主文件 {version.Name}", primary?.Size ?? 0,
+                (p, c) => InstallAsync(projectId, version, instanceId, type, p, c, gameDirOverride), ct,
+                targetPath: primary is null ? null : Path.Combine(
+                    ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type),
+                    Path.GetFileName(primary.FileName)));
             report.Installed.Add(new InstalledDependency(projectId, version.Id, mainPath));
         }
         catch (Exception ex)
@@ -350,9 +353,12 @@ public sealed class EcosystemService
                         lock (report) report.Failed.Add(new FailedDependency(dep.ProjectId, "依赖版本已不存在"));
                         return;
                     }
-                    var path = await InstallOneAsync(ctx, $"依赖 {depVersion.Name}",
-                        PickPrimaryFile(depVersion.Files)?.Size ?? 0,
-                        (p, c) => InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, p, c, gameDirOverride), ct);
+                    var depPrimary = PickPrimaryFile(depVersion.Files);
+                    var path = await InstallOneAsync(ctx, $"依赖 {depVersion.Name}", depPrimary?.Size ?? 0,
+                        (p, c) => InstallAsync(dep.ProjectId, depVersion, instanceId, ProjectType.Mod, p, c, gameDirOverride), ct,
+                        targetPath: depPrimary is null ? null : Path.Combine(
+                            ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, ProjectType.Mod),
+                            Path.GetFileName(depPrimary.FileName)));
                     lock (report) report.Installed.Add(new InstalledDependency(dep.ProjectId, depVersion.Id, path));
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* 组取消：其余任务一并终止 */ }
@@ -372,13 +378,15 @@ public sealed class EcosystemService
         return report;
     }
 
-    /// <summary>安装单文件：有组上下文 → 子任务（下载中心可见）；否则直接装（测试/叶子调用兼容）</summary>
+    /// <summary>安装单文件：有组上下文 → 子任务（下载中心可见）；否则直接装（测试/叶子调用兼容）。
+    /// targetPath：预知的最终落点——8-19 生态修缮阶段3，子任务取消/失败自动清 .parts 中间产物</summary>
     private async Task<string> InstallOneAsync(DownloadGroupContext? ctx, string name, long weight,
-        Func<DownloadProgressHandler, CancellationToken, Task<string>> work, CancellationToken ct)
+        Func<DownloadProgressHandler, CancellationToken, Task<string>> work, CancellationToken ct,
+        string? targetPath = null)
     {
         if (ctx is null) return await work(null!, ct);
         string? path = null;
-        var child = ctx.AddChild(name, weight, async (p, c) => { path = await work(p, c); });
+        var child = ctx.AddChild(name, weight, async (p, c) => { path = await work(p, c); }, targetPath);
         await child.Completion.WaitAsync(ct);
         return path ?? throw new InvalidOperationException($"{name} 未产生文件");
     }

@@ -23,10 +23,13 @@ public sealed class DownloadGroupContext
         _ui = ui;
     }
 
-    /// <summary>创建并启动子任务；weight 为预估字节（0 = 不确定进度）</summary>
-    public DownloadTask AddChild(string name, long weight, Func<DownloadProgressHandler, CancellationToken, Task> work)
+    /// <summary>创建并启动子任务；weight 为预估字节（0 = 不确定进度）。
+    /// targetPath 非空时子任务终态失败/取消自动清理中间产物（.parts/.tmp/.race*，见 DownloadTask.CleanupOnTerminalFailure）
+    /// ——8-19 生态修缮阶段3：组子任务也有真实下载目标，取消/失败不留 .parts 垃圾</summary>
+    public DownloadTask AddChild(string name, long weight, Func<DownloadProgressHandler, CancellationToken, Task> work,
+        string? targetPath = null)
     {
-        var child = new DownloadTask(name, work, _ui) { Weight = weight, IsGroupChild = true };
+        var child = new DownloadTask(name, work, _ui) { Weight = weight, IsGroupChild = true, TargetPath = targetPath };
         Children.Add(child);
         _parent.AttachChild(child);
         // 首败信号：终态失败立即上报（子任务失败即组失败路径，不等其余兄弟——BUGS#4 级联取消失效的根治）
