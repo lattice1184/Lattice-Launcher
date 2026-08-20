@@ -134,13 +134,14 @@ public sealed class EasyTierProvisioningService
                     fs.Write(buffer, 0, n);
                 }
                 sha.TransformFinalBlock([], 0, 0);
-                if (expectedSha is not null)
-                {
-                    var actual = Convert.ToHexString(sha.Hash!);
-                    if (!string.Equals(actual, expectedSha, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException($"EasyTier 包校验失败（期望 {expectedSha[..8]}… 实际 {actual[..8]}…）");
-                }
-                MultiplayerLog.Log($"EasyTier 下载完成：{read / 1024 / 1024}MB（sha {expectedSha?[..8] ?? "未校验"}）");
+                // 8-20 堵口子（对齐 TerracottaProvisioningService）：锁版本必须有已知哈希——缺失即拒绝安装
+                // （原 null → 静默不校验：将来改 LockedVersion 忘了补哈希表 = 下载二进制裸奔直接执行）
+                if (expectedSha is null)
+                    throw new InvalidDataException($"缺少 {version}/x86_64 的已知 SHA256，拒绝安装");
+                var actual = Convert.ToHexString(sha.Hash!);
+                if (!string.Equals(actual, expectedSha, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"EasyTier 包校验失败（期望 {expectedSha[..8]}… 实际 {actual[..8]}…）");
+                MultiplayerLog.Log($"EasyTier 下载完成：{read / 1024 / 1024}MB（sha {expectedSha[..8]}）");
             }
 
             // 解压到版本目录（zip 内两个 exe：core + cli）
