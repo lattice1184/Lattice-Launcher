@@ -416,10 +416,20 @@ public partial class ProjectDetailViewModel : ViewModelBase
         IsDownloadingMatched = true;
         MatchedDownloadState = "";
         MatchedDownloadProgress = 0;
+        // 8-19 生态修缮：走全局下载引擎队列——自动进下载记录/历史（可重新下载/打开位置），
+        // 同 URL 文件带 .parts 断点续传与暂停/重试；此前直接 DownloadFileAsync 绕队列（用户反馈「匹配下载不进记录」）
+        var task = DownloadManager.Instance.Enqueue($"下载 {fileName}",
+            (p, ct) => new DownloadService().DownloadFileAsync(url, destPath, sha1, size > 0 ? size : null, p, ct),
+            url, destPath);
+        // 内联进度保持（与下载中心同源：订阅任务进度，不再走独立进度回调）
+        void Sync(object? _, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(DownloadTask.ProgressPercent)) MatchedDownloadProgress = task.ProgressPercent;
+        }
+        task.PropertyChanged += Sync;
         try
         {
-            await new DownloadService().DownloadFileAsync(url, destPath, sha1, size > 0 ? size : null,
-                p => Dispatcher.UIThread.Post(() => MatchedDownloadProgress = p.OverallPercent), default);
+            await task.Completion;
             MatchedDownloadProgress = 100;
             // 8-22 下载完成引导：有前置 → 提示用「安装」；无 → 说明缓存文件用途（下载 ≠ 装入实例 mods）
             var depNote = DependencyHint.StartsWith("将安装")
@@ -434,6 +444,7 @@ public partial class ProjectDetailViewModel : ViewModelBase
         }
         finally
         {
+            task.PropertyChanged -= Sync;
             IsDownloadingMatched = false;
         }
     }
