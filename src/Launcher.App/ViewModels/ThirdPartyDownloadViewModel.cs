@@ -10,6 +10,27 @@ namespace Launcher.App.ViewModels;
 /// <summary>下载页「第三方文件」tab：粘贴直链 → 自动识别文件名 → 自定义目录 → 入全局队列（断点续传/历史自动接管）。</summary>
 public partial class ThirdPartyDownloadViewModel : ViewModelBase
 {
+    /// <summary>8-20 常用下载源预设（直链实测可达；选中即填 URL 走完整识别链路）。VMware 官方免费直链已封
+    /// （Broadcom 收购后 download3 下线）——虚拟机测试用 VirtualBox 官方直链替代</summary>
+    public record PresetSource(string Name, string Url);
+
+    public IReadOnlyList<PresetSource> PresetSources { get; } =
+    [
+        new("Ubuntu 24.04.4 桌面版（约 6GB）", "https://releases.ubuntu.com/24.04/ubuntu-24.04.4-desktop-amd64.iso"),
+        new("Debian 13.6 网络安装（约 700MB）", "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.6.0-amd64-netinst.iso"),
+        new("Arch Linux 最新（约 1.4GB）", "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso"),
+        new("VirtualBox 7.2.16 安装包（约 110MB）", "https://download.virtualbox.org/virtualbox/7.2.16/VirtualBox-7.2.16-174877-Win.exe"),
+    ];
+
+    [ObservableProperty]
+    public partial PresetSource? SelectedPreset { get; set; }
+
+    /// <summary>预设选中 → 填 URL（触发防抖识别，走现有完整链路）；不自动清文件名（可能已有手动输入）</summary>
+    partial void OnSelectedPresetChanged(PresetSource? value)
+    {
+        if (value is not null) UrlText = value.Url;
+    }
+
     /// <summary>文件名识别用 HEAD 请求（15 秒超时，识别失败回退 URL 段）</summary>
     private static readonly HttpClient NameHttp = new() { Timeout = TimeSpan.FromSeconds(15) };
 

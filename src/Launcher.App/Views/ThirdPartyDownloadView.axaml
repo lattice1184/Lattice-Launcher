@@ -16,6 +16,20 @@
                     <TextBlock Text="使用 Lattice 分片多线程引擎下载自定义文件：默认 8 分片并发，支持断点续传；GitHub 直链自动启用镜像加速。"
                                Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
 
+                    <!-- 8-20 常用下载源预设：选中即填 URL（走完整识别链路）；无匹配需求就手动粘贴 -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="常用下载源" Classes="sub" FontSize="12" VerticalAlignment="Center"/>
+                        <ComboBox ItemsSource="{Binding PresetSources}"
+                                  SelectedItem="{Binding SelectedPreset}" MinWidth="300" MaxWidth="420"
+                                  PlaceholderText="选一个直接填链接（系统镜像/虚拟机）">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ThirdPartyDownloadViewModel+PresetSource">
+                                    <TextBlock Text="{Binding Name}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+
                     <TextBox Text="{Binding UrlText}" PlaceholderText="下载链接（http/https 直链）" FontSize="13"/>
 
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
