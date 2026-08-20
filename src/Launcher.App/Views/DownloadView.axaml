@@ -38,7 +38,7 @@
         <!-- 下载队列（tab 内容） -->
         <DataTemplate x:Key="QueuePanel" x:DataType="vm:DownloadViewModel">
             <DockPanel>
-                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
+                <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
                     <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
                     <Button Grid.Column="1" Content="继续" Classes="ghost" Padding="10,4"
                             Command="{Binding ResumeAllCommand}" IsVisible="{Binding HasPaused}"/>
@@ -46,6 +46,9 @@
                             Command="{Binding SuspendAllCommand}" IsVisible="{Binding HasActive}"/>
                     <Button Grid.Column="3" Content="清除已完成" Classes="ghost" Padding="10,4"
                             Command="{Binding ClearFinishedCommand}"/>
+                    <Button Grid.Column="4" Content="日志" Classes="ghost" Padding="10,4"
+                            Click="OnOpenDownloadLog"
+                            ToolTip.Tip="打开下载日志（%AppData%\Launcher\logs\download.log）——失败时看这里最清楚"/>
                 </Grid>
 
                 <!-- 网络诊断（AL65）：各源通断 + 响应耗时——卡住时一眼看到问题源 -->

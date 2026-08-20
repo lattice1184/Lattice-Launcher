@@ -58,4 +58,20 @@ public partial class DownloadView : UserControl
             tx.Y = 4 * (1 - e);
         }, null, target);
     }
+
+    /// <summary>8-20 打开下载日志（%AppData%\Launcher\logs\download.log）——失败排查用</summary>
+    private void OnOpenDownloadLog(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var path = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Launcher", "logs", "download.log");
+        try
+        {
+            if (System.IO.File.Exists(path))
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            else
+                Launcher.App.Services.NotificationService.Info("还没有下载日志——下载过一次就会生成（%AppData%\\Launcher\\logs\\download.log）");
+        }
+        catch { /* 打开失败无妨 */ }
+    }
 }

@@ -24,6 +24,8 @@ public partial class App : Application
 
     public override async void OnFrameworkInitializationCompleted()
     {
+        // 8-20 下载日志落盘（%AppData%\Launcher\logs\download.log，Info+，简洁逐行）——失败可查
+        Launcher.Core.Download.DownloadLogFile.Attach();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // 主窗口关闭前不退出
