@@ -13,7 +13,7 @@
                 <Image Source="avares://Launcher.App/Assets/logo.png" Width="56" Height="56"
                        Stretch="Uniform" VerticalAlignment="Center"/>
                 <StackPanel VerticalAlignment="Center" Spacing="2">
-                    <TextBlock Text="望星 Starview" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="Starview" FontSize="14" FontWeight="SemiBold"/>
                     <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12"/>
                 </StackPanel>
             </StackPanel>
