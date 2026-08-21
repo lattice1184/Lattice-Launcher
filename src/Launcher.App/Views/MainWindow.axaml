@@ -46,8 +46,13 @@
                         <Border x:Name="NavIndicator" Width="3" CornerRadius="2" IsHitTestVisible="False"
                                 HorizontalAlignment="Left" VerticalAlignment="Top"/>
                     <StackPanel Margin="10">
-                        <TextBlock Text="Starview" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
-                                   Margin="6,10,6,20"/>
+                        <!-- 8-21 品牌区：望星图标 + 名字（图标 22px 融入导航栏） -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="6,8,6,18">
+                            <Image Source="avares://Launcher.App/Assets/logo.png" Width="22" Height="22"
+                                   Stretch="Uniform" VerticalAlignment="Center"/>
+                            <TextBlock Text="Starview" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
                         <!-- 导航项视觉（hover/active/按下）由 MainWindow.axaml.cs 本地值驱动——样式伪类在 Avalonia 12 下不可靠（历史多轮修复失败） -->
                         <Button x:Name="NavHome"
                                 Command="{Binding NavigateCommand}" CommandParameter="home"
