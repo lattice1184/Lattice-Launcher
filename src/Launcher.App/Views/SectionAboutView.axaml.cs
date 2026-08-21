@@ -11,7 +11,7 @@ public partial class SectionAboutView : UserControl
 {
     public SectionAboutView() => InitializeComponent();
 
-    private const string RepoUrl = "https://github.com/lattice1184/Lattice-Launcher";
+    private const string RepoUrl = "https://github.com/lattice1184/Starview-Launcher";
 
     /// <summary>8-22 关于页跳转：打开仓库主页（默认浏览器）</summary>
     private void OnOpenGitHub(object? sender, RoutedEventArgs e)

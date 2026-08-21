@@ -8,9 +8,14 @@
     <Border Classes="setting-group">
         <StackPanel Spacing="10">
             <TextBlock Text="关于" Classes="group-header"/>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Text="望星 Starview" FontSize="14" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12" VerticalAlignment="Bottom"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <!-- 8-21 关于页大图标（望星正式图标） -->
+                <Image Source="avares://Launcher.App/Assets/logo.png" Width="56" Height="56"
+                       Stretch="Uniform" VerticalAlignment="Center"/>
+                <StackPanel VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="望星 Starview" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12"/>
+                </StackPanel>
             </StackPanel>
             <TextBlock Text="此启动器为 1 学生 + 1 AI 开发" Classes="dim" FontSize="11"/>
             <TextBlock Text="基于 Avalonia / .NET 10，core 库基于 PCL Community（Apache-2.0）" Classes="dim" FontSize="11"/>
