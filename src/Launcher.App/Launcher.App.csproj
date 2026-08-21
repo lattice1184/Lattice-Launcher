@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- 8-21 品牌更名：exe 图标用 starview（Avalonia 默认图标已弃） -->
+    <ApplicationIcon>Assets\starview.ico</ApplicationIcon>
     <!-- 8-18 内存瘦身：桌面应用工作站 GC（防大核机堆段膨胀）+ 384MB 堆硬上限（防极端驻留） -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <GCHeapHardLimit>402653184</GCHeapHardLimit>

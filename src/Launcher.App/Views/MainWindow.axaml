@@ -8,7 +8,7 @@
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
         x:Class="Launcher.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/starview.ico"
         Title="Starview"
         WindowStartupLocation="CenterScreen" SystemDecorations="None"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
