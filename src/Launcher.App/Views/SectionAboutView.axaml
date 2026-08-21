@@ -9,7 +9,7 @@
         <StackPanel Spacing="10">
             <TextBlock Text="关于" Classes="group-header"/>
             <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Text="Lattice Launcher" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock Text="望星 Starview" FontSize="14" FontWeight="SemiBold"/>
                 <TextBlock Text="{Binding AppVersion}" Classes="dim" FontSize="12" VerticalAlignment="Bottom"/>
             </StackPanel>
             <TextBlock Text="此启动器为 1 学生 + 1 AI 开发" Classes="dim" FontSize="11"/>

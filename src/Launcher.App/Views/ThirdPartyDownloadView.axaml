@@ -13,7 +13,7 @@
                         <Border Classes="help-hint"
                                    ToolTip.Tip="粘一个直链，下到你选的位置。支持 .jar、.zip、.mrpack 和光影包格式。GitHub 直链自动走镜像加速"><Path/></Border>
                     </StackPanel>
-                    <TextBlock Text="使用 Lattice 分片多线程引擎下载自定义文件：默认 8 分片并发，支持断点续传；GitHub 直链自动启用镜像加速。"
+                    <TextBlock Text="使用分片多线程引擎下载自定义文件：默认 8 分片并发，支持断点续传；GitHub 直链自动启用镜像加速。"
                                Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
 
                     <!-- 8-20 常用下载源预设：选中即填 URL（走完整识别链路）；无匹配需求就手动粘贴 -->

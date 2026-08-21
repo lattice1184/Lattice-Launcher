@@ -121,7 +121,7 @@ public sealed class JavaArgumentsBuilder
             $"-Xmx{memoryMb}m",
             "-XX:+UseG1GC",
             $"-Djava.library.path={nativesDir}",
-            "-Dminecraft.launcher.brand=YanKaLauncher",
+            "-Dminecraft.launcher.brand=Starview",
             "-Dminecraft.launcher.version=0.1.0",
             "-Dlog4j.configurationFile=" + (v.Logging?.Client?.File?.Url is { } logUrl
                 ? "file:///" + Path.Combine(assetsDir, "log_configs", Path.GetFileName(new Uri(logUrl).LocalPath)).Replace('\\', '/')
@@ -217,7 +217,7 @@ public sealed class JavaArgumentsBuilder
             ["resolution_width"] = "854",
             ["resolution_height"] = "480",
             ["natives_directory"] = nativesDir,
-            ["launcher_name"] = "YanKaLauncher",
+            ["launcher_name"] = "Starview",
             ["launcher_version"] = "0.1.0",
             // Forge/NeoForge 1.17+ 安装器生成的 version.json 含 ${library_directory}（bootstraplauncher 路径）
             ["library_directory"] = Path.Combine(gameDir, "libraries").Replace('\\', '/'),

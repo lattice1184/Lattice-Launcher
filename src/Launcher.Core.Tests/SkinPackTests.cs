@@ -26,7 +26,7 @@ public class SkinPackTests
             Assert.Contains("assets/minecraft/textures/entity/alex.png", names);
             // options.txt 注入
             var options = File.ReadAllText(Path.Combine(dir, "options.txt"));
-            Assert.Contains("resourcePacks:[\"LatticeSkin.zip\"]", options);
+            Assert.Contains("resourcePacks:[\"StarviewSkin.zip\"]", options);
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -46,7 +46,7 @@ public class SkinPackTests
 
             var lines = File.ReadAllLines(Path.Combine(dir, "options.txt"));
             var rp = lines.Single(l => l.StartsWith("resourcePacks:"));
-            Assert.Equal("resourcePacks:[\"Other.zip\",\"LatticeSkin.zip\"]", rp);
+            Assert.Equal("resourcePacks:[\"Other.zip\",\"StarviewSkin.zip\"]", rp);
             Assert.Contains("lang:zh_cn", lines); // 其他行原样保留
         }
         finally { Directory.Delete(dir, true); }
@@ -68,9 +68,9 @@ public class SkinPackTests
     [Fact]
     public void MergeArray_Malformed_FallsBackToSingleItem()
     {
-        Assert.Equal("[\"LatticeSkin.zip\"]", SkinPack.MergeArray("[]", "LatticeSkin.zip"));
-        Assert.Equal("[\"A\",\"LatticeSkin.zip\"]", SkinPack.MergeArray("[\"A\"]", "LatticeSkin.zip"));
-        Assert.Equal("[\"LatticeSkin.zip\"]", SkinPack.MergeArray("garbage", "LatticeSkin.zip"));
+        Assert.Equal("[\"StarviewSkin.zip\"]", SkinPack.MergeArray("[]", "StarviewSkin.zip"));
+        Assert.Equal("[\"A\",\"StarviewSkin.zip\"]", SkinPack.MergeArray("[\"A\"]", "StarviewSkin.zip"));
+        Assert.Equal("[\"StarviewSkin.zip\"]", SkinPack.MergeArray("garbage", "StarviewSkin.zip"));
     }
 
     [Fact]

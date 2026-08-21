@@ -9,7 +9,7 @@
         x:Class="Launcher.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="Lattice Launcher"
+        Title="Starview"
         WindowStartupLocation="CenterScreen" SystemDecorations="None"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
         Background="Transparent"
@@ -46,7 +46,7 @@
                         <Border x:Name="NavIndicator" Width="3" CornerRadius="2" IsHitTestVisible="False"
                                 HorizontalAlignment="Left" VerticalAlignment="Top"/>
                     <StackPanel Margin="10">
-                        <TextBlock Text="Lattice Launcher" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
+                        <TextBlock Text="Starview" FontSize="15" FontWeight="SemiBold" Foreground="#E8EAF0"
                                    Margin="6,10,6,20"/>
                         <!-- 导航项视觉（hover/active/按下）由 MainWindow.axaml.cs 本地值驱动——样式伪类在 Avalonia 12 下不可靠（历史多轮修复失败） -->
                         <Button x:Name="NavHome"

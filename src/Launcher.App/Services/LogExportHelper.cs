@@ -12,7 +12,7 @@ public static class LogExportHelper
     {
         Directory.CreateDirectory(outDir);
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Launcher", "logs");
-        var zipPath = Path.Combine(outDir, $"Lattice-日志-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+        var zipPath = Path.Combine(outDir, $"Starview-日志-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
 
         using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
 
@@ -49,7 +49,7 @@ public static class LogExportHelper
         var diagEntry = zip.CreateEntry("诊断说明.txt");
         using (var sw = new StreamWriter(diagEntry.Open(), new UTF8Encoding(false)))
         {
-            sw.WriteLine("----- Lattice Launcher 日志诊断说明 -----");
+            sw.WriteLine("----- Starview 日志诊断说明 -----");
             sw.WriteLine($"生成时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sw.WriteLine($"包含文件：{(collected.Count > 0 ? string.Join("、", collected) : "（无日志文件）")}");
             sw.WriteLine();
@@ -76,6 +76,6 @@ public static class LogExportHelper
            + $"系统：{Environment.OSVersion}" + Environment.NewLine
            + $"CPU：{Environment.ProcessorCount} 核" + Environment.NewLine
            + $"可用内存：{GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024} MB" + Environment.NewLine
-           + $"启动器：Lattice Launcher" + Environment.NewLine
+           + $"启动器：Starview" + Environment.NewLine
            + $"游戏目录：{Launcher.Core.Utils.GameDirectory.InstallDir()}" + Environment.NewLine;
 }

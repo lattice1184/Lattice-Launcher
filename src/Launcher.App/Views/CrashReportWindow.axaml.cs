@@ -99,7 +99,7 @@ public partial class CrashReportWindow : Window
         });
         if (folders.Count == 0 || !folders[0].Path.IsAbsoluteUri) return;
         var outDir = folders[0].Path.LocalPath;
-        var zipPath = Path.Combine(outDir, $"Lattice-错误报告-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
+        var zipPath = Path.Combine(outDir, $"Starview-错误报告-{DateTime.Now:yyyyMMdd-HHmmss}.zip");
         try
         {
             await Task.Run(() =>
@@ -145,7 +145,7 @@ public partial class CrashReportWindow : Window
            + $"系统：{Environment.OSVersion}" + Environment.NewLine
            + $"CPU：{Environment.ProcessorCount} 核" + Environment.NewLine
            + $"可用内存：{GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1024 / 1024} MB" + Environment.NewLine
-           + $"启动器：Lattice Launcher" + Environment.NewLine
+           + $"启动器：Starview" + Environment.NewLine
            + $"游戏目录：{GameDirectory.InstallDir()}" + Environment.NewLine;
 
     private async void OnCopy(object? sender, RoutedEventArgs e)

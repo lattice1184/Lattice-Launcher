@@ -37,7 +37,7 @@
                                 <TextBlock Text="{Binding AccountTypeText}" FontSize="9" Foreground="{DynamicResource Accent}"/>
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="Lattice Launcher" FontSize="11" Classes="dim"/>
+                        <TextBlock Text="Starview" FontSize="11" Classes="dim"/>
                     </StackPanel>
                     <ComboBox Grid.Column="2" ItemsSource="{Binding InstalledVersions}" SelectedItem="{Binding SelectedVersion}"
                               PlaceholderText="选择版本" MinWidth="160" MaxWidth="240" VerticalAlignment="Center">

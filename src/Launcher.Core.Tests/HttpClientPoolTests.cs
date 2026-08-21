@@ -39,6 +39,6 @@ public class HttpClientPoolTests
         // 浏览器前缀 + 保留本启动器标识（CurseForge 要求 UA 含联系信息）
         var ua = HttpClientPool.Shared.DefaultRequestHeaders.UserAgent.ToString();
         Assert.Contains("Mozilla", ua);
-        Assert.Contains("YanKa-Launcher", ua);
+        Assert.Contains("Starview", ua);
     }
 }

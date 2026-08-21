@@ -6,14 +6,14 @@ namespace Launcher.Core.Launch;
 
 /// <summary>
 /// 8-13 离线皮肤资源包（PCL 式，不侵入版本文件）：把皮肤 PNG 打成资源包
-/// resourcepacks/LatticeSkin.zip（替换 Steve/Alex 默认纹理——游戏内离线皮肤生效），
+/// resourcepacks/StarviewSkin.zip（替换 Steve/Alex 默认纹理——游戏内离线皮肤生效），
 /// 并在 options.txt 的 resourcePacks 列表注入该包（游戏启动自动加载）。
 /// 适用于 littleskin 登录皮肤同步 + 本地换肤（此前游戏内不生效——Minecraft 限制的解法）。
 /// </summary>
 public static class SkinPack
 {
     /// <summary>资源包文件名（options.txt 引用名）</summary>
-    public const string PackFileName = "LatticeSkin.zip";
+    public const string PackFileName = "StarviewSkin.zip";
 
     /// <summary>
     /// 同步资源包 + options.txt 注入。gameDir = 启动目标目录（版本隔离时是 versions/{id}）。
@@ -38,7 +38,7 @@ public static class SkinPack
     {
         var mcmeta = JsonSerializer.Serialize(new
         {
-            pack = new { pack_format = packFormat, description = "Lattice Skin" },
+            pack = new { pack_format = packFormat, description = "Starview Skin" },
         });
         var skinBytes = File.ReadAllBytes(skinPngPath);
         using var fs = new FileStream(packPath, FileMode.Create);
@@ -55,7 +55,7 @@ public static class SkinPack
         s.Write(bytes, 0, bytes.Length);
     }
 
-    /// <summary>options.txt 注入：resourcePacks:[...] 行加入 "LatticeSkin.zip"（已存在保序跳过；无该行追加）</summary>
+    /// <summary>options.txt 注入：resourcePacks:[...] 行加入 "StarviewSkin.zip"（已存在保序跳过；无该行追加）</summary>
     private static void InjectOptions(string optionsPath)
     {
         var lines = File.Exists(optionsPath)

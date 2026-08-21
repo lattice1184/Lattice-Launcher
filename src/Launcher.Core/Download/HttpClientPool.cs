@@ -89,10 +89,10 @@ public static class HttpClientPool
     public static HttpClient Create(TimeSpan? timeout = null) => CreateSharedClient(timeout);
 
     /// <summary>
-    /// 8-18 浏览器格式 UA：ghproxy.net 实测对非浏览器 UA（YanKa-Launcher/0.1）返回 403——
+    /// 8-18 浏览器格式 UA：ghproxy.net 实测对非浏览器 UA（Starview/0.1）返回 403——
     /// 镜像候选实际不可用，大文件只剩 gh-proxy.com 一个镜像。带浏览器前缀 + 保留本启动器标识
     /// （CurseForge 要求 UA 含联系信息）。全仓无 UA 读取/校验逻辑，改动低风险。
     /// </summary>
     public const string UserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 YanKa-Launcher/0.1";
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Starview/0.1";
 }

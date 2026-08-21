@@ -17,7 +17,7 @@ internal static class BundledCfKeyGen
     public static readonly string Decoy = "Nzg5Ojs8PT4/QGhpamtsbTc4OTo7PD0+P0BoaWprbG0=";
 
     /// <summary>密钥派生盐（发布脚本同款；改动必须两处同步——发布.ps1 的 Inject-BundledCfKey）</summary>
-    private const string KeySalt = "Lattice.CfKey.Internal.v2";
+    private const string KeySalt = "Starview.CfKey.Internal.v2";
 
     /// <summary>加密镜像（测试往返用；与发布.ps1 Inject-BundledCfKey 的 PowerShell 实现一一对应：
     /// iv(16)|hmac(32)|cipher，AES-256-CBC + HMAC-SHA256，密钥 = SHA256(KeySalt)）</summary>

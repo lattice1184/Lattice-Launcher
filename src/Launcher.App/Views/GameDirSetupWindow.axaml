@@ -7,7 +7,7 @@
         Background="{DynamicResource BgSurface}">
 
     <StackPanel x:Name="Root" Margin="28,24" Spacing="14">
-        <TextBlock Text="欢迎使用 Lattice Launcher" FontSize="22" FontWeight="Bold"/>
+        <TextBlock Text="欢迎使用 Starview" FontSize="22" FontWeight="Bold"/>
         <TextBlock Text="你的游戏版本、模组、存档都放这个文件夹。选空间充足的磁盘。以后在设置里还能改。"
                    Classes="sub" FontSize="13" TextWrapping="Wrap"/>
 
