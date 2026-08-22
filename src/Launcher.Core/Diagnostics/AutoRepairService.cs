@@ -73,6 +73,8 @@ public sealed class AutoRepairService
         var report = await VerifyFilesAsync(merged, gameDir, verifyHashes: true);
         if (!report.IsComplete)
             throw new InvalidOperationException($"补全后仍缺 {report.Missing} 个文件（首例：{report.MissingFiles[0]}）");
+        // 8-22 步骤3：修复完成事件（UI/日志订阅）
+        Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.RepairCompletedEvent(versionId, report.Present, DateTime.Now));
         return $"补全完成（{report.SummaryText}）";
     }
 

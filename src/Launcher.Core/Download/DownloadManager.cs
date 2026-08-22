@@ -94,6 +94,17 @@ public sealed class DownloadManager
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         // AL11：终态沉底——活跃任务置顶（PropertyChanged 由任务经 UI 上下文封送，此处直接 Move 安全）
         task.PropertyChanged += OnTaskStateChanged;
+        // 8-22 步骤3：完成/失败事件发布（UI/日志订阅；不直接调用各模块）
+        task.Completion.ContinueWith(t =>
+        {
+            var ts = task.TerminalState;
+            if (ts == DownloadTaskState.Completed)
+                Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.DownloadCompletedEvent(
+                    task.Name, task.Name, task.TargetPath ?? "", "完成", DateTime.Now));
+            else if (ts == DownloadTaskState.Failed)
+                Launcher.Core.Events.AppEvents.Publish(new Launcher.Core.Events.DownloadFailedEvent(
+                    task.Name, task.Name, task.Error ?? "未知错误", DateTime.Now));
+        }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
     }
 
     /// <summary>任务状态变化 → 活跃任务前置（终态沉底）。组任务的子任务不在 Tasks（IndexOf<0 跳过）。</summary>

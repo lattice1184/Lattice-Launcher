@@ -45,6 +45,27 @@ public static class DownloadLogFile
                 }
                 catch { /* 日志写入失败无妨 */ }
             };
+            // 8-22 步骤3：任务完成/失败事件 → 落盘（分段标记，日志可索引）
+            Launcher.Core.Events.AppEvents.Subscribe<Launcher.Core.Events.DownloadCompletedEvent>(e =>
+            {
+                try
+                {
+                    lock (Gate)
+                        File.AppendAllText(LogPath,
+                            $"===== 完成: {e.FileName} → {e.TargetPath} [{e.CompletedAt:HH:mm:ss}] =====\n");
+                }
+                catch { }
+            });
+            Launcher.Core.Events.AppEvents.Subscribe<Launcher.Core.Events.DownloadFailedEvent>(e =>
+            {
+                try
+                {
+                    lock (Gate)
+                        File.AppendAllText(LogPath,
+                            $"===== 失败: {e.FileName} | {e.Error} [{e.CompletedAt:HH:mm:ss}] =====\n");
+                }
+                catch { }
+            });
         }
     }
 }
