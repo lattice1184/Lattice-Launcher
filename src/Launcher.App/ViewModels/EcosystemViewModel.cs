@@ -38,9 +38,9 @@ public partial class EcosystemViewModel : ViewModelBase
         SelectedGameVersion = GameVersionOptions[0];
         BuildSourceOptions();
         _suppressSearch = true; // 构造期不搜——预加载 4 个标签只建 VM 不请求，首次激活才搜
-        // 默认 Modrinth 单源——CF 慢不拖首屏；datapack 源只有 Modrinth 一个（8-22 修复：
-        // 批次 54 曾硬编码 [1]，datapack 分支单元素列表 → 预加载 IndexOutOfRange 崩）
-        SelectedSource = SourceOptions[Math.Min(1, SourceOptions.Count - 1)];
+        // 8-22 默认「全部」源：有 CF key 时 Modrinth+CF 并行，用户能看到 CF 结果——
+        // 旧默认 Modrinth 单源导致「装了 CF key 却搜不到 CF 内容」（用户反馈）；datapack 分支只有 Modrinth
+        SelectedSource = SourceOptions.Count > 0 ? SourceOptions[0] : SourceOptions[^1];
         _suppressSearch = false;
         // 全局版本绑定：主页切换版本 → 本页实例下拉跟随（AF1）
         if (MainViewModel.Current is { } main)
@@ -118,8 +118,21 @@ public partial class EcosystemViewModel : ViewModelBase
         [
             new SourceOption("全部", null),
             new SourceOption("Modrinth", "modrinth"),
-            new SourceOption(_cf.IsEnabled ? "CurseForge" : "CurseForge（未配置 Key）", "curseforge"),
+            new SourceOption(CurrentCfLabel(), "curseforge"),
         ];
+    }
+
+    /// <summary>8-22 CF 源 label 动态化：`_cf.IsEnabled` 每次读设置（含内置 key），
+    /// 用户填 key 后下拉立即显示「CurseForge」而非「CurseForge（未配置 Key）」</summary>
+    private string CurrentCfLabel() => _cf.IsEnabled ? "CurseForge" : "CurseForge（未配置 Key）";
+
+    /// <summary>8-22 刷新来源下拉（CF key 变化后调用；保留当前选中源）</summary>
+    private void RefreshSourceLabels()
+    {
+        var current = SelectedSource?.Key;
+        BuildSourceOptions();
+        SelectedSource = SourceOptions.FirstOrDefault(s => s.Key == current) ?? SourceOptions[0];
+        OnPropertyChanged(nameof(SourceOptions));
     }
 
     [ObservableProperty]
@@ -328,6 +341,7 @@ public partial class EcosystemViewModel : ViewModelBase
     /// <summary>防抖搜索（150ms，取消旧请求——仅搜索框需要防抖）</summary>
     private async void DebouncedSearch()
     {
+        RefreshSourceLabels(); // 8-22：搜索前刷新来源 label（CF key 变化后下拉立即变「CurseForge」）
         _searchCts?.Cancel();
         var cts = _searchCts = new CancellationTokenSource();
         try

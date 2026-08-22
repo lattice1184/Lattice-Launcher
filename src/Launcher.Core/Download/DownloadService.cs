@@ -299,7 +299,10 @@ public sealed class DownloadService
             var resolved = _resolver.Resolve(url);
             var candidates = _options.DownloadSource switch
             {
-                DownloadSourcePreference.MirrorFirst => resolved.Count > 1 ? [resolved[1], resolved[0]] : resolved,
+                // 8-22 修正：MirrorFirst 保留全部候选（镜像优先排前）——旧逻辑只取 [镜像,官方] 丢第三候选
+                // （mcimirror 等后续源被整个丢弃，Modrinth 文件只剩官方/cdn-alt 竞速）
+                DownloadSourcePreference.MirrorFirst => resolved.Count > 1
+                    ? [resolved[1], resolved[0], .. resolved.Skip(2)] : resolved,
                 DownloadSourcePreference.MirrorOnly => resolved.Count > 1 ? [resolved[1]] : resolved,
                 _ => _sourceStats.Rank(resolved), // OfficialFirst：官方+镜像按历史速度排序（最快优先）
             };
@@ -441,6 +444,34 @@ public sealed class DownloadService
                                 if (noProgressSince[p.Index] == 0) noProgressSince[p.Index] = Environment.TickCount64;
                             }
                             else noProgressSince[p.Index] = 0;
+                        }
+                        // 8-22 修「已下完还在等」：某源字节已写满 total 但 Task 未收尾（卡在读心跳/验证）——
+                        // 竞速赢家只在 done(Task 完成) 时触发，字节满的源若 Task 不结束就永远不赢。
+                        // 条件收紧：字节已满 + 该源连续停滞超过 2 个评估间隔（真卡住）才提前完成——
+                        // 防止抢在陪跑顶替前结束（赢家降速但仍有增量时不触发，陪跑语义保留）。
+                        if (total > 0 && pending.Count > 0)
+                        {
+                            var stalledFull = pending.FirstOrDefault(p =>
+                                perSourceProgress.GetBytes(p.Index) >= total
+                                && noProgressSince[p.Index] > 0
+                                && Environment.TickCount64 - noProgressSince[p.Index] >= (long)(evalInterval.TotalMilliseconds * 2));
+                            if (stalledFull.Src is not null)
+                            {
+                                try { File.Move($"{destPath}.race{RaceKey(stalledFull.Src)}", destPath, true); }
+                                catch { /* 竞态：该源 Task 恰好同时收尾 rename——正常流程接管 */ }
+                                LogWrapper.Info($"[下载] 字节已满且停滞即完成({stalledFull.Index}): {ShortUrl(stalledFull.Src)} 耗时{swDl.Elapsed.TotalSeconds:0.0}s");
+                                raceCts.Cancel();
+                                var stragglers = pending.ToList();
+                                if (stragglers.Count > 0)
+                                    _ = Task.Run(() =>
+                                    {
+                                        foreach (var p in stragglers) { try { p.Task.Wait(); } catch { } }
+                                        foreach (var p in stragglers) CleanupRaceFiles(destPath, RaceKey(p.Src));
+                                    });
+                                CleanupRaceSweep(destPath, stragglers.Select(p => RaceKey(p.Src)));
+                                won = true;
+                                break;
+                            }
                         }
                         if (pending.Count > 1)
                         {

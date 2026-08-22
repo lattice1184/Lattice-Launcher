@@ -22,6 +22,8 @@ namespace Launcher.Core.Download;
 public sealed class LoaderService
 {
     private const string FabricMeta = "https://meta.fabricmc.net/v2/versions/loader";
+    // 8-22：bmclapi fabric-meta 镜像（verse 已验证，国内 0.67s vs 官方 3.9s）——加载器下拉不再 20s 超时
+    private const string FabricMetaMirror = "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader";
     private const string QuiltMeta = "https://meta.quiltmc.org/v3/versions/loader";
     private const string ForgePromos = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
     private const string ForgeInstallerBase = "https://maven.minecraftforge.net/net/minecraftforge/forge";
@@ -129,12 +131,25 @@ public sealed class LoaderService
         catch { /* 缓存失败不影响主流程 */ }
     }
 
-    /// <summary>Fabric：meta.fabricmc.net/v2/versions/loader/{mc}（最新在前，stable 优先展示）</summary>
+    /// <summary>Fabric：meta.fabricmc.net/v2/versions/loader/{mc}（最新在前，stable 优先展示）。
+    /// 8-22 双源竞速：bmclapi fabric-meta 镜像优先（国内 0.67s vs 官方 3.9s），官方失败回退——
+    /// 加载器下拉不再 20s 超时（此前直连官方，国内慢必超时）。</summary>
     private async Task<List<LoaderMetaVersion>> GetFabricVersionsAsync(string mcVersion, CancellationToken ct)
     {
-        var list = await GetJsonAsync<List<FabricMetaEntry>>($"{FabricMeta}/{mcVersion}", ct) ?? [];
+        var mirror = $"{FabricMetaMirror}/{mcVersion}";
+        var official = $"{FabricMeta}/{mcVersion}";
+        var list = await GetJsonFirstAsync<List<FabricMetaEntry>>(mirror, official, ct) ?? [];
         return list.Select(e => new LoaderMetaVersion(e.Loader?.Version ?? "", e.Loader?.Stable == true))
                    .Where(m => m.Version.Length > 0).ToList();
+    }
+
+    /// <summary>8-22 双 URL 竞速拉 JSON：先试 primary（镜像），失败/超时回退 secondary（官方）。
+    /// 复用 GetJsonAsync 的序列化；镜像快则秒回，镜像挂了官方兜底。</summary>
+    private async Task<T?> GetJsonFirstAsync<T>(string primary, string secondary, CancellationToken ct) where T : class
+    {
+        try { return await GetJsonAsync<T>(primary, ct); }
+        catch { /* 镜像失败 → 官方 */ }
+        return await GetJsonAsync<T>(secondary, ct);
     }
 
     /// <summary>Quilt：meta.quiltmc.org/v3/versions/loader/{mc}（无 stable 字段，无 -beta/-alpha 视为稳定）</summary>

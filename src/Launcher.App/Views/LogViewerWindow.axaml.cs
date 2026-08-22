@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Launcher.App.Services;
@@ -131,6 +132,7 @@ public partial class LogViewerWindow : Window
             // 8-22 修：Refresh 后选中被清空 → 清右侧，避免残留刷新前的内容
             ContentView.Text = "";
             _currentFile = null;
+            _lastShownFile = null;
             OpenFileBtn.IsEnabled = false;
             SummaryText.Text = "";
             return;
@@ -144,24 +146,33 @@ public partial class LogViewerWindow : Window
             SummaryText.Text = node.Title;
             return;
         }
+        ShowNode(node);
+    }
+
+    /// <summary>8-22 修：重复点击同一叶子重新读文件（SelectionChanged 只在变化时触发）。
+    /// 修复：① Bounds 相对父容器、GetPosition 相对 TreeView，混用会偏移——用 (0,0,Width,Height)；
+    /// ② 防抖：记录已展示文件，重复点击同路径不重读（否则与 SelectionChanged 双触发读两次卡 UI）。</summary>
+    private string? _lastShownFile;
+
+    private void OnTreePointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (LogTree.SelectedItem is not LogNodeVM { Children.Count: 0 } node) return;
+        var p = e.GetPosition(LogTree);
+        if (!new Rect(0, 0, LogTree.Bounds.Width, LogTree.Bounds.Height).Contains(p)) return;
+        if (node.FilePath == _lastShownFile) return; // 已显示同一文件，跳过（防双触发重复读）
+        ShowNode(node);
+    }
+
+    /// <summary>8-22 统一展示入口：读文件 → 更新右侧 + 打开按钮 + 摘要（防抖用 _lastShownFile）</summary>
+    private void ShowNode(LogNodeVM node)
+    {
         ContentView.Text = node.Content();
         _currentFile = node.FilePath;
+        _lastShownFile = node.FilePath;
         OpenFileBtn.IsEnabled = _currentFile is not null && File.Exists(_currentFile);
         SummaryText.Text = node.FilePath is not null
             ? System.IO.Path.GetFileName(node.FilePath)
             : node.Title;
-    }
-
-    /// <summary>8-22 修：重复点击同一叶子重新读文件（SelectionChanged 只在变化时触发）</summary>
-    private void OnTreePointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
-    {
-        if (LogTree.SelectedItem is LogNodeVM { Children.Count: 0 } node
-            && e.GetPosition(LogTree) is var p && LogTree.Bounds.Contains(p))
-        {
-            ContentView.Text = node.Content();
-            _currentFile = node.FilePath;
-            OpenFileBtn.IsEnabled = _currentFile is not null && File.Exists(_currentFile);
-        }
     }
 
     private void OnRefresh(object? sender, RoutedEventArgs e) => Refresh();
