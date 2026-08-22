@@ -1,8 +1,8 @@
-# Lattice 启动器（晶格）
+# Starview 启动器
 
 > 本项目由 AI 协助开发（Claude Code 编写大量代码与本文档），作者校对与实测。
 
-> **English TL;DR** — Lattice is a self-written Minecraft launcher for Windows (PCL-style UX) that puts its effort into download speed and login simplicity. A file is fetched from **6 sources simultaneously** (official direct link + 2 mirrors + CDN signed link + mirrors of the signed link) — first to finish wins, ranked by per-source speed history. Measured: a 159.8 MB installer in **19.9 s**. Microsoft device-code login (pairing code auto-copied, no Client ID needed), Littleskin one-click auth, and offline skins visible in-game via an auto-injected resource pack (no mods needed). Single-file portable build (~84 MB), double-click to run, no .NET required. Built with Avalonia on .NET 10, Apache-2.0. Issues welcome — Chinese or English.
+> **English TL;DR** — Starview is a self-written Minecraft launcher for Windows (PCL-style UX) that puts its effort into download speed and login simplicity. A file is fetched from **6 sources simultaneously** (official direct link + 2 mirrors + CDN signed link + mirrors of the signed link) — first to finish wins, ranked by per-source speed history. Measured: a 159.8 MB installer in **19.9 s**. Microsoft device-code login (pairing code auto-copied, no Client ID needed), Littleskin one-click auth, and offline skins visible in-game via an auto-injected resource pack (no mods needed). Single-file portable build (~84 MB), double-click to run, no .NET required. Built with Avalonia on .NET 10, Apache-2.0. Issues welcome — Chinese or English.
 
 AI 辅助我斟酌写的 Minecraft 启动器。没想刻意超越谁或者对比谁，只想做个自己的启动器分享出来。
 
