@@ -382,7 +382,8 @@ public partial class ProjectDetailViewModel : ViewModelBase
         catch { return -1; }
     }
 
-    /// <summary>8-22 直接下载匹配文件：jar 落到下载缓存 {游戏目录}/downloads/mods（不装进实例、不解析依赖）。
+    /// <summary>8-22 直接下载匹配文件：jar 落到当前版本实例 mods（versions/{CurrentVersionId}/mods）——
+    /// 8-22 修复：原落下载缓存 downloads/mods，用户期望直接装进版本（路径错误反馈）；无选中版本回退下载缓存。
     /// CF 用 SHA1 校验（幂等：已下载过直接跳过）；Modrinth 主文件同路径</summary>
     [RelayCommand]
     private async Task DownloadMatchedFile()
@@ -412,7 +413,14 @@ public partial class ProjectDetailViewModel : ViewModelBase
         }
         if (url is null || string.IsNullOrEmpty(fileName)) return;
 
-        var destPath = Path.Combine(Launcher.Core.Utils.GameDirectory.InstallDir(), "downloads", "mods", fileName);
+        // 8-22 路径修复：优先落当前版本实例 mods（versions/{CurrentVersionId}/mods）；无选中版本回退下载缓存
+        var baseDir = _instance is { GameDir.Length: > 0 } inst
+            ? Launcher.Core.Utils.GameDirectory.ModInstallBaseDir(inst.GameDir)
+            : Launcher.Core.Utils.GameDirectory.InstallDir();
+        var destPath = string.IsNullOrEmpty(Launcher.Core.AppState.CurrentVersionId)
+            ? Path.Combine(Launcher.Core.Utils.GameDirectory.InstallDir(), "downloads", "mods", fileName)
+            : Path.Combine(Launcher.Core.Services.EcosystemService.ResolveInstallPath(
+                baseDir, Launcher.Core.AppState.CurrentVersionId, _card.Type), fileName);
         IsDownloadingMatched = true;
         MatchedDownloadState = "";
         MatchedDownloadProgress = 0;
@@ -431,12 +439,12 @@ public partial class ProjectDetailViewModel : ViewModelBase
         {
             await task.Completion;
             MatchedDownloadProgress = 100;
-            // 8-22 下载完成引导：有前置 → 提示用「安装」；无 → 说明缓存文件用途（下载 ≠ 装入实例 mods）
+            // 8-22 路径修复后：落版本 mods 即装好；有前置才提示补装依赖
             var depNote = DependencyHint.StartsWith("将安装")
-                ? "（该 mod 有前置依赖，建议用「安装」自动装入实例 mods）"
-                : "（下载缓存文件；点「安装」可直接装入实例 mods）";
-            MatchedDownloadState = $"已保存到下载缓存：{destPath} {depNote}";
-            NotificationService.Success($"已下载：{fileName}");
+                ? "（该 mod 有前置依赖，建议用「安装」自动补装）"
+                : "（已装进当前版本 mods，重启游戏生效）";
+            MatchedDownloadState = $"已装到：{destPath} {depNote}";
+            NotificationService.Success($"已装到 {Launcher.Core.AppState.CurrentVersionId} 的 mods：{fileName}");
         }
         catch (Exception ex)
         {
