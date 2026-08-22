@@ -32,7 +32,7 @@
             <!-- 左：树形分类 -->
             <Border Classes="surface" CornerRadius="{StaticResource RadiusSmall}" Padding="6">
                 <TreeView x:Name="LogTree" ItemsSource="{Binding Categories}" SelectionMode="Single"
-                          SelectionChanged="OnTreeSelectionChanged">
+                          SelectionChanged="OnTreeSelectionChanged" PointerPressed="OnTreePointerPressed">
                     <TreeView.ItemTemplate>
                         <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:LogNodeVM">
                             <StackPanel Orientation="Horizontal" Spacing="6">

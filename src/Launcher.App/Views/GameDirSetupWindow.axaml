@@ -14,6 +14,7 @@
         <TextBox x:Name="PathBox" FontSize="13"/>
 
         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="跳过，稍后设置" Classes="ghost" Padding="14,7" Click="OnSkip"/>
             <Button Content="浏览…" Classes="ghost" Padding="14,7" Click="OnBrowse"/>
             <Button Content="使用默认目录" Classes="ghost" Padding="14,7" Click="OnReset"/>
             <Button Content="开始使用" Classes="primary" Padding="20,7" Click="OnConfirm"/>

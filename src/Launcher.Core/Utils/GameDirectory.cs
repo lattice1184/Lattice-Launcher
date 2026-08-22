@@ -54,8 +54,16 @@ public static class GameDirectory
     /// 版本发现扫描源：安装目标 + 已有环境（AppData 标准位 / Downloads/PCL*），按序去重。
     /// 已安装版本的显示与启动来自这些目录；新下载安装只进 InstallDir。
     /// </summary>
+    /// <summary>8-22 进程内扫描缓存：启动后多次调用（版本扫描/清理/校验）复用同一结果，
+    /// 消除 O(N²) junction 重复解析 + Downloads\PCL* 重复枚举。改目录时 InvalidateScanCache 失效。</summary>
+    private static List<(string Dir, GameDirectorySource Source)>? _scanCache;
+
+    /// <summary>8-22：目录变更后清扫描缓存（设置页改目录/重置时调用）</summary>
+    public static void InvalidateScanCache() => _scanCache = null;
+
     public static List<(string Dir, GameDirectorySource Source)> ScanSourceDirs()
     {
+        if (_scanCache is not null) return _scanCache;
         var list = new List<(string Dir, GameDirectorySource Source)>();
         void Add(string dir, GameDirectorySource source)
         {
@@ -84,6 +92,7 @@ public static class GameDirectory
             foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
                 Add(Path.Combine(dir, ".minecraft"), GameDirectorySource.Pcl);
         }
+        _scanCache = list;
         return list;
     }
 

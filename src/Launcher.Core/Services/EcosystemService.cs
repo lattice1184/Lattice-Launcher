@@ -227,7 +227,10 @@ public sealed class EcosystemService
         var targetDir = ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type);
         // 目标目录兜底创建（自定义实例名时 versions/{name}/mods 可能不存在——否则下载失败/落错位）
         Directory.CreateDirectory(targetDir);
-        var destPath = Path.Combine(targetDir, Path.GetFileName(file.FileName));
+        // 8-22 冲突检测：目标已存在同名文件 → 用 UniquePath.Resolve 加 (1) 后缀，不覆盖旧文件
+        // （重装不同版本/依赖同名时不静默覆盖；与历史「重下」口径一致）
+        var desired = Path.Combine(targetDir, Path.GetFileName(file.FileName));
+        var destPath = Launcher.Core.Download.UniquePath.Resolve(desired);
         await _downloads.DownloadFileAsync(file.Url, destPath, file.Hashes?.Sha1, file.Size, progress, ct);
         return destPath;
     }

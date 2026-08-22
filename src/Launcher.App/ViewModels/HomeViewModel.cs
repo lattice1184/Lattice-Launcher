@@ -227,11 +227,16 @@ public partial class HomeViewModel : ViewModelBase
 
     public async Task InitializeAsync()
     {
-        _accounts.Load();
+        // 8-22 同步重活挪后台：账号 DPAPI 解密 + 目录迁移不阻塞 MainViewModel 构造——
+        // 目录窗口已提前弹出，主 VM 应立即返回让启动链跑完（不卡目录窗口出现）
+        await Task.Run(() =>
+        {
+            _accounts.Load();
+            // 目录树重构（AE3）：旧 .minecraft\servers 一次性迁移到启动器目录树 servers\
+            Launcher.Core.Server.ServerInstaller.MigrateLegacy(GameDirectory.InstallDir());
+        });
         RefreshPlayer();
         RefreshConfigText();
-        // 目录树重构（AE3）：旧 .minecraft\servers 一次性迁移到启动器目录树 servers\
-        Launcher.Core.Server.ServerInstaller.MigrateLegacy(GameDirectory.InstallDir());
         await RefreshVersionsAsync();
         // 8-19 启动清理（后台，失败静默）：跨源预取残留目录（主页隐藏的占位）+ 过期下载缓存——
         // 用户视角「删了版本但数据夹里还残留」的观感来源，启动时顺带清
@@ -245,8 +250,9 @@ public partial class HomeViewModel : ViewModelBase
             }
             catch { }
         });
-        // 8-19 启动峰值已过：版本扫描/清单的中间对象一次性 GC + 工作集修剪
-        Services.IdleMemoryTuner.TrimStartup();
+        // 8-22 移除 TrimStartup：启动峰值后立即做全代 compacting GC（STW 暂停）
+        // 会打断「版本扫描/加载器加载」的响应——改为由闲置定时器（5 分钟无操作）自然接管，
+        // GC 只在真正闲置时静默进行，保证启动/加载体验（用户拍板保留自动机制、仅消除启动干扰）
     }
 
     /// <summary>8-19 过期下载缓存清理：AppData\Launcher\cache 的 eco-*/loader-* json

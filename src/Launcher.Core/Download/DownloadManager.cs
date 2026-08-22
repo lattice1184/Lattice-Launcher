@@ -59,10 +59,17 @@ public sealed class DownloadManager
         return task;
     }
 
-    /// <summary>组任务：子任务不进 Tasks、不计 ActiveCount（组算 1）</summary>
-    public DownloadTask EnqueueGroup(string name, Func<DownloadGroupContext, CancellationToken, Task> groupWork)
+    /// <summary>组任务：子任务不进 Tasks、不计 ActiveCount（组算 1）。
+    /// sourceUrl/targetPath（8-22）供下载历史「重下/位置」用——模组安装等组任务原本不传，
+    /// 历史里永远看不到安装落点；传入后历史按钮可用。</summary>
+    public DownloadTask EnqueueGroup(string name, Func<DownloadGroupContext, CancellationToken, Task> groupWork,
+        string? sourceUrl = null, string? targetPath = null)
     {
-        var task = new DownloadTask(name, Gated(groupWork), _ui);
+        var task = new DownloadTask(name, Gated(groupWork), _ui)
+        {
+            SourceUrl = sourceUrl,
+            TargetPath = targetPath,
+        };
         task.QueuePosition = Interlocked.Increment(ref _queued);
         task.Stage = task.QueuePosition > 1 ? $"排队（前面 {task.QueuePosition - 1} 个任务）" : "排队等待…";
         AddAndTrack(task);

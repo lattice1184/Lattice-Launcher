@@ -23,6 +23,13 @@ public static class AppState
         lock (Gate) { if (string.IsNullOrEmpty(InstanceRoot)) InstanceRoot = root; }
     }
 
+    /// <summary>8-22：目录变更时覆盖实例根（目录窗口确认 / 设置页改目录）。
+    /// Init 保底默认目录，此处更新为实际选择；空值忽略（保留原值）</summary>
+    public static void UpdateInstanceRoot(string root)
+    {
+        lock (Gate) { if (!string.IsNullOrEmpty(root)) InstanceRoot = root; }
+    }
+
     /// <summary>主页版本切换时同步（全局权威 = 主页版本下拉）</summary>
     public static void SetCurrentVersion(string? versionId)
     {

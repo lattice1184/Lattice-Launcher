@@ -327,8 +327,10 @@ public sealed class DownloadService
             // （复用会撞 FileShare.None 抛 IOException），跳过避免整轮再次被它拖死
             candidates = candidates.Where(c => !abandonedKeys.Contains(RaceKey(c))).ToList();
             if (candidates.Count == 0) continue; // 全部被摘除 → 无源可试，直接下一轮（不等待退避）
-            // 8-19 下载日志：每轮候选源（分析「哪个源赢/为什么慢」用——HTTP 层看不到竞速业务语义）
-            LogWrapper.Debug($"[下载] 第{attempt + 1}轮 {url} 候选({candidates.Count}): {string.Join(" | ", candidates.Select(ShortUrl))}");
+            // 8-19 下载日志：每轮候选源（分析「哪个源赢/为什么慢」用——HTTP 层看不到竞速业务语义）。
+            // 8-22 升级 Info：原 Debug 被 DownloadLogFile 的 level<Info 过滤，候选源证据永不落盘——
+            // 「为什么慢」查不到（与 DownloadLogFile 头注释「候选源」矛盾）
+            LogWrapper.Info($"[下载] 第{attempt + 1}轮 {url} 候选({candidates.Count}): {string.Join(" | ", candidates.Select(ShortUrl))}");
             if (candidates.Count == 1)
             {
                 // 单候选（不可映射 URL）：走直接路径——保留断点续传（dest.tmp 预写 → Range 续传）

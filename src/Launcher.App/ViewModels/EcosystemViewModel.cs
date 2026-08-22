@@ -647,8 +647,7 @@ public partial class EcosystemViewModel : ViewModelBase
                     ? await _eco.InstallWithDependenciesAsync(card.Id, version, instanceName, card.Type,
                         gameVersion, loader, null, ct, gameDirOverride: installDir, ctx: gctx) // AF2：装实例真实目录（8-22 可改）
                     : await InstallMainOnlyAsync(card.Id, version, instanceName, card.Type, gctx, ct, installDir);
-            });
-            // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
+            }, targetPath: installDir);           // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
             MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)
@@ -780,8 +779,7 @@ public partial class EcosystemViewModel : ViewModelBase
                     r.Installed.Add(new InstalledDependency(modId.ToString(), file.id.ToString(), path ?? ""));
                     report = r;
                 }
-            });
-            // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
+            }, targetPath: installDir);           // 跳转①：入队即去下载记录看进度；完成后跳回本 tab（跳转②由下载中心统一处理）
             MainViewModel.Current?.NavigateToDownloadQueue($"download:{DownloadViewModel.TabFor(_type)}");
             await task.Completion;
             if (task.State == DownloadTaskState.Completed)

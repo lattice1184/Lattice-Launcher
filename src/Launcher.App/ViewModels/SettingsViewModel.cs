@@ -645,6 +645,9 @@ public partial class SettingsViewModel : ViewModelBase
         s.Save();
         GameDirectoryText = GameDirectory.InstallDir();
         SourceLabelText = GameDirectory.SourceLabel(GameDirectory.DetectSource());
+        // 8-22：实例根跟随目录选择 + 清扫描缓存（下次扫描反映新目录）
+        Launcher.Core.AppState.UpdateInstanceRoot(path);
+        Launcher.Core.Utils.GameDirectory.InvalidateScanCache();
     }
 
     /// <summary>游戏目录：重置为默认（D 盘优先）</summary>
@@ -655,6 +658,9 @@ public partial class SettingsViewModel : ViewModelBase
         s.Save();
         GameDirectoryText = GameDirectory.InstallDir();
         SourceLabelText = "本启动器";
+        // 8-22：实例根回退默认 + 清扫描缓存
+        Launcher.Core.AppState.UpdateInstanceRoot(GameDirectory.InstallDir());
+        Launcher.Core.Utils.GameDirectory.InvalidateScanCache();
     }
 
     /// <summary>Java 路径：浏览选择后应用（FilePicker 回调）</summary>

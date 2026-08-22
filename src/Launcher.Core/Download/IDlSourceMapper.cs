@@ -21,15 +21,20 @@ public sealed class ResolvingDlSourceMapper : IDlSourceResolver
 {
     private readonly IDlSourceMapper _primary;
     private readonly IDlSourceMapper? _fallback;
+    private readonly IDlSourceMapper[] _extra;
 
-    public ResolvingDlSourceMapper(IDlSourceMapper primary, IDlSourceMapper? fallback = null)
+    public ResolvingDlSourceMapper(IDlSourceMapper primary, IDlSourceMapper? fallback = null,
+        params IDlSourceMapper[] extra)
     {
         _primary = primary;
         _fallback = fallback;
+        _extra = extra ?? [];
     }
 
+    /// <summary>默认三候选：官方直连 + BMCLAPI + mcimirror（Modrinth 文件 CDN 镜像）。
+    /// 8-22 加 mcimirror：Fabric API 等官方 CDN 渐进限速几十 KB/s，mcimirror 提供第三候选竞速。</summary>
     public static ResolvingDlSourceMapper Default { get; } =
-        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper());
+        new(new DefaultDlSourceMapper(), new BmclapiDlSourceMapper(), new McimirrorDlSourceMapper());
 
     public IReadOnlyList<string> Resolve(string url)
     {
@@ -39,7 +44,25 @@ public sealed class ResolvingDlSourceMapper : IDlSourceResolver
             var alt = _fallback.Map(url);
             if (!list.Contains(alt)) list.Add(alt);
         }
+        foreach (var m in _extra)
+        {
+            var e = m.Map(url);
+            if (!list.Contains(e)) list.Add(e);
+        }
         return list;
+    }
+}
+
+/// <summary>8-22 mcimirror 文件 CDN 镜像：Modrinth 文件（cdn.modrinth.com / cdn-alt）走
+/// mod.mcimirror.top 同构路径（API 已走此镜像，文件同源加速）。Fabric API 等官方 CDN
+/// 渐进限速到几十 KB/s，此镜像提供第三候选。非 Modrinth 文件原样返回（无镜像）。</summary>
+public sealed class McimirrorDlSourceMapper : IDlSourceMapper
+{
+    public string Map(string url)
+    {
+        if (url.Contains("cdn.modrinth.com"))
+            return url.Replace("https://cdn.modrinth.com", "https://mod.mcimirror.top");
+        return url;
     }
 }
 
