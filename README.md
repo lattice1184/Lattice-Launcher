@@ -91,7 +91,7 @@ GitHub 上的文件，启动器会同时从这些源中筛出胜利者并起跑�
 
 去 [Releases](../../releases) 下载，两个版本二选一：
 
-| | Lattice启动器.exe | 轻量版 |
+| | 望星.exe | 轻量版 |
 |---|---|---|
 | 体积 | 约 84MB | 约 47MB |
 | 依赖 | 无 | .NET 10 Desktop Runtime（没装会弹窗引导） |
@@ -104,7 +104,7 @@ GitHub 上的文件，启动器会同时从这些源中筛出胜利者并起跑�
 dotnet build            # Debug 构建
 ```
 
-发布（Windows）：`dotnet publish` 后运行签名脚本，产物在 `发布\`：`Lattice启动器.exe`（自包含，双击即用）与 `Lattice启动器-轻量版.exe`（需 .NET 10 Runtime）。
+发布（Windows）：`dotnet publish` 后运行签名脚本，产物在 `发布\`：`望星.exe`（自包含，双击即用）与 `望星-轻量版.exe`（需 .NET 10 Runtime）。
 
 ## 目录结构
 
