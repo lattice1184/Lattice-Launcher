@@ -26,6 +26,18 @@ public partial class App : Application
     {
         // 8-20 下载日志落盘（%AppData%\Launcher\logs\download.log，Info+，简洁逐行）——失败可查
         Launcher.Core.Download.DownloadLogFile.Attach();
+        // 8-22 步骤8：下载完成 → Toast（2 秒自动关 + 文件名 + 「查看日志」进日志中心）。
+        // 只对「完成」弹（失败任务在队列行显示错误）；日志类任务（启动/修复事件）不重复弹。
+        Launcher.Core.Events.AppEvents.Subscribe<Launcher.Core.Events.DownloadCompletedEvent>(e =>
+        {
+            if (e.FileName.StartsWith("自动修复")) return; // 修复日志已有独立事件流
+            var fileName = System.IO.Path.GetFileName(e.TargetPath);
+            if (string.IsNullOrEmpty(fileName)) fileName = e.FileName;
+            Services.NotificationService.Success($"下载完成：{fileName}",
+                durationMs: 2000,
+                actionText: "查看日志",
+                onAction: () => OpenLogCenter());
+        });
         // 8-22 步骤1：Core 层统一状态初始化（实例根 + 当前版本）
         Launcher.Core.AppState.InitInstanceRoot(Launcher.Core.Utils.GameDirectory.InstallDir());
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -244,6 +256,16 @@ public partial class App : Application
             Resources["BorderColor"] = Avalonia.Media.Color.FromRgb(p.BorderColor.R, p.BorderColor.G, p.BorderColor.B);
         }
         catch { /* 背景色非法则保持现有资源 */ }
+    }
+
+    /// <summary>8-22 步骤8：打开内部日志中心（Toast「查看日志」按钮）</summary>
+    private static void OpenLogCenter()
+    {
+        var win = new Views.LogViewerWindow();
+        if (Services.DialogService.MainWindow() is { } owner && owner.IsVisible)
+            win.ShowDialog(owner);
+        else
+            win.Show();
     }
 
     /// <summary>生命周期调用兜底：异常只记录，不阻止窗口创建</summary>

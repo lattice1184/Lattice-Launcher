@@ -54,6 +54,12 @@ public partial class ToastItem : ObservableObject
     /// <summary>移除前的滑出回调（视图层注册：MainWindow ContainerPrepared 挂 SlideOutToRight；动画时长被 Delay(260) 覆盖）</summary>
     public Action? OnRemoving { get; set; }
 
+    /// <summary>8-22 步骤8：可选动作按钮（如「查看日志」）；null = 不显示</summary>
+    public string? ActionText { get; init; }
+    public Action? OnAction { get; init; }
+
+    public bool HasAction => ActionText is not null && OnAction is not null;
+
     public ToastItem(string message, ToastType type)
     {
         Message = message;
@@ -71,9 +77,14 @@ public static class NotificationService
 
     /// <summary>弹一条 Toast（淡入 + 停留 + 淡出，自动移除；全流程封送 UI 线程）。
     /// 8-19 第二批：相同 (文案, 类型) 的未过期条目折叠为 ×N 并重置停留计时——不再堆一串</summary>
-    public static void Show(string message, ToastType type = ToastType.Info, int durationMs = 3200)
+    public static void Show(string message, ToastType type = ToastType.Info, int durationMs = 3200,
+        string? actionText = null, Action? onAction = null)
     {
-        var toast = new ToastItem(message, type);
+        var toast = new ToastItem(message, type)
+        {
+            ActionText = actionText,
+            OnAction = onAction,
+        };
         Dispatcher.UIThread.Post(() =>
         {
             // 折叠：同文案同类型且尚未淡出的条目合并（如多条「仍在搜索（网络较慢）」）
@@ -100,13 +111,19 @@ public static class NotificationService
     }
 
     /// <summary>信息提示快捷方式</summary>
-    public static void Info(string message, int durationMs = 3600) => Show(message, ToastType.Info, durationMs);
+    public static void Info(string message, int durationMs = 3600,
+        string? actionText = null, Action? onAction = null)
+        => Show(message, ToastType.Info, durationMs, actionText, onAction);
 
     /// <summary>成功提示快捷方式</summary>
-    public static void Success(string message, int durationMs = 3200) => Show(message, ToastType.Success, durationMs);
+    public static void Success(string message, int durationMs = 3200,
+        string? actionText = null, Action? onAction = null)
+        => Show(message, ToastType.Success, durationMs, actionText, onAction);
 
     /// <summary>错误提示快捷方式</summary>
-    public static void Error(string message, int durationMs = 4500) => Show(message, ToastType.Error, durationMs);
+    public static void Error(string message, int durationMs = 4500,
+        string? actionText = null, Action? onAction = null)
+        => Show(message, ToastType.Error, durationMs, actionText, onAction);
 
     private static async Task FadeOutAsync(ToastItem toast, int durationMs, CancellationToken ct)
     {

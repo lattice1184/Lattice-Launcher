@@ -259,7 +259,7 @@
                         <!-- 8-16 点击复制错误信息（Cursor 手型 + ToolTip 提示） -->
                         <Border Background="#F2242A36" BorderBrush="{Binding Border}" BorderThickness="1"
                                 CornerRadius="10" Padding="14,9" Opacity="{Binding Opacity}"
-                                PointerPressed="OnToastCopy" Cursor="Hand"
+                                PointerPressed="OnToastCopy" Cursor="Hand" IsHitTestVisible="True"
                                 ToolTip.Tip="点击复制这段文字">
                             <Border.Transitions>
                                 <Transitions>
@@ -270,6 +270,9 @@
                                 <Ellipse Width="8" Height="8" Fill="{Binding Dot}" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding DisplayMessage}" Foreground="{Binding MessageBrush}"
                                            FontSize="12" TextWrapping="Wrap" MaxWidth="360"/>
+                                <Button Content="{Binding ActionText}" Classes="ghost" FontSize="10" Padding="8,2"
+                                        IsVisible="{Binding HasAction}" Click="OnToastAction"
+                                        ToolTip.Tip="点击打开对应内容"/>
                             </StackPanel>
                         </Border>
                     </DataTemplate>

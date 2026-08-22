@@ -152,9 +152,17 @@ public partial class MainWindow : Window
     /// <summary>8-16 点击 Toast 复制内容到剪贴板（错误信息全模块可带走）</summary>
     private void OnToastCopy(object? sender, PointerPressedEventArgs e)
     {
+        // 8-22 步骤8：点在「查看日志」按钮上不复制，交给按钮点击
         if (sender is Avalonia.Controls.Border { DataContext: ToastItem t } b
+            && e.Source is not Button
             && TopLevel.GetTopLevel(b)?.Clipboard is { } cb && !string.IsNullOrEmpty(t.Message))
             _ = cb.SetTextAsync(t.Message);
+    }
+
+    /// <summary>8-22 步骤8：Toast 动作按钮（如「查看日志」）→ 执行绑定的动作</summary>
+    private void OnToastAction(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: ToastItem { OnAction: { } action } }) action();
     }
 
     /// <summary>8-13 批次 34 终局：无启动动画——RootSurface 默认可见（axaml 默认状态），描边终值即 axaml 的 #4D2F3745。</summary>
