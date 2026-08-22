@@ -60,18 +60,14 @@ public partial class DownloadView : UserControl
     }
 
     /// <summary>8-20 打开下载日志（%AppData%\Launcher\logs\download.log）——失败排查用</summary>
+    /// <summary>8-22 步骤5：打开内部树形日志中心（下载/启动/修复分类，点条目看内容）——
+    /// 不再直接开外部 txt；窗口内保留「打开文件」入口看原文。</summary>
     private void OnOpenDownloadLog(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var path = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Launcher", "logs", "download.log");
-        try
-        {
-            if (System.IO.File.Exists(path))
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
-            else
-                Launcher.App.Services.NotificationService.Info("还没有下载日志——下载过一次就会生成（%AppData%\\Launcher\\logs\\download.log）");
-        }
-        catch { /* 打开失败无妨 */ }
+        var win = new LogViewerWindow();
+        if (Launcher.App.Services.DialogService.MainWindow() is { } owner && owner.IsVisible)
+            win.ShowDialog(owner);
+        else
+            win.Show();
     }
 }

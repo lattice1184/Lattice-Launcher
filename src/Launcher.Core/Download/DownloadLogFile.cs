@@ -14,6 +14,13 @@ public static class DownloadLogFile
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "Launcher", "logs", "download.log");
 
+    /// <summary>8-22 步骤5：按任务独立落盘目录（内部树形日志查看器数据源）——
+    /// logs/downloads/{任务名}_{时间戳}.log，与单文件 download.log 并存（单文件保留给「打开文件」习惯）。
+    /// 任务名去非法字符（路径安全）。</summary>
+    private static string LogsRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "Launcher", "logs");
+
     private static bool _attached;
 
     /// <summary>启动时调用一次：订阅事件并开始落盘（幂等）</summary>
@@ -53,6 +60,8 @@ public static class DownloadLogFile
                     lock (Gate)
                         File.AppendAllText(LogPath,
                             $"===== 完成: {e.FileName} → {e.TargetPath} [{e.CompletedAt:HH:mm:ss}] =====\n");
+                    WriteTaskFile(e.FileName, e.CompletedAt,
+                        $"状态：完成\n文件：{e.FileName}\n位置：{e.TargetPath}\n时间：{e.CompletedAt:yyyy-MM-dd HH:mm:ss}");
                 }
                 catch { }
             });
@@ -63,9 +72,29 @@ public static class DownloadLogFile
                     lock (Gate)
                         File.AppendAllText(LogPath,
                             $"===== 失败: {e.FileName} | {e.Error} [{e.CompletedAt:HH:mm:ss}] =====\n");
+                    WriteTaskFile(e.FileName, e.CompletedAt,
+                        $"状态：失败\n文件：{e.FileName}\n错误：{e.Error}\n时间：{e.CompletedAt:yyyy-MM-dd HH:mm:ss}");
                 }
                 catch { }
             });
         }
+    }
+
+    /// <summary>8-22 步骤5：按任务独立落盘（内部树形日志查看器叶子数据）——
+    /// logs/downloads/{任务名}_{HHmmss}.log。任务名去非法字符；同名任务时间戳区分不覆盖。</summary>
+    private static void WriteTaskFile(string taskName, DateTime time, string content)
+    {
+        try
+        {
+            var dir = Path.Combine(LogsRoot, "downloads");
+            Directory.CreateDirectory(dir);
+            var safe = string.Concat(taskName.Where(c => !Path.GetInvalidFileNameChars().Contains(c)))
+                .Trim();
+            if (string.IsNullOrEmpty(safe)) safe = "任务";
+            if (safe.Length > 60) safe = safe[..60];
+            var path = Path.Combine(dir, $"{safe}_{time:HHmmss}.log");
+            File.WriteAllText(path, content + Environment.NewLine);
+        }
+        catch { /* 单任务日志失败无妨 */ }
     }
 }
