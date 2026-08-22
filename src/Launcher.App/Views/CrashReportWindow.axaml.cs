@@ -179,8 +179,8 @@ public partial class CrashReportWindow : Window
     private async void OnRepair(object? sender, RoutedEventArgs e)
     {
         var versionId = _fixVersionId;
-        var gameDir = _fixGameDir ?? "";
-        if (string.IsNullOrEmpty(versionId)) return;
+        // 8-22 步骤7：修复路径统一到当前实例——_fixGameDir 来自启动链路（已正确），空时兜底 AppState.InstanceRoot
+        var gameDir = string.IsNullOrEmpty(_fixGameDir) ? global::Launcher.Core.AppState.InstanceRoot : _fixGameDir;        if (string.IsNullOrEmpty(versionId)) return;
         RepairBtn.IsEnabled = false;
         RepairBtn.Content = "正在修复…";
         try
