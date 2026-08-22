@@ -83,8 +83,9 @@ public sealed class LauncherSettings
     /// 下载/API 全局生效（新任务用）；已运行中任务不受影响。</summary>
     public string? ProxyAddress { get; set; }
 
-    /// <summary>8-20 Modrinth API 走 mcimirror 镜像（默认关——第三方镜像；官方直连慢时开）</summary>
-    public bool ModrinthMirrorEnabled { get; set; }
+    /// <summary>8-20 Modrinth API 走 mcimirror 镜像。8-22 默认开：国内官方 api.modrinth.com 直连实测 18KB/s，
+    /// mcimirror 73KB/s（快 4 倍）；只镜像公开 API（无 key 数据），设置可关回官方</summary>
+    public bool ModrinthMirrorEnabled { get; set; } = true;
 
     /// <summary>下载并发档位（分片数：低 8 / 中 16 / 高 24）；默认中档——PCL2 参考上限 63，16 仍保守</summary>
     public DownloadTier DownloadTier { get; set; } = DownloadTier.Medium;
