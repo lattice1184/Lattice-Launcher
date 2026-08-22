@@ -101,6 +101,7 @@ public partial class MainWindow : Window
         Opened += (_, _) =>
         {
             UiAnim.Host = this; // 渲染帧驱动的全局宿主（splash 等无 host 参数的动画取帧时钟）
+            PlayBrandEntrance(); // 8-22 顶部品牌入场动画（图标淡入→平推→名称推出）
             ApplyOpacityFallback();
             ApplyAppearanceFromVm(); // 8-19 取 VM 实时值（构造时已加载设置；DataContext 缺失时内部回退持久值）
             ApplyNavVisuals(); // 兜底：DataContext 若早于挂载，这里补一次
@@ -643,6 +644,26 @@ public partial class MainWindow : Window
 
     /// <summary>8-19 合成降级双向：失败时整窗不透明 + 隐藏导航层；合成恢复时还原导航层
     /// （旧实现 IsVisible=false 永不复原——会话中降级后整窗一直"变深"）</summary>
+    /// <summary>8-22 顶部品牌入场动画（启动时一次）：图标淡入 → 平推 → 名称推出。
+    /// 与「无启动动画」策略唯一的例外——品牌区短促入场不阻塞内容页。
+    /// 三个 Animate 用不同 host+slot 互不打断；终点 e=1 即 Opacity=1/X=0，与静态布局一致。</summary>
+    private async void PlayBrandEntrance()
+    {
+        // 阶段1+2（并行）：图标淡入 + 从 -16 平推到 0
+        UiAnim.Animate(250, UiAnim.Curves.Decelerate, e => BrandIcon.Opacity = e,
+            host: BrandIcon, slot: "brand-fade");
+        UiAnim.Animate(250, UiAnim.Curves.Decelerate, e =>
+            ((TranslateTransform)BrandIcon.RenderTransform!).X = -16 + 16 * e,
+            host: BrandIcon, slot: "brand-slide");
+        await Task.Delay(400);
+        // 阶段3：名称从 +20 推出到 0 并淡入
+        UiAnim.Animate(300, UiAnim.Curves.Decelerate, e =>
+        {
+            BrandText.Opacity = e;
+            ((TranslateTransform)BrandText.RenderTransform!).X = 20 * (1 - e);
+        }, host: BrandText, slot: "brand-text");
+    }
+
     private void ApplyOpacityFallback()
     {
         if (RootSurface is null || NavSurface is null) return;
