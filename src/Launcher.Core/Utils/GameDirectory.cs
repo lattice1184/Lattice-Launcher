@@ -56,14 +56,18 @@ public static class GameDirectory
     /// </summary>
     /// <summary>8-22 进程内扫描缓存：启动后多次调用（版本扫描/清理/校验）复用同一结果，
     /// 消除 O(N²) junction 重复解析 + Downloads\PCL* 重复枚举。改目录时 InvalidateScanCache 失效。</summary>
+    private static readonly object ScanCacheGate = new();
     private static List<(string Dir, GameDirectorySource Source)>? _scanCache;
 
     /// <summary>8-22：目录变更后清扫描缓存（设置页改目录/重置时调用）</summary>
-    public static void InvalidateScanCache() => _scanCache = null;
+    public static void InvalidateScanCache()
+    {
+        lock (ScanCacheGate) { _scanCache = null; }
+    }
 
     public static List<(string Dir, GameDirectorySource Source)> ScanSourceDirs()
     {
-        if (_scanCache is not null) return _scanCache;
+        lock (ScanCacheGate) { if (_scanCache is not null) return _scanCache; }
         var list = new List<(string Dir, GameDirectorySource Source)>();
         void Add(string dir, GameDirectorySource source)
         {
@@ -92,7 +96,7 @@ public static class GameDirectory
             foreach (var dir in Directory.EnumerateDirectories(downloads, "PCL*"))
                 Add(Path.Combine(dir, ".minecraft"), GameDirectorySource.Pcl);
         }
-        _scanCache = list;
+        lock (ScanCacheGate) { _scanCache = list; } // double-check：锁内赋值，防并发读到半初始化引用
         return list;
     }
 

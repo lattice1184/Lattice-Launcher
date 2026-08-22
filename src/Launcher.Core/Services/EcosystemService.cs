@@ -227,10 +227,15 @@ public sealed class EcosystemService
         var targetDir = ResolveInstallPath(gameDirOverride ?? _gameDirectory, instanceId, type);
         // 目标目录兜底创建（自定义实例名时 versions/{name}/mods 可能不存在——否则下载失败/落错位）
         Directory.CreateDirectory(targetDir);
-        // 8-22 冲突检测：目标已存在同名文件 → 用 UniquePath.Resolve 加 (1) 后缀，不覆盖旧文件
-        // （重装不同版本/依赖同名时不静默覆盖；与历史「重下」口径一致）
+        // 8-22 冲突检测：同名文件已存在且内容不同 → 用 UniquePath.Resolve 加 (1) 后缀，不覆盖旧文件。
+        // 同名但 SHA1 一致（就是目标版本，重装）→ 保持原路径走幂等跳过。避免「重装同一版本复制成 (1)」。
         var desired = Path.Combine(targetDir, Path.GetFileName(file.FileName));
-        var destPath = Launcher.Core.Download.UniquePath.Resolve(desired);
+        var destPath = desired;
+        if (File.Exists(desired) && file.Hashes?.Sha1 is { } sha1
+            && !await Sha1MatchesAsync(desired, sha1))
+        {
+            destPath = Launcher.Core.Download.UniquePath.Resolve(desired);
+        }
         await _downloads.DownloadFileAsync(file.Url, destPath, file.Hashes?.Sha1, file.Size, progress, ct);
         return destPath;
     }
@@ -588,4 +593,16 @@ public sealed class EcosystemService
     public static List<T> ReorderMatches<T>(IEnumerable<T> items, string? query,
         Func<T, string> titleOf, Func<T, string> descriptionOf)
         => [.. items.OrderByDescending(x => MatchScore(titleOf(x), descriptionOf(x), query ?? ""))];
+
+    /// <summary>8-22 本地 SHA1 比对（冲突检测用：同名文件是否就是目标版本；缺失/读取失败 = 不匹配）</summary>
+    private static async Task<bool> Sha1MatchesAsync(string path, string expected)
+    {
+        try
+        {
+            await using var fs = File.OpenRead(path);
+            var hash = await System.Security.Cryptography.SHA1.HashDataAsync(fs);
+            return Convert.ToHexStringLower(hash).Equals(expected, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
 }
