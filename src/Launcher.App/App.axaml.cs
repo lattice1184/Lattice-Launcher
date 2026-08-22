@@ -26,6 +26,8 @@ public partial class App : Application
     {
         // 8-20 下载日志落盘（%AppData%\Launcher\logs\download.log，Info+，简洁逐行）——失败可查
         Launcher.Core.Download.DownloadLogFile.Attach();
+        // 8-22 步骤1：Core 层统一状态初始化（实例根 + 当前版本）
+        Launcher.Core.AppState.InitInstanceRoot(Launcher.Core.Utils.GameDirectory.InstallDir());
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // 主窗口关闭前不退出

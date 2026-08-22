@@ -42,9 +42,12 @@ public partial class HomeViewModel : ViewModelBase
     [ObservableProperty]
     public partial VersionInstanceVM? SelectedVersion { get; set; }
 
-    /// <summary>主页版本选择是全局权威：同步到 MainViewModel.CurrentVersion（下载/开服页跟随）</summary>
+    /// <summary>主页版本选择是全局权威：同步到 MainViewModel.CurrentVersion（下载/开服页跟随）+ Core AppState（修复/日志读）</summary>
     partial void OnSelectedVersionChanged(VersionInstanceVM? value)
-        => MainViewModel.Current!.CurrentVersion = value;
+    {
+        MainViewModel.Current!.CurrentVersion = value;
+        Launcher.Core.AppState.SetCurrentVersion(value?.Name); // 8-22 步骤1：Core 层统一状态
+    }
 
     [ObservableProperty]
     public partial string LaunchState { get; set; } = "就绪";
