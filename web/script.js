@@ -1,7 +1,15 @@
-/* Lattice Launcher 落地页 —— 一次性方向性动画触发器
+/* Starview Launcher 落地页 —— 一次性方向性动画触发器
    原则：进入视口即播、播完即止（unobserve / disconnect），不循环。 */
 (function () {
   'use strict';
+
+  // 8-22 顶部重做：品牌开场 splash（图标渐变→平推→名称推出，~1.2s 后淡出进正文）。
+  // setTimeout 硬编码时序与 styles.css 动画时长对齐：图标 .15+.7 + 名称 .55+.6 ≈ 1.15s
+  const splash = document.getElementById('splash');
+  if (splash) {
+    setTimeout(() => splash.classList.add('hide'), 1150);
+    setTimeout(() => { splash.style.display = 'none'; }, 1750);
+  }
 
   // 通用一次性 reveal：Hero 流程线 / 自修复 emblem / 截图帧 / 下载卡
   const io = new IntersectionObserver((entries) => {
